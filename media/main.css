@@ -1,0 +1,68 @@
+body, html {
+	height: 100%;
+	margin: 0;
+	padding: 0;
+	overflow: hidden;
+	font-family: var(--vscode-font-family);
+	font-weight: var(--vscode-font-weight);
+	font-size: var(--vscode-font-size);
+	color: var(--vscode-editor-foreground);
+	background-color: var(--vscode-editor-background);
+}
+
+.chat-container {
+	display: flex;
+	flex-direction: column;
+	height: 100vh;
+	padding: 10px;
+	box-sizing: border-box;
+}
+
+.chat-messages {
+	flex-grow: 1;
+	overflow-y: auto;
+	padding-bottom: 10px;
+}
+
+.message {
+	margin-bottom: 10px;
+	padding: 10px;
+	border-radius: 5px;
+	max-width: 80%;
+	word-wrap: break-word;
+}
+
+.message.user {
+	background-color: var(--vscode-list-activeSelectionBackground);
+	color: var(--vscode-list-activeSelectionForeground);
+	align-self: flex-end;
+	margin-left: auto;
+}
+
+.message.bot {
+	background-color: var(--vscode-list-inactiveSelectionBackground);
+	color: var(--vscode-list-inactiveSelectionForeground);
+	align-self: flex-start;
+	margin-right: auto;
+}
+
+.chat-input-container {
+	display: flex;
+	align-items: center;
+}
+
+.chat-input {
+	flex-grow: 1;
+	resize: none;
+	border-radius: 3px;
+	border: 1px solid var(--vscode-input-border);
+	background-color: var(--vscode-input-background);
+	color: var(--vscode-input-foreground);
+	padding: 5px;
+}
+
+.send-button {
+  width: 60px;
+	margin-left: 10px;
+  margin-right: 10px;
+}

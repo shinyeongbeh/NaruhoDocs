@@ -9,15 +9,35 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onView:naruhodocs.chatView"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "naruhodocs.helloWorld",
-        "title": "Hello World"
+        "command": "naruhodocs.start",
+        "title": "Start NaruhoDocs"
       }
-    ]
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "naruhodocs-sidebar",
+          "title": "NaruhoDocs",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "naruhodocs-sidebar": [
+        {
+          "id": "naruhodocs.chatView",
+          "type": "webview",
+          "name": "NaruhoDocs Chat"
+        }
+      ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run package",
