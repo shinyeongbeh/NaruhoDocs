@@ -51,6 +51,27 @@ body, html {
 	align-items: center;
 }
 
+.chat-input-wrapper {
+	position: relative;
+	width: 100%;
+}
+
+#send-icon {
+	color: var(--vscode-icon-foreground);
+	position: absolute;
+	right: 16px;
+	top: 50%;
+	transform: translateY(-50%);
+	cursor: pointer;
+	z-index: 2;
+}
+
+#send-icon img {
+	
+	width: 18px;
+	height: 18px;
+}
+
 .chat-input {
 	flex-grow: 1;
 	resize: none;
@@ -59,10 +80,9 @@ body, html {
 	background-color: var(--vscode-input-background);
 	color: var(--vscode-input-foreground);
 	padding: 5px;
-}
-
-.send-button {
-  width: 60px;
-	margin-left: 10px;
-  margin-right: 10px;
+	padding-right: 32px;
+	width: 100%;
+	min-width: 0;
+	box-sizing: border-box;
+	line-height: 1.8;
 }

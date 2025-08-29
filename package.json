@@ -10,7 +10,9 @@
     "Other"
   ],
   "activationEvents": [
-    "onView:naruhodocs.chatView"
+    "onView:naruhodocs.chatView",
+    "onLanguage:markdown",
+    "onLanguage:plaintext"
   ],
   "main": "./dist/extension.js",
   "contributes": {

@@ -7,7 +7,7 @@
 
     const chatMessages = document.getElementById('chat-messages');
     const chatInput = document.getElementById('chat-input');
-    const sendButton = document.getElementById('send-button');
+    const sendIcon = document.getElementById('send-icon');
 
     function sendMessage() {
         if (chatInput && chatInput.value) {
@@ -20,8 +20,8 @@
         }
     }
 
-    if (sendButton) {
-        sendButton.addEventListener('click', sendMessage);
+    if (sendIcon) {
+        sendIcon.addEventListener('click', sendMessage);
     }
 
     if (chatInput) {

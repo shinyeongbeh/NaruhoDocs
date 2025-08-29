@@ -42,6 +42,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		});
 	}
 
+	public postMessage(message: any) {
+		if (this._view) {
+			this._view.webview.postMessage(message);
+		}
+	}
+
 	private _getHtmlForWebview(webview: vscode.Webview) {
 		// Get the local path to main script run in the webview, then convert it to a uri we can use in the webview.
 		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.js'));
@@ -63,7 +69,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 					Use a content security policy to only allow loading images from https or from our extension directory,
 					and only allow scripts that have a specific nonce.
 				-->
-				<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
+				<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}'; img-src ${webview.cspSource};">
 
 				<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
@@ -77,8 +83,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 				<div class="chat-container">
 					<div id="chat-messages" class="chat-messages"></div>
 					<div class="chat-input-container">
-						<textarea id="chat-input" class="chat-input" placeholder="How can I help?"></textarea>
-						<button id="send-button" class="send-button">Send</button>
+						<div class="chat-input-wrapper" style="position:relative; width:100%;">
+							<textarea id="chat-input" class="chat-input" placeholder="How can I help?" style="padding-right:32px;"></textarea>
+							<span id="send-icon" style="position:absolute; right:8px; top:50%; transform:translateY(-50%); cursor:pointer;">
+								<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+									<line x1="22" y1="2" x2="11" y2="13"></line>
+									<polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+								</svg>
+							</span>
+						</div>
 					</div>
 				</div>
 
