@@ -1,11 +1,15 @@
 import * as vscode from 'vscode';
 import { ChatViewProvider } from './ChatViewProvider';
 import { SummaryCodeLensProvider } from './SummaryCodeLensProvider';
+import * as dotenv from 'dotenv';
+import * as path from 'path';
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
 
+	dotenv.config({ path: path.resolve(context.extensionPath, '.env') });
+	
 	const provider = new ChatViewProvider(context.extensionUri);
 
 	context.subscriptions.push(

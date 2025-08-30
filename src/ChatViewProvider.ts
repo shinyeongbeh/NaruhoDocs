@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 
+
 export class ChatViewProvider implements vscode.WebviewViewProvider {
 
 	public static readonly viewType = 'naruhodocs.chatView';
@@ -28,14 +29,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
 		webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
 
-		webviewView.webview.onDidReceiveMessage(data => {
+		webviewView.webview.onDidReceiveMessage(async data => {
 			switch (data.type) {
 				case 'sendMessage':
 					{
-						// Handle the message from the webview
 						const userMessage = data.value;
-						// For now, just echo the message back
-						this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: `You said: ${userMessage}` });
+						try {
+							const botResponse = await this._getGeminiResponse(userMessage);
+							this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: botResponse });
+						} catch (error) {
+							this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: 'Error: Unable to connect to Gemini LLM.' });
+						}
 						break;
 					}
 			}
@@ -46,6 +50,18 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		if (this._view) {
 			this._view.webview.postMessage(message);
 		}
+	}
+	
+	private async _getGeminiResponse(userMessage: string): Promise<string> {
+		const { GoogleGenAI } = await import("@google/genai");
+		const ai = new GoogleGenAI({
+			apiKey: process.env.GOOGLE_API_KEY || "",
+		});
+		const response = await ai.models.generateContent({
+			model: "gemini-2.5-flash",
+			contents: userMessage
+		});
+		return response.text ?? '';
 	}
 
 	private _getHtmlForWebview(webview: vscode.Webview) {
