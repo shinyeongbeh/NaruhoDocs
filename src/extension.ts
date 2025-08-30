@@ -4,14 +4,21 @@ import { SummaryCodeLensProvider } from './SummaryCodeLensProvider';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 
+// Load env once
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
 
-	dotenv.config({ path: path.resolve(context.extensionPath, '.env') });
-	
-	const provider = new ChatViewProvider(context.extensionUri);
+	// Resolve API key precedence: setting > env var
+	const settingsKey = vscode.workspace.getConfiguration('naruhodocs').get<string>('geminiApiKey');
+	const apiKey = settingsKey || process.env.GOOGLE_API_KEY || '';
+	if (!apiKey) {
+		vscode.window.showWarningMessage('NaruhoDocs: Gemini API key not set. Add in settings (naruhodocs.geminiApiKey) or .env (GOOGLE_API_KEY).');
+	}
 
+	const provider = new ChatViewProvider(context.extensionUri, apiKey);
 	context.subscriptions.push(
 		vscode.window.registerWebviewViewProvider(ChatViewProvider.viewType, provider));
 

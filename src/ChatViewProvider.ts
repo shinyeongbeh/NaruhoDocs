@@ -1,19 +1,27 @@
 import * as vscode from 'vscode';
-
+import { createChat, ChatSession } from './langchain-backend/llm';
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
-
 	public static readonly viewType = 'naruhodocs.chatView';
 
 	private _view?: vscode.WebviewView;
+	private session?: ChatSession;
 
 	constructor(
 		private readonly _extensionUri: vscode.Uri,
-	) { }
+		apiKey?: string
+	) {
+		// Initialize chat function; if apiKey missing it will throw—catch outside if needed.
+		try {
+			this.session = createChat({ apiKey, maxHistoryMessages: 40 });
+		} catch (e) {
+			this.session = undefined;
+		}
+	}
 
 	public resolveWebviewView(
 		webviewView: vscode.WebviewView,
-		context: vscode.WebviewViewResolveContext,
+		_context: vscode.WebviewViewResolveContext,
 		_token: vscode.CancellationToken,
 	) {
 		this._view = webviewView;
@@ -33,13 +41,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 			switch (data.type) {
 				case 'sendMessage':
 					{
-						const userMessage = data.value;
+						const userMessage = data.value as string;
 						try {
-							const botResponse = await this._getGeminiResponse(userMessage);
+							if (!this.session) { throw new Error('API key not configured'); }
+							const botResponse = await this.session.chat(userMessage);
 							this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: botResponse });
-						} catch (error) {
-							this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: 'Error: Unable to connect to Gemini LLM.' });
+						} catch (error: any) {
+							this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: `Error: ${error.message || 'Unable to connect to LLM.'}` });
 						}
+						break;
+					}
+				case 'resetSession':
+					{
+						this.session?.reset();
+						this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: 'Conversation reset.' });
 						break;
 					}
 			}
@@ -50,18 +65,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		if (this._view) {
 			this._view.webview.postMessage(message);
 		}
-	}
-	
-	private async _getGeminiResponse(userMessage: string): Promise<string> {
-		const { GoogleGenAI } = await import("@google/genai");
-		const ai = new GoogleGenAI({
-			apiKey: process.env.GOOGLE_API_KEY || "",
-		});
-		const response = await ai.models.generateContent({
-			model: "gemini-2.5-flash",
-			contents: userMessage
-		});
-		return response.text ?? '';
 	}
 
 	private _getHtmlForWebview(webview: vscode.Webview) {
