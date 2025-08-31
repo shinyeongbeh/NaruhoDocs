@@ -1,3 +1,32 @@
+/* Thread tabs styling */
+#thread-tabs {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-bottom: 8px;
+}
+
+.thread-tab {
+	padding: 4px 12px;
+	border-radius: 6px 6px 0 0;
+	background: var(--vscode-sideBar-background);
+	color: var(--vscode-sideBar-foreground);
+	border: 1px solid var(--vscode-sideBar-border);
+	border-bottom: none;
+	cursor: pointer;
+	font-size: 0.95em;
+	transition: background 0.2s;
+}
+
+.thread-tab:hover {
+	background: var(--vscode-list-hoverBackground);
+}
+
+.thread-tab[style*="font-weight: bold"] {
+	background: var(--vscode-list-activeSelectionBackground);
+	color: var(--vscode-list-activeSelectionForeground);
+	border-bottom: 2px solid var(--vscode-sideBar-border);
+}
 body, html {
 	height: 100%;
 	margin: 0;

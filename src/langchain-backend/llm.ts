@@ -53,3 +53,7 @@ export function createChat(opts: CreateChatOptions = {}): ChatSession {
     }
   };
 }
+
+export const llm = {
+  createChat,
+};
