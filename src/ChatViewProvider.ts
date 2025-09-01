@@ -148,6 +148,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 			</head>
 			<body>
 				<div class="chat-container">
+					<div id="thread-tabs" style="display:flex; gap:4px; margin-bottom:8px;"></div>
 					<div id="chat-messages" class="chat-messages"></div>
 					<div class="chat-input-container">
 						<div class="chat-input-wrapper" style="position:relative; width:100%;">
