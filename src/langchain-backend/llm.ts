@@ -1,12 +1,13 @@
 // Factory for creating a reusable Gemini chat session with in-memory conversation history.
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
-import { AIMessage, HumanMessage, BaseMessage } from '@langchain/core/messages';
+import { AIMessage, HumanMessage, BaseMessage, SystemMessage } from '@langchain/core/messages';
 
 export interface CreateChatOptions {
   apiKey?: string;           // Gemini / Google API key
   model?: string;            // Model name
   temperature?: number;      // Sampling temperature
   maxHistoryMessages?: number; // Cap stored message pairs (human+ai counts as 2)
+  systemMessage?: string;    // Optional initial system message for context
 }
 
 export interface ChatSession {
@@ -29,9 +30,13 @@ export function createChat(opts: CreateChatOptions = {}): ChatSession {
   const maxHistory = opts.maxHistoryMessages ?? 20;
   let history: BaseMessage[] = [];
 
+  // Add initial SystemMessage if provided
+  if (opts.systemMessage) {
+    history.push(new SystemMessage(opts.systemMessage));
+  }
+
   function prune() {
     if (history.length > maxHistory) {
-      // Remove oldest messages while preserving last maxHistory entries
       history = history.slice(history.length - maxHistory);
     }
   }
@@ -47,9 +52,14 @@ export function createChat(opts: CreateChatOptions = {}): ChatSession {
     },
     reset() {
       history = [];
+      // Re-add system message after reset if provided
+      if (opts.systemMessage) {
+        history.push(new SystemMessage(opts.systemMessage));
+      }
     },
     getHistory() {
-      return [...history];
+      // Filter out SystemMessage from history for UI display
+      return history.filter(msg => !(msg instanceof SystemMessage));
     }
   };
 }
