@@ -65,13 +65,26 @@
     }
 
     function showHistory(history) {
-        clearMessages();
-        if (Array.isArray(history)) {
-            history.forEach(msg => {
-                addMessage(msg._getType ? (msg._getType() === 'human' ? 'You' : 'Bot') : (msg.type === 'human' ? 'You' : 'Bot'), msg.text || msg.content || '');
-            });
-        }
+    clearMessages();
+    if (Array.isArray(history)) {
+        console.log('[NaruhoDocs] Showing history:', history);
+        history.forEach(msg => {
+            let sender = 'Bot';
+            let text = '';
+            if (msg.id && msg.id[2] === 'HumanMessage') {
+                sender = 'You';
+                text = msg.kwargs?.content || '';
+            } else if (msg.id && msg.id[2] === 'AIMessage') {
+                sender = 'Bot';
+                text = msg.kwargs?.content || '';
+            } else {
+                // fallback for other formats
+                text = msg.text || msg.content || '';
+            }
+            addMessage(sender, text);
+        });
     }
+}
 
     window.addEventListener('message', event => {
         const message = event.data;

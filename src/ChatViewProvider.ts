@@ -71,7 +71,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 	public createThread(sessionId: string, initialContext: string, title: string) {
 		if (!this.sessions.has(sessionId)) {
 			const session = createChat({ apiKey: this.apiKey, maxHistoryMessages: 40 });
-			// Optionally, prime the session with the document context
 			if (initialContext) {
 				session.chat(`Document loaded: ${title}\n\n${initialContext.substring(0, 1000)}`); // Only send first 1000 chars for context
 			}
