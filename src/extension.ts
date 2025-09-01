@@ -11,16 +11,49 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 // Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
 
-	// Resolve API key precedence: setting > env var
+	// Thread management: map document URI to thread info
+	const threadMap: Map<string, { document: vscode.TextDocument, sessionId: string }> = new Map();
+	let activeThreadId: string | undefined;
+
+	// API key resolution
 	const settingsKey = vscode.workspace.getConfiguration('naruhodocs').get<string>('geminiApiKey');
 	const apiKey = settingsKey || process.env.GOOGLE_API_KEY || '';
 	if (!apiKey) {
 		vscode.window.showWarningMessage('NaruhoDocs: Gemini API key not set. Add in settings (naruhodocs.geminiApiKey) or .env (GOOGLE_API_KEY).');
 	}
 
+	// Multi-thread chat provider
 	const provider = new ChatViewProvider(context.extensionUri, apiKey);
 	context.subscriptions.push(
 		vscode.window.registerWebviewViewProvider(ChatViewProvider.viewType, provider));
+
+	// Listen for document open events to create threads
+	context.subscriptions.push(
+		vscode.workspace.onDidOpenTextDocument((document) => {
+			const fileName = document.fileName.toLowerCase();
+			if (!(fileName.endsWith('.md') || fileName.endsWith('.txt'))) {
+				return;
+			}
+			const uriStr = document.uri.toString();
+			if (!threadMap.has(uriStr)) {
+				const sessionId = uriStr; // Use URI as session/thread id
+				threadMap.set(uriStr, { document, sessionId });
+				provider.createThread(sessionId, document.getText(), document.fileName);
+				activeThreadId = sessionId;
+				provider.setActiveThread(sessionId);
+			}
+		})
+	);
+
+	// Allow switching threads from UI
+	context.subscriptions.push(
+		vscode.commands.registerCommand('naruhodocs.switchThread', (sessionId: string) => {
+			if (threadMap.has(sessionId)) {
+				activeThreadId = sessionId;
+				provider.setActiveThread(sessionId);
+			}
+		})
+	);
 
 	context.subscriptions.push(
 		vscode.languages.registerCodeLensProvider(
