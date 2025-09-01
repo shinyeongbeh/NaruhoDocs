@@ -51,7 +51,6 @@
             tab.className = 'thread-tab';
             if (thread.id === activeThreadId) {
                 tab.style.fontWeight = 'bold';
-                tab.style.background = 'var(--vscode-list-activeSelectionBackground)';
             }
             tab.onclick = () => {
                 vscode.postMessage({ type: 'switchThread', sessionId: thread.id });
@@ -112,7 +111,7 @@
             } else {
                 messageElement.classList.add('bot');
             }
-            messageElement.innerHTML = `<strong>${sender}:</strong> ${message}`;
+            messageElement.innerHTML = `</strong> ${message}`;
             chatMessages.appendChild(messageElement);
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }

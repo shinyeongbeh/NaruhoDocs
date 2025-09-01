@@ -1,20 +1,20 @@
-/* Thread tabs styling */
 #thread-tabs {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 8px;
-	margin-bottom: 8px;
+	margin-bottom: 26px;
+	justify-content: flex-start;
 }
 
 .thread-tab {
-	padding: 4px 12px;
-	border-radius: 6px 6px 0 0;
-	background: var(--vscode-sideBar-background);
+	width: auto;
+  flex: 0 1 auto;
+	padding: 8px 10px;
+	border-radius: 6px;
+	background: color-mix(in srgb, var(--vscode-sideBar-background) 95%, white);
 	color: var(--vscode-sideBar-foreground);
-	border: 1px solid var(--vscode-sideBar-border);
-	border-bottom: none;
 	cursor: pointer;
-	font-size: 0.95em;
+	font-size: 0.80em;
 	transition: background 0.2s;
 }
 
@@ -23,9 +23,8 @@
 }
 
 .thread-tab[style*="font-weight: bold"] {
-	background: var(--vscode-list-activeSelectionBackground);
+	background: color-mix(in srgb, var(--vscode-list-activeSelectionBackground) 95%, white);
 	color: var(--vscode-list-activeSelectionForeground);
-	border-bottom: 2px solid var(--vscode-sideBar-border);
 }
 body, html {
 	height: 100%;
