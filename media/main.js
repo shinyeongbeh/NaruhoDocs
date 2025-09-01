@@ -3,9 +3,13 @@
 // This script will be run within the webview itself
 // It cannot access the main VS Code APIs directly.
 (function () {
-    const vscode = acquireVsCodeApi();
+    /** @type {any} */
+    // @ts-ignore
+    const vscode = window.acquireVsCodeApi ? window.acquireVsCodeApi() : undefined;
 
     const chatMessages = document.getElementById('chat-messages');
+    /** @type {HTMLTextAreaElement | null} */
+    // @ts-ignore
     const chatInput = document.getElementById('chat-input');
     const sendIcon = document.getElementById('send-icon');
 
@@ -33,6 +37,7 @@
         });
     }
 
+
     window.addEventListener('message', event => {
         const message = event.data; // The JSON data our extension sent
         switch (message.type) {
@@ -41,6 +46,14 @@
                 break;
         }
     });
+
+    // Add event listener for create file button
+    const createFileBtn = document.getElementById('create-file-btn');
+    if (createFileBtn) {
+        createFileBtn.addEventListener('click', () => {
+            vscode.postMessage({ type: 'createFile' });
+        });
+    }
 
     function addMessage(sender, message) {
         if (chatMessages) {

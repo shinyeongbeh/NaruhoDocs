@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
-import { ChatViewProvider } from './ChatViewProvider';
-import { SummaryCodeLensProvider } from './SummaryCodeLensProvider';
+import { ChatViewProvider } from './ChatViewProvider.js';
+import { SummaryCodeLensProvider } from './SummaryCodeLensProvider.js';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 
@@ -50,6 +50,16 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('naruhodocs.start', () => {
 			vscode.window.showInformationMessage('NaruhoDocs started!');
 		}));
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand('naruhodocs.createFile', async () => {
+			const uri = await vscode.window.showSaveDialog({ saveLabel: 'Create File' });
+			if (uri) {
+				await vscode.workspace.fs.writeFile(uri, new Uint8Array());
+				vscode.window.showInformationMessage(`File created: ${uri.fsPath}`);
+			}
+		})
+	);
 }
 
 // This method is called when your extension is deactivated

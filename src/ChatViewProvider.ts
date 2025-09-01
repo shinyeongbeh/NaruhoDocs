@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { createChat, ChatSession } from './langchain-backend/llm';
+import { createChat, ChatSession } from './langchain-backend/llm.js';
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
 	public static readonly viewType = 'naruhodocs.chatView';
@@ -57,6 +57,24 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 						this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: 'Conversation reset.' });
 						break;
 					}
+				case 'createFile':
+					{
+						// Create a default file in the workspace root
+						const wsFolders = vscode.workspace.workspaceFolders;
+						if (wsFolders && wsFolders.length > 0) {
+							const wsUri = wsFolders[0].uri;
+							const fileUri = vscode.Uri.joinPath(wsUri, 'NaruhoDocsFile.txt');
+							try {
+								await vscode.workspace.fs.writeFile(fileUri, new Uint8Array());
+								this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: `File created: ${fileUri.fsPath}` });
+							} catch (err: any) {
+								this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: `Error creating file: ${err.message}` });
+							}
+						} else {
+							this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: 'No workspace folder open.' });
+						}
+						break;
+					}
 			}
 		});
 	}
@@ -95,7 +113,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 				<link href="${styleResetUri}" rel="stylesheet">
 				<link href="${styleVSCodeUri}" rel="stylesheet">
 				<link href="${styleMainUri}" rel="stylesheet">
-				
+                
 				<title>NaruhoDocs Chat</title>
 			</head>
 			<body>
@@ -111,6 +129,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 								</svg>
 							</span>
 						</div>
+						<button id="create-file-btn" style="margin-top:10px;">Create Default File</button>
 					</div>
 				</div>
 

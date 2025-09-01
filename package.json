@@ -20,6 +20,10 @@
       {
         "command": "naruhodocs.start",
         "title": "Start NaruhoDocs"
+      },
+      {
+        "command": "naruhodocs.createFile",
+        "title": "Create File (NaruhoDocs)"
       }
     ],
     "viewsContainers": {
