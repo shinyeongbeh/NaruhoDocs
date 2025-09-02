@@ -193,10 +193,6 @@ You have tools to explore the project workspace. **You must use them proactively
 		const styleMarkdownUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'markdown.css'));
 		const nonce = getNonce();
 
-		const generalTabUI = `<div id="general-tab-ui" style="display:none;">
-			<button id="general-tab-button-1" style="margin-top:10px;">Generate Documentation</button>
-			<button id="general-tab-button-2" style="margin-top:10px;">Suggest Templates</button>
-		</div>`;
 
 		return `<!DOCTYPE html>
 			<html lang="en">
@@ -233,8 +229,12 @@ You have tools to explore the project workspace. **You must use them proactively
 							<div id="thread-list-menu"></div>
 						</div>
 					</div>
+					<!-- ...existing chat UI... -->
+					<div id="general-buttons" style="display:none; margin-top:18px; justify-content:center;">
+						<button id="generate-doc-btn" style="margin-right:8px;">Generate Document</button>
+						<button id="suggest-template-btn">Suggest Template</button>
+					</div>
 					<div id="thread-tabs" style="display:flex; gap:4px; margin-bottom:8px;"></div>
-					${generalTabUI}
 					<div id="chat-messages" class="chat-messages"></div>
 					<div class="chat-input-container">
 						<div class="chat-input-wrapper" style="position:relative; width:100%;">
