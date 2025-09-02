@@ -246,8 +246,10 @@
                         renderThreadListMenu();
                     }
                     if (chatInput && message.value) {
-                        chatInput.value = message.value;
-                        sendMessage();
+                        if (chatInput instanceof HTMLTextAreaElement) {
+                            chatInput.value = message.value;
+                            sendMessage();
+                        }
                     }
                     break;
             case 'resetState':  // ✅ reset support
