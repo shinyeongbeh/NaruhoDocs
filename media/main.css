@@ -1,3 +1,60 @@
+/* Hamburger menu open/close visual state */
+#hamburger-menu.open svg {
+	/* Hide hamburger lines, show X */
+	display: none;
+}
+#hamburger-menu.open::before {
+	content: '\2715'; /* Unicode X */
+	font-size: 24px;
+	color: #2196f3;
+	display: inline-block;
+	vertical-align: middle;
+}
+#hamburger-menu {
+	transition: background 0.2s;
+}
+
+#hamburger-menu.open {
+	background: #e3f2fd;
+}
+
+/* Dropdown below hamburger menu */
+#dropdown-container {
+	position: absolute;
+	left: 0;
+	top: 40px;
+	z-index: 10;
+	background: #222;
+	border-radius: 10px;
+	box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+	padding: 10px 0;
+	min-width: 200px;
+	border: 1px solid #333;
+}
+
+#thread-list-menu {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+.thread-list-item {
+	padding: 8px 18px;
+	cursor: pointer;
+	color: #fff;
+	font-size: 1rem;
+	border-radius: 6px;
+	transition: background 0.18s;
+}
+.thread-list-item:hover {
+	background: #1976d2;
+}
+.thread-list-item.active {
+	background: #2196f3;
+	color: #fff;
+	font-weight: 600;
+}
+
+body, html {
 body,
 html {
 	height: 100%;
@@ -118,6 +175,29 @@ html {
 
 	width: 18px;
 	height: 18px;
+}
+
+/* Align hamburger and doc name perfectly parallel */
+.chat-header {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	height: 32px;
+}
+#hamburger-menu {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 32px;
+	height: 32px;
+}
+#current-doc-name {
+	font-weight: 500;
+	font-size: 1rem;
+	display: flex;
+	align-items: center;
+	height: 32px;
+	margin-left: 2px;
 }
 
 .chat-input {

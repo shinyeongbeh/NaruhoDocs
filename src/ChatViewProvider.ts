@@ -220,6 +220,19 @@ You have tools to explore the project workspace. **You must use them proactively
 			</head>
 			<body>
 				<div class="chat-container">
+					<div class="chat-header" style="margin-bottom:12px; position:relative;">
+						<span id="hamburger-menu" style="cursor:pointer; background:#f3f3f3; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.04);">
+							<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+								<line x1="4" y1="7" x2="20" y2="7"></line>
+								<line x1="4" y1="12" x2="20" y2="12"></line>
+								<line x1="4" y1="17" x2="20" y2="17"></line>
+							</svg>
+						</span>
+						<span id="current-doc-name"></span>
+						<div id="dropdown-container" style="display:none; position:absolute; left:0; top:40px; z-index:10;">
+							<div id="thread-list-menu"></div>
+						</div>
+					</div>
 					<div id="thread-tabs" style="display:flex; gap:4px; margin-bottom:8px;"></div>
 					${generalTabUI}
 					<div id="chat-messages" class="chat-messages"></div>

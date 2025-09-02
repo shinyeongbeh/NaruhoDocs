@@ -10,7 +10,11 @@
     const chatMessages = document.getElementById('chat-messages');
     const chatInput = document.getElementById('chat-input'); // HTMLTextAreaElement
     const sendIcon = document.getElementById('send-icon');
-    const threadTabs = document.getElementById('thread-tabs');
+    const hamburgerMenu = document.getElementById('hamburger-menu');
+    const dropdownContainer = document.getElementById('dropdown-container');
+    const threadDropdown = document.getElementById('thread-dropdown'); // No longer used
+    const threadListMenu = document.getElementById('thread-list-menu');
+    const currentDocName = document.getElementById('current-doc-name');
 
     let activeThreadId = undefined;
     let threads = [];
@@ -39,24 +43,46 @@
         });
     }
 
-    function renderThreadTabs() {
-        if (!threadTabs) { return; }
-        threadTabs.innerHTML = '';
-        threads.forEach(thread => {
-            const tab = document.createElement('button');
-            // Show only file name, tooltip full path
-            const fileName = thread.title.split(/[/\\]/).pop();
-            tab.textContent = fileName;
-            tab.title = thread.title; // Tooltip full path
-            tab.className = 'thread-tab';
-            if (thread.id === activeThreadId) {
-                tab.style.fontWeight = 'bold';
+    function renderThreadListMenu() {
+        if (!threadListMenu) return;
+        threadListMenu.innerHTML = '';
+        let activeTitle = '';
+        let foundActive = false;
+        // Always keep General thread at the top, and ensure it exists in the dropdown
+        let generalThread = threads.find(t => t.id === 'naruhodocs-general-thread');
+        if (!generalThread) {
+            generalThread = { id: 'naruhodocs-general-thread', title: 'General Purpose' };
+        }
+        const otherThreads = threads.filter(t => t.id !== 'naruhodocs-general-thread');
+        const orderedThreads = [generalThread, ...otherThreads];
+
+        orderedThreads.forEach(thread => {
+            let fileName = thread.title.split(/[/\\]/).pop();
+            if (thread.id === 'naruhodocs-general-thread') {
+                fileName = 'General';
             }
-            tab.onclick = () => {
+            const item = document.createElement('div');
+            item.className = 'thread-list-item';
+            item.textContent = fileName;
+            item.title = thread.title;
+            if (thread.id === activeThreadId) {
+                item.classList.add('active');
+                activeTitle = fileName;
+                foundActive = true;
+            }
+            item.addEventListener('click', () => {
                 vscode.postMessage({ type: 'switchThread', sessionId: thread.id });
-            };
-            threadTabs.appendChild(tab);
+                if (dropdownContainer) dropdownContainer.style.display = 'none';
+            });
+            threadListMenu.appendChild(item);
         });
+        // Fallback: if no active thread, show General
+        if (!foundActive) {
+            activeTitle = 'General';
+        }
+        if (currentDocName) {
+            currentDocName.textContent = activeTitle;
+        }
     }
 
     function clearMessages() {
@@ -101,7 +127,10 @@
             case 'threadList':
                 threads = message.threads || [];
                 activeThreadId = message.activeThreadId;
-                renderThreadTabs();
+                renderThreadListMenu();
+                // Always close dropdown and set hamburger to close mode when thread list updates
+                if (dropdownContainer) dropdownContainer.style.display = 'none';
+                if (hamburgerMenu) hamburgerMenu.classList.remove('open');
                 break;
             case 'showHistory':
                 showHistory(message.history);
@@ -112,11 +141,24 @@
         }
     });
 
+    // No dropdown change handler needed
+
+    if (hamburgerMenu && dropdownContainer) {
+        hamburgerMenu.addEventListener('click', () => {
+            const isOpen = dropdownContainer.style.display === 'none';
+            dropdownContainer.style.display = isOpen ? 'block' : 'none';
+            hamburgerMenu.classList.toggle('open', isOpen);
+        });
+    }
+
     // Add event listener for create file button
     const createFileBtn = document.getElementById('create-file-btn');
     if (createFileBtn) {
         createFileBtn.addEventListener('click', () => {
             vscode.postMessage({ type: 'createFile' });
+            // Always close dropdown and set hamburger to close mode
+            if (dropdownContainer) dropdownContainer.style.display = 'none';
+            if (hamburgerMenu) hamburgerMenu.classList.remove('open');
         });
     }
 
