@@ -98,8 +98,8 @@ export function activate(context: vscode.ExtensionContext) {
 				}
 				provider.setActiveThread(sessionId);
 
-				// Send the prompt to the backend via the webview
-				provider.postMessage({ type: 'sendMessage', value: prompt });
+				// Send the prompt to the webview so main.js's sendMessage() handles it
+				provider.sendMessageToThread(sessionId, prompt);
 			});
 		})
 	);

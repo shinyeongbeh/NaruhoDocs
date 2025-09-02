@@ -3,6 +3,30 @@ import { createChat, ChatSession } from './langchain-backend/llm.js';
 import { SystemMessages } from './SystemMessages';
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
+	/**
+	 * Send a message to a specific thread and display the bot response.
+	 */
+	public async sendMessageToThread(sessionId: string, prompt: string) {
+    this.setActiveThread(sessionId);
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+        this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: 'No active thread.' });
+        return;
+    }
+    // Immediately show user message
+    this._view?.webview.postMessage({ type: 'addMessage', sender: 'You', message: prompt });
+    // Then asynchronously get and show bot response
+    session.chat(prompt)
+        .then(async botResponse => {
+            this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: botResponse });
+            const history = session.getHistory();
+            await this.context.workspaceState.update(`thread-history-${sessionId}`, history);
+        })
+        .catch((error: any) => {
+            this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: `Error: ${error.message || 'Unable to connect to LLM.'}` });
+        });
+}
+	
 	public static readonly viewType = 'naruhodocs.chatView';
 
 	private _view?: vscode.WebviewView;

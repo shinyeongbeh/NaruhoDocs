@@ -232,6 +232,17 @@
             case 'toggleGeneralTabUI':
                 toggleGeneralTabUI(message.visible);
                 break;
+                case 'sendMessage':
+                    // If sessionId is provided, set active thread
+                    if (message.sessionId) {
+                        activeThreadId = message.sessionId;
+                        renderThreadListMenu();
+                    }
+                    if (chatInput && message.value) {
+                        chatInput.value = message.value;
+                        sendMessage();
+                    }
+                    break;
             case 'resetState':  // ✅ reset support
                 vscode.setState(null);
                 if (chatMessages) chatMessages.innerHTML = '';
