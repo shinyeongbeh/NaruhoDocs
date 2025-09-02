@@ -5,18 +5,23 @@
 	margin-top: 18px;
 	margin-bottom: 8px;
 }
+
 #general-buttons button {
 	background: #2196f3;
 	color: #fff;
-	border: none;
+	border: solid 1px #2196f3;
 	border-radius: 6px;
 	padding: 8px 18px;
 	font-size: 1rem;
 	cursor: pointer;
-	transition: background 0.18s;
+	transition: background 0.18s, color 0.18s;
+	margin-bottom: 10px;
+	font-weight: 500;
 }
 #general-buttons button:hover {
 	background: #1976d2;
+	color: #fff;
+	border-color: #1976d2;
 }
 /* Hamburger menu open/close visual state */
 #hamburger-menu.open svg {
@@ -129,52 +134,6 @@ html {
 	color: var(--vscode-list-inactiveSelectionForeground);
 	align-self: flex-start;
 	margin-right: auto;
-}
-
-#thread-tabs {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 8px;
-	margin-bottom: 26px;
-	justify-content: flex-start;
-}
-
-.thread-tab {
-	width: auto;
-	flex: 0 1 auto;
-	padding: 8px 10px;
-	border-radius: 6px;
-	background: color-mix(in srgb, var(--vscode-sideBar-background) 95%, white);
-	color: var(--vscode-sideBar-foreground);
-	cursor: pointer;
-	font-size: 0.80em;
-	transition: background 0.2s;
-}
-
-.thread-tab:hover {
-	background: var(--vscode-list-hoverBackground);
-}
-
-.thread-tab[style*="font-weight: bold"] {
-	background: color-mix(in srgb, var(--vscode-list-activeSelectionBackground) 95%, white);
-	color: var(--vscode-list-activeSelectionForeground);
-}
-
-#general-tab-ui {
-	margin-bottom: 16px;
-}
-
-#general-tab-ui button {
-	display: inline-block;
-	background: none;
-	color: var(--vscode-button-foreground);
-	border: solid 1px;
-	border-color: var(--vscode-button-foreground);
-	border-radius: 4px;
-	padding: 6px 12px;
-	margin-bottom: 10px;
-	cursor: pointer;
-	font-size: 0.9em;
 }
 
 .chat-input-container {
