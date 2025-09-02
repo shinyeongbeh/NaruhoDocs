@@ -10,7 +10,11 @@
     const chatMessages = document.getElementById('chat-messages');
     const chatInput = document.getElementById('chat-input'); // HTMLTextAreaElement
     const sendIcon = document.getElementById('send-icon');
-    const threadTabs = document.getElementById('thread-tabs');
+    const hamburgerMenu = document.getElementById('hamburger-menu');
+    const dropdownContainer = document.getElementById('dropdown-container');
+    const threadDropdown = document.getElementById('thread-dropdown'); // No longer used
+    const threadListMenu = document.getElementById('thread-list-menu');
+    const currentDocName = document.getElementById('current-doc-name');
 
     let activeThreadId = undefined;
     let threads = [];
@@ -39,24 +43,35 @@
         });
     }
 
-    function renderThreadTabs() {
-        if (!threadTabs) { return; }
-        threadTabs.innerHTML = '';
+    function renderThreadListMenu() {
+        if (!threadListMenu) return;
+        threadListMenu.innerHTML = '';
+        let activeTitle = '';
+        let foundActive = false;
         threads.forEach(thread => {
-            const tab = document.createElement('button');
-            // Show only file name, tooltip full path
             const fileName = thread.title.split(/[/\\]/).pop();
-            tab.textContent = fileName;
-            tab.title = thread.title; // Tooltip full path
-            tab.className = 'thread-tab';
+            const item = document.createElement('div');
+            item.className = 'thread-list-item';
+            item.textContent = fileName;
+            item.title = thread.title;
             if (thread.id === activeThreadId) {
-                tab.style.fontWeight = 'bold';
+                item.classList.add('active');
+                activeTitle = fileName;
+                foundActive = true;
             }
-            tab.onclick = () => {
+            item.addEventListener('click', () => {
                 vscode.postMessage({ type: 'switchThread', sessionId: thread.id });
-            };
-            threadTabs.appendChild(tab);
+                if (dropdownContainer) dropdownContainer.style.display = 'none';
+            });
+            threadListMenu.appendChild(item);
         });
+        // Fallback: if no active thread, show first thread name
+        if (!foundActive && threads.length > 0) {
+            activeTitle = threads[0].title.split(/[/\\]/).pop();
+        }
+        if (currentDocName) {
+            currentDocName.textContent = activeTitle;
+        }
     }
 
     function clearMessages() {
@@ -94,7 +109,10 @@
             case 'threadList':
                 threads = message.threads || [];
                 activeThreadId = message.activeThreadId;
-                renderThreadTabs();
+                renderThreadListMenu();
+                // Always close dropdown and set hamburger to close mode when thread list updates
+                if (dropdownContainer) dropdownContainer.style.display = 'none';
+                if (hamburgerMenu) hamburgerMenu.classList.remove('open');
                 break;
             case 'showHistory':
                 showHistory(message.history);
@@ -102,11 +120,24 @@
         }
     });
 
+    // No dropdown change handler needed
+
+    if (hamburgerMenu && dropdownContainer) {
+        hamburgerMenu.addEventListener('click', () => {
+            const isOpen = dropdownContainer.style.display === 'none';
+            dropdownContainer.style.display = isOpen ? 'block' : 'none';
+            hamburgerMenu.classList.toggle('open', isOpen);
+        });
+    }
+
     // Add event listener for create file button
     const createFileBtn = document.getElementById('create-file-btn');
     if (createFileBtn) {
         createFileBtn.addEventListener('click', () => {
             vscode.postMessage({ type: 'createFile' });
+            // Always close dropdown and set hamburger to close mode
+            if (dropdownContainer) dropdownContainer.style.display = 'none';
+            if (hamburgerMenu) hamburgerMenu.classList.remove('open');
         });
     }
 
