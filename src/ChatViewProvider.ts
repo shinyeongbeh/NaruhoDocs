@@ -18,6 +18,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		context?: vscode.ExtensionContext
 	) {
 		this.context = context!;
+
+		// Create the general-purpose thread on initialization
+		const generalThreadId = 'naruhodocs-general-thread';
+		const generalThreadTitle = 'General Purpose';
+		const sysMessage = 'You are an AI assistant for general-purpose use. Be helpful, concise, and accurate.';
+		const session = createChat({ apiKey: this.apiKey, maxHistoryMessages: 40, systemMessage: sysMessage });
+		this.sessions.set(generalThreadId, session);
+		this.threadTitles.set(generalThreadId, generalThreadTitle);
+		this.activeThreadId = generalThreadId; // Set as the default active thread
 	}
 
 	public async resolveWebviewView(
@@ -133,6 +142,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		if (this._view) {
 			const threads = Array.from(this.threadTitles.entries()).map(([id, title]) => ({ id, title }));
 			this._view.webview.postMessage({ type: 'threadList', threads, activeThreadId: this.activeThreadId });
+
+			// Show or hide general tab UI based on active thread
+			const isGeneralTab = this.activeThreadId === 'naruhodocs-general-thread';
+			this._view.webview.postMessage({ type: 'toggleGeneralTabUI', visible: isGeneralTab });
 		}
 	}
 
@@ -142,6 +155,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		const styleVSCodeUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'vscode.css'));
 		const styleMainUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.css'));
 		const nonce = getNonce();
+
+		const generalTabUI = `<div id="general-tab-ui" style="display:none;">
+			<button id="general-tab-button-1" style="margin-top:10px;">Generate Documentation</button>
+			<button id="general-tab-button-2" style="margin-top:10px;">Suggest Templates</button>
+		</div>`;
 
 		return `<!DOCTYPE html>
 			<html lang="en">
@@ -165,6 +183,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 			<body>
 				<div class="chat-container">
 					<div id="thread-tabs" style="display:flex; gap:4px; margin-bottom:8px;"></div>
+					${generalTabUI}
 					<div id="chat-messages" class="chat-messages"></div>
 					<div class="chat-input-container">
 						<div class="chat-input-wrapper" style="position:relative; width:100%;">

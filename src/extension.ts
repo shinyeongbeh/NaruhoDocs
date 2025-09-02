@@ -107,6 +107,17 @@ export function activate(context: vscode.ExtensionContext) {
 			}
 		})
 	);
+
+	// Initialize the general-purpose thread
+	const generalThreadId = 'naruhodocs-general-thread';
+	const generalThreadTitle = 'General Purpose';
+	if (!threadMap.has(generalThreadId)) {
+		const sysMessage = 'You are an AI assistant for general-purpose use. Be helpful, concise, and accurate.';
+		threadMap.set(generalThreadId, { document: undefined as any, sessionId: generalThreadId });
+		provider.createThread(generalThreadId, sysMessage, generalThreadTitle);
+		activeThreadId = generalThreadId;
+		provider.setActiveThread(generalThreadId);
+	}
 }
 
 // This method is called when your extension is deactivated
