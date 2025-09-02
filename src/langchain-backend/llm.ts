@@ -1,6 +1,10 @@
 // Factory for creating a reusable Gemini chat session with in-memory conversation history.
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { AIMessage, HumanMessage, BaseMessage, SystemMessage } from '@langchain/core/messages';
+import { createReactAgent } from '@langchain/langgraph/prebuilt';
+import { tool } from '@langchain/core/tools';
+import { z } from 'zod';
+import { RetrieveWorkspaceFilenamesTool, RetrieveFileContentTool } from './features';
 
 export interface CreateChatOptions {
   apiKey?: string;           // Gemini / Google API key
@@ -14,6 +18,7 @@ export interface ChatSession {
   chat(userMessage: string): Promise<string>;
   reset(): void;
   getHistory(): BaseMessage[]; // optional accessor
+  setHistory(historyArr: BaseMessage[]): void; // new method for restoring history
 }
 
 export function createChat(opts: CreateChatOptions = {}): ChatSession {
@@ -35,6 +40,40 @@ export function createChat(opts: CreateChatOptions = {}): ChatSession {
     history.push(new SystemMessage(opts.systemMessage));
   }
 
+  // Define tools using LangGraph.js
+  const retrieveFilenames = tool(
+    async () => {
+      console.log('Tool used: retrieveFilenames');
+      const toolInstance = new RetrieveWorkspaceFilenamesTool();
+      return await toolInstance._call();
+    },
+    {
+      name: 'retrieveFilenames',
+      description: 'Retrieve all filenames in the workspace.',
+    }
+  );
+
+  const retrieveFileContent = tool(
+    async ({ filePath }) => {
+      console.log(`Tool used: retrieveFileContent with filePath=${filePath}`);
+      const toolInstance = new RetrieveFileContentTool();
+      return await toolInstance._call(filePath);
+    },
+    {
+      name: 'retrieveFileContent',
+      description: 'Retrieve the content of a specific file.',
+      schema: z.object({
+        filePath: z.string().describe('The path of the file to read.'),
+      }),
+    }
+  );
+
+  // Create LangGraph agent
+  const agent = createReactAgent({
+    llm: model,
+    tools: [retrieveFilenames, retrieveFileContent],
+  });
+
   function prune() {
     if (history.length > maxHistory) {
       history = history.slice(history.length - maxHistory);
@@ -45,10 +84,36 @@ export function createChat(opts: CreateChatOptions = {}): ChatSession {
     async chat(userMessage: string): Promise<string> {
       history.push(new HumanMessage(userMessage));
       prune();
-      const response = await model.invoke(history);
-      history.push(new AIMessage(response.text || ''));
+
+      // Use LangGraph agent to process the user message
+      const response = await agent.invoke({
+        messages: history.map(msg => ({
+          role: msg instanceof HumanMessage ? 'user' : 'assistant',
+          content: msg.text,
+        })),
+      });
+
+      const lastMessage = response.messages[response.messages.length - 1];
+
+      // Safely extract text/content
+      let aiText = '';
+      if (typeof lastMessage.content === 'string') {
+        aiText = lastMessage.content;
+      } else if (Array.isArray(lastMessage.content)) {
+        aiText = lastMessage.content.map(c =>
+          typeof c === 'string' ? c : JSON.stringify(c)
+        ).join(' ');
+      } else {
+        aiText = JSON.stringify(lastMessage.content);
+      }
+
+      // Save AI response to history
+      const aiMessage = new AIMessage(aiText);
+      history.push(aiMessage);
+
       prune();
-      return response.text || '';
+
+      return aiText;
     },
     reset() {
       history = [];
@@ -60,6 +125,19 @@ export function createChat(opts: CreateChatOptions = {}): ChatSession {
     getHistory() {
       // Filter out SystemMessage from history for UI display
       return history.filter(msg => !(msg instanceof SystemMessage));
+    },
+    setHistory(historyArr: BaseMessage[]) {
+      // Restore history directly (excluding system message)
+      history = [];
+      if (opts.systemMessage) {
+        history.push(new SystemMessage(opts.systemMessage));
+      }
+      for (const msg of historyArr) {
+        const type = (msg as any).type;
+        const text = (msg as any).text;
+        if (type === 'human') { history.push(new HumanMessage(text)); }
+        if (type === 'ai') { history.push(new AIMessage(text)); }
+      }
     }
   };
 }

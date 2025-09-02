@@ -100,6 +100,13 @@
     }
 }
 
+    function toggleGeneralTabUI(visible) {
+        const generalTabUI = document.getElementById('general-tab-ui');
+        if (generalTabUI) {
+            generalTabUI.style.display = visible ? 'block' : 'none';
+        }
+    }
+
     window.addEventListener('message', event => {
         const message = event.data;
         switch (message.type) {
@@ -116,6 +123,9 @@
                 break;
             case 'showHistory':
                 showHistory(message.history);
+                break;
+            case 'toggleGeneralTabUI':
+                toggleGeneralTabUI(message.visible);
                 break;
         }
     });

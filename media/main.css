@@ -102,6 +102,52 @@ body, html {
 	margin-right: auto;
 }
 
+#thread-tabs {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-bottom: 26px;
+	justify-content: flex-start;
+}
+
+.thread-tab {
+	width: auto;
+  flex: 0 1 auto;
+	padding: 8px 10px;
+	border-radius: 6px;
+	background: color-mix(in srgb, var(--vscode-sideBar-background) 95%, white);
+	color: var(--vscode-sideBar-foreground);
+	cursor: pointer;
+	font-size: 0.80em;
+	transition: background 0.2s;
+}
+
+.thread-tab:hover {
+	background: var(--vscode-list-hoverBackground);
+}
+
+.thread-tab[style*="font-weight: bold"] {
+	background: color-mix(in srgb, var(--vscode-list-activeSelectionBackground) 95%, white);
+	color: var(--vscode-list-activeSelectionForeground);
+}
+
+#general-tab-ui {
+	margin-bottom: 16px;
+}
+
+#general-tab-ui button {
+	display: inline-block;
+	background: none;
+	color: var(--vscode-button-foreground);
+	border: solid 1px;
+	border-color: var(--vscode-button-foreground);
+	border-radius: 4px;
+	padding: 6px 12px;
+	margin-bottom: 10px;
+	cursor: pointer;
+	font-size: 0.9em;
+}
+
 .chat-input-container {
 	display: flex;
 	align-items: center;
@@ -165,3 +211,5 @@ body, html {
 	box-sizing: border-box;
 	line-height: 1.8;
 }
+
+

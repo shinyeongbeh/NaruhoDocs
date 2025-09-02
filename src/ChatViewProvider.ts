@@ -11,12 +11,60 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 	private activeThreadId?: string;
 	private threadTitles: Map<string, string> = new Map(); // sessionId -> document title
 
+	private context: vscode.ExtensionContext;
 	constructor(
 		private readonly _extensionUri: vscode.Uri,
-		private apiKey?: string
-	) {}
+		private apiKey?: string,
+		context?: vscode.ExtensionContext
+	) {
+		this.context = context!;
 
-	public resolveWebviewView(
+		// Create the general-purpose thread on initialization
+		const generalThreadId = 'naruhodocs-general-thread';
+		const generalThreadTitle = 'General Purpose';
+		const sysMessage = `You are an expert AI software engineer specializing in creating world-class code documentation and clarity. You are embedded within the user's IDE, and your mission is to be their dedicated partner in making code understandable, maintainable, and easy to onboard.
+
+**Core Context Awareness:**
+You MUST heavily prioritize the user's immediate context. This includes:
+1.  **Selected Code:** If the user has highlighted a function, class, or block of code, your response must focus specifically on that selection.
+2.  **Project Structure:** Understand the relationships between files and modules to provide holistic explanations.
+3.  **Programming Language & Frameworks:** Tailor your output to the idiomatic style and best practices of the detected language (e.g., Python/Django, TypeScript/React).
+
+---
+
+## Proactive Tool Usage 🛠️
+You have tools to explore the project workspace. **You must use them proactively whenever more context is needed to provide a complete and accurate answer.** Do not wait for the user to tell you to use them.
+
+**Available Tools:**
+* retrieve_workspace_filenames: Returns a list of all file paths in the current workspace.
+* retrieve_file_content: Returns the full string content of a specified file.
+
+**Your Strategy:**
+* **For Broad Questions:** When a user asks about a feature (e.g., "Explain the authentication flow"), use retrieve_workspace_filenames to find relevant files, then retrieve_file_content to read them and synthesize a comprehensive answer.
+* **For Code Dependencies:** When explaining a piece of code that imports or references other project files, you **must** use retrieve_file_content to read those dependent files. This is critical for understanding the full context and providing an accurate explanation.
+* **Don't Ask, Find:** Never ask the user to provide code from another file if you can retrieve it yourself with your tools. Your goal is to gather all necessary information autonomously.
+
+---
+
+**Key Tasks & Capabilities:**
+* **Generate Documentation:** Create clear, complete docstrings/comments for functions, classes, and modules. Automatically infer parameters, return types, and potential exceptions from the code.
+* **Explain Code:** Break down complex algorithms, logic flows, or legacy code into simple, understandable explanations. Focus on the "why" behind the code, not just the "what."
+* **Improve Existing Docs:** Analyze existing comments and docstrings, then suggest improvements for clarity, accuracy, and completeness.
+* **Create README Sections:** Generate usage examples, API summaries, or installation guides for a project's README.md file based on the source code.
+
+**Rules of Engagement:**
+* **Be Proactive & Precise:** Provide the documentation or explanation directly. Don't be overly chatty.
+* **Use Markdown:** All your responses should be formatted with Markdown for readability. Use code blocks for code snippets.
+* **Ask for Clarification (If Necessary):** If a user's request is ambiguous and the context is insufficient, ask a targeted question to get the information you need.
+* **Assume Best Practices:** Generate documentation that aligns with industry best practices like PEP 257 for Python or JSDoc for JavaScript/TypeScript.`;		
+		
+	const session = createChat({ apiKey: this.apiKey, maxHistoryMessages: 40, systemMessage: sysMessage });
+		this.sessions.set(generalThreadId, session);
+		this.threadTitles.set(generalThreadId, generalThreadTitle);
+		this.activeThreadId = generalThreadId; // Set as the default active thread
+	}
+
+	public async resolveWebviewView(
 		webviewView: vscode.WebviewView,
 		_context: vscode.WebviewViewResolveContext,
 		_token: vscode.CancellationToken,
@@ -30,6 +78,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
 		webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
 
+		// Restore threads from workspaceState
+		const keys = Object.keys(this.context.workspaceState.keys ? this.context.workspaceState.keys() : {});
+		await this.restoreThreads(keys);
+
 		webviewView.webview.onDidReceiveMessage(async data => {
 			const session = this.activeThreadId ? this.sessions.get(this.activeThreadId) : undefined;
 			switch (data.type) {
@@ -39,6 +91,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 						if (!session) { throw new Error('No active thread'); }
 						const botResponse = await session.chat(userMessage);
 						this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: botResponse });
+						// Save history after message
+						if (this.activeThreadId && session) {
+							const history = session.getHistory();
+							await this.context.workspaceState.update(`thread-history-${this.activeThreadId}`, history);
+						}
 					} catch (error: any) {
 						this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: `Error: ${error.message || 'Unable to connect to LLM.'}` });
 					}
@@ -47,6 +104,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 				case 'resetSession': {
 					if (session) { session.reset(); }
 					this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: 'Conversation reset.' });
+					// Clear history in storage
+					if (this.activeThreadId) {
+						await this.context.workspaceState.update(`thread-history-${this.activeThreadId}`, []);
+					}
 					break;
 				}
 				case 'switchThread': {
@@ -74,9 +135,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 					}
 			}
 		});
-
-		// On initial load, send thread list and active thread
-		this._postThreadList();
 	}
 
 	public postMessage(message: any) {
@@ -89,10 +147,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 	public createThread(sessionId: string, initialContext: string, title: string) {
 		if (!this.sessions.has(sessionId)) {
 			const sysMessage = `You are an AI assistant that helps answer anything about this document. Be helpful, concise, and accurate. The document:  ${title}\n\n${initialContext}`;
+			// Try to load history from workspaceState
+			const savedHistory = this.context.workspaceState.get<any[]>(`thread-history-${sessionId}`);
 			const session = createChat({ apiKey: this.apiKey, maxHistoryMessages: 40, systemMessage: sysMessage });
-			// if (initialContext) {
-			// 	session.chat(`Document loaded: ${title}\n\n${initialContext.substring(0, 1000)}`); // Only send first 1000 chars for context
-			// }
+			if (savedHistory && Array.isArray(savedHistory)) {
+				session.setHistory(savedHistory);
+			}
 			this.sessions.set(sessionId, session);
 			this.threadTitles.set(sessionId, title);
 			this._postThreadList();
@@ -117,6 +177,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		if (this._view) {
 			const threads = Array.from(this.threadTitles.entries()).map(([id, title]) => ({ id, title }));
 			this._view.webview.postMessage({ type: 'threadList', threads, activeThreadId: this.activeThreadId });
+
+			// Show or hide general tab UI based on active thread
+			const isGeneralTab = this.activeThreadId === 'naruhodocs-general-thread';
+			this._view.webview.postMessage({ type: 'toggleGeneralTabUI', visible: isGeneralTab });
 		}
 	}
 
@@ -126,6 +190,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		const styleVSCodeUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'vscode.css'));
 		const styleMainUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.css'));
 		const nonce = getNonce();
+
+		const generalTabUI = `<div id="general-tab-ui" style="display:none;">
+			<button id="general-tab-button-1" style="margin-top:10px;">Generate Documentation</button>
+			<button id="general-tab-button-2" style="margin-top:10px;">Suggest Templates</button>
+		</div>`;
 
 		return `<!DOCTYPE html>
 			<html lang="en">
@@ -161,6 +230,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 							<div id="thread-list-menu"></div>
 						</div>
 					</div>
+					<div id="thread-tabs" style="display:flex; gap:4px; margin-bottom:8px;"></div>
+					${generalTabUI}
 					<div id="chat-messages" class="chat-messages"></div>
 					<div class="chat-input-container">
 						<div class="chat-input-wrapper" style="position:relative; width:100%;">
@@ -179,6 +250,26 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 				<script nonce="${nonce}" src="${scriptUri}"></script>
 			</body>
 			</html>`;
+	}
+
+	private async restoreThreads(keys: string[]) {
+		for (const key of keys) {
+			if (key.startsWith('thread-history-')) {
+				const sessionId = key.replace('thread-history-', '');
+				const savedHistory = this.context.workspaceState.get<any[]>(key);
+				const title = sessionId.split('/').pop() || sessionId;
+				let documentText = '';
+				try {
+					const uri = vscode.Uri.parse(sessionId);
+					const doc = await vscode.workspace.openTextDocument(uri);
+					documentText = doc.getText();
+				} catch (e) {
+					documentText = '';
+				}
+				this.createThread(sessionId, documentText, title);
+			}
+		}
+		this._postThreadList();
 	}
 }
 
