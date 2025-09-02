@@ -11,12 +11,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 	private activeThreadId?: string;
 	private threadTitles: Map<string, string> = new Map(); // sessionId -> document title
 
+	private context: vscode.ExtensionContext;
 	constructor(
 		private readonly _extensionUri: vscode.Uri,
-		private apiKey?: string
-	) {}
+		private apiKey?: string,
+		context?: vscode.ExtensionContext
+	) {
+		this.context = context!;
+	}
 
-	public resolveWebviewView(
+	public async resolveWebviewView(
 		webviewView: vscode.WebviewView,
 		_context: vscode.WebviewViewResolveContext,
 		_token: vscode.CancellationToken,
@@ -30,6 +34,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
 		webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
 
+		// Restore threads from workspaceState
+		const keys = Object.keys(this.context.workspaceState.keys ? this.context.workspaceState.keys() : {});
+		await this.restoreThreads(keys);
+
 		webviewView.webview.onDidReceiveMessage(async data => {
 			const session = this.activeThreadId ? this.sessions.get(this.activeThreadId) : undefined;
 			switch (data.type) {
@@ -39,6 +47,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 						if (!session) { throw new Error('No active thread'); }
 						const botResponse = await session.chat(userMessage);
 						this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: botResponse });
+						// Save history after message
+						if (this.activeThreadId && session) {
+							const history = session.getHistory();
+							await this.context.workspaceState.update(`thread-history-${this.activeThreadId}`, history);
+						}
 					} catch (error: any) {
 						this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: `Error: ${error.message || 'Unable to connect to LLM.'}` });
 					}
@@ -47,6 +60,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 				case 'resetSession': {
 					if (session) { session.reset(); }
 					this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: 'Conversation reset.' });
+					// Clear history in storage
+					if (this.activeThreadId) {
+						await this.context.workspaceState.update(`thread-history-${this.activeThreadId}`, []);
+					}
 					break;
 				}
 				case 'switchThread': {
@@ -74,9 +91,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 					}
 			}
 		});
-
-		// On initial load, send thread list and active thread
-		this._postThreadList();
 	}
 
 	public postMessage(message: any) {
@@ -89,10 +103,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 	public createThread(sessionId: string, initialContext: string, title: string) {
 		if (!this.sessions.has(sessionId)) {
 			const sysMessage = `You are an AI assistant that helps answer anything about this document. Be helpful, concise, and accurate. The document:  ${title}\n\n${initialContext}`;
+			// Try to load history from workspaceState
+			const savedHistory = this.context.workspaceState.get<any[]>(`thread-history-${sessionId}`);
 			const session = createChat({ apiKey: this.apiKey, maxHistoryMessages: 40, systemMessage: sysMessage });
-			// if (initialContext) {
-			// 	session.chat(`Document loaded: ${title}\n\n${initialContext.substring(0, 1000)}`); // Only send first 1000 chars for context
-			// }
+			if (savedHistory && Array.isArray(savedHistory)) {
+				session.setHistory(savedHistory);
+			}
 			this.sessions.set(sessionId, session);
 			this.threadTitles.set(sessionId, title);
 			this._postThreadList();
@@ -167,6 +183,26 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 				<script nonce="${nonce}" src="${scriptUri}"></script>
 			</body>
 			</html>`;
+	}
+
+	private async restoreThreads(keys: string[]) {
+		for (const key of keys) {
+			if (key.startsWith('thread-history-')) {
+				const sessionId = key.replace('thread-history-', '');
+				const savedHistory = this.context.workspaceState.get<any[]>(key);
+				const title = sessionId.split('/').pop() || sessionId;
+				let documentText = '';
+				try {
+					const uri = vscode.Uri.parse(sessionId);
+					const doc = await vscode.workspace.openTextDocument(uri);
+					documentText = doc.getText();
+				} catch (e) {
+					documentText = '';
+				}
+				this.createThread(sessionId, documentText, title);
+			}
+		}
+		this._postThreadList();
 	}
 }
 

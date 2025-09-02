@@ -14,6 +14,7 @@ export interface ChatSession {
   chat(userMessage: string): Promise<string>;
   reset(): void;
   getHistory(): BaseMessage[]; // optional accessor
+  setHistory(historyArr: BaseMessage[]): void; // new method for restoring history
 }
 
 export function createChat(opts: CreateChatOptions = {}): ChatSession {
@@ -60,6 +61,19 @@ export function createChat(opts: CreateChatOptions = {}): ChatSession {
     getHistory() {
       // Filter out SystemMessage from history for UI display
       return history.filter(msg => !(msg instanceof SystemMessage));
+    },
+    setHistory(historyArr: BaseMessage[]) {
+      // Restore history directly (excluding system message)
+      history = [];
+      if (opts.systemMessage) {
+        history.push(new SystemMessage(opts.systemMessage));
+      }
+      for (const msg of historyArr) {
+        const type = (msg as any).type;
+        const text = (msg as any).text;
+        if (type === 'human') { history.push(new HumanMessage(text)); }
+        if (type === 'ai') { history.push(new AIMessage(text)); }
+      }
     }
   };
 }

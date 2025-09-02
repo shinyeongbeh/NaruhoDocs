@@ -23,7 +23,21 @@ export function activate(context: vscode.ExtensionContext) {
 	}
 
 	// Multi-thread chat provider
-	const provider = new ChatViewProvider(context.extensionUri, apiKey);
+	const provider = new ChatViewProvider(context.extensionUri, apiKey, context);
+	const openDocs = vscode.workspace.textDocuments;
+	for (const document of openDocs) {
+		const fileName = document.fileName.toLowerCase();
+		if (fileName.endsWith('.md') || fileName.endsWith('.txt')) {
+			const uriStr = document.uri.toString();
+			if (!threadMap.has(uriStr)) {
+				const sessionId = uriStr;
+				threadMap.set(uriStr, { document, sessionId });
+				provider.createThread(sessionId, document.getText(), document.fileName);
+				activeThreadId = sessionId;
+				provider.setActiveThread(sessionId);
+			}
+		}
+	}
 	context.subscriptions.push(
 		vscode.window.registerWebviewViewProvider(ChatViewProvider.viewType, provider));
 
