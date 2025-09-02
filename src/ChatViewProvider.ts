@@ -24,8 +24,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		const generalThreadId = 'naruhodocs-general-thread';
 		const generalThreadTitle = 'General Purpose';
 		const sysMessage = SystemMessages.GENERAL_PURPOSE;
-		
-		
+
+
 		const session = createChat({ apiKey: this.apiKey, maxHistoryMessages: 40, systemMessage: sysMessage });
 		this.sessions.set(generalThreadId, session);
 		this.threadTitles.set(generalThreadId, generalThreadTitle);
@@ -46,6 +46,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
 		webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
 
+		// Always reset state in dev mode
 		if (this.context.extensionMode === vscode.ExtensionMode.Development) {
 			webviewView.webview.postMessage({ type: 'resetState' });
 		}
@@ -53,6 +54,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		// Restore threads from workspaceState
 		const keys = Object.keys(this.context.workspaceState.keys ? this.context.workspaceState.keys() : {});
 		await this.restoreThreads(keys);
+
+		// 🔥 Always push active thread + history when webview is first resolved
+		this._postThreadList();
+		if (this.activeThreadId) {
+			const session = this.sessions.get(this.activeThreadId);
+			if (session) {
+				const history = session.getHistory();
+				this._view?.webview.postMessage({ type: 'showHistory', history });
+			}
+		}
 
 		webviewView.webview.onDidReceiveMessage(async data => {
 			const session = this.activeThreadId ? this.sessions.get(this.activeThreadId) : undefined;
@@ -150,11 +161,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 			const threads = Array.from(this.threadTitles.entries()).map(([id, title]) => ({ id, title }));
 			this._view.webview.postMessage({ type: 'threadList', threads, activeThreadId: this.activeThreadId });
 
-			// Show or hide general tab UI based on active thread
 			const isGeneralTab = this.activeThreadId === 'naruhodocs-general-thread';
 			this._view.webview.postMessage({ type: 'toggleGeneralTabUI', visible: isGeneralTab });
 		}
 	}
+
 
 	private _getHtmlForWebview(webview: vscode.Webview) {
 		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.js'));

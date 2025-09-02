@@ -114,6 +114,7 @@
                 renderThreadListMenu(); // update UI immediately
                 vscode.postMessage({ type: 'switchThread', sessionId: thread.id });
                 if (dropdownContainer) dropdownContainer.style.display = 'none';
+                if (hamburgerMenu) hamburgerMenu.classList.remove('open');
             });
             threadListMenu.appendChild(item);
         });
@@ -229,15 +230,8 @@
                 break;
             case 'threadList':
                 threads = message.threads || [];
-                if (!threads.find(t => t.id === 'naruhodocs-general-thread')) {
-                    threads.unshift({ id: 'naruhodocs-general-thread', title: 'General Purpose' });
-                }
-                if (!activeThreadId) {
-                    activeThreadId = 'naruhodocs-general-thread';
-                }
+                activeThreadId = message.activeThreadId;
                 renderThreadListMenu();
-                if (dropdownContainer) dropdownContainer.style.display = 'none';
-                if (hamburgerMenu) hamburgerMenu.classList.remove('open');
                 break;
             case 'showHistory':
                 showHistory(message.history);
@@ -245,7 +239,7 @@
             case 'toggleGeneralTabUI':
                 toggleGeneralTabUI(message.visible);
                 break;
-            case 'resetState':  // ✅ reset support
+            case 'resetState':
                 vscode.setState(null);
                 if (chatMessages) chatMessages.innerHTML = '';
                 if (currentDocName) currentDocName.textContent = '';
@@ -256,7 +250,5 @@
                 break;
         }
     });
-
-
 
 }());
