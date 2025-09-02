@@ -48,8 +48,19 @@
         threadListMenu.innerHTML = '';
         let activeTitle = '';
         let foundActive = false;
-        threads.forEach(thread => {
-            const fileName = thread.title.split(/[/\\]/).pop();
+        // Always keep General thread at the top, and ensure it exists in the dropdown
+        let generalThread = threads.find(t => t.id === 'naruhodocs-general-thread');
+        if (!generalThread) {
+            generalThread = { id: 'naruhodocs-general-thread', title: 'General Purpose' };
+        }
+        const otherThreads = threads.filter(t => t.id !== 'naruhodocs-general-thread');
+        const orderedThreads = [generalThread, ...otherThreads];
+
+        orderedThreads.forEach(thread => {
+            let fileName = thread.title.split(/[/\\]/).pop();
+            if (thread.id === 'naruhodocs-general-thread') {
+                fileName = 'General';
+            }
             const item = document.createElement('div');
             item.className = 'thread-list-item';
             item.textContent = fileName;
@@ -65,9 +76,9 @@
             });
             threadListMenu.appendChild(item);
         });
-        // Fallback: if no active thread, show first thread name
-        if (!foundActive && threads.length > 0) {
-            activeTitle = threads[0].title.split(/[/\\]/).pop();
+        // Fallback: if no active thread, show General
+        if (!foundActive) {
+            activeTitle = 'General';
         }
         if (currentDocName) {
             currentDocName.textContent = activeTitle;
