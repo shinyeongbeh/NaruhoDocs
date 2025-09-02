@@ -12,7 +12,6 @@
     const sendIcon = document.getElementById('send-icon');
     const hamburgerMenu = document.getElementById('hamburger-menu');
     const dropdownContainer = document.getElementById('dropdown-container');
-    const threadDropdown = document.getElementById('thread-dropdown'); // No longer used
     const threadListMenu = document.getElementById('thread-list-menu');
     const currentDocName = document.getElementById('current-doc-name');
 
@@ -20,16 +19,25 @@
     let threads = [];
 
     const oldState = vscode.getState() || {};
+
     if (oldState.chatHTML && chatMessages) {
         chatMessages.innerHTML = oldState.chatHTML;
     }
     if (oldState.activeDocName && currentDocName) {
         currentDocName.textContent = oldState.activeDocName;
     }
+    if (oldState.threads) {
+        threads = oldState.threads;
+    }
+    if (oldState.activeThreadId) {
+        activeThreadId = oldState.activeThreadId;
+    }
     if (typeof oldState.isHamburgerOpen === 'boolean' && dropdownContainer && hamburgerMenu) {
         dropdownContainer.style.display = oldState.isHamburgerOpen ? 'block' : 'none';
         hamburgerMenu.classList.toggle('open', oldState.isHamburgerOpen);
     }
+
+    renderThreadListMenu();
 
     function sendMessage() {
         if (chatInput && (chatInput instanceof HTMLTextAreaElement) && chatInput.value) {
@@ -106,6 +114,7 @@
                 renderThreadListMenu(); // update UI immediately
                 vscode.postMessage({ type: 'switchThread', sessionId: thread.id });
                 if (dropdownContainer) dropdownContainer.style.display = 'none';
+                if (hamburgerMenu) hamburgerMenu.classList.remove('open');
             });
             threadListMenu.appendChild(item);
         });
@@ -223,8 +232,6 @@
                 threads = message.threads || [];
                 activeThreadId = message.activeThreadId;
                 renderThreadListMenu();
-                if (dropdownContainer) dropdownContainer.style.display = 'none';
-                if (hamburgerMenu) hamburgerMenu.classList.remove('open');
                 break;
             case 'showHistory':
                 showHistory(message.history);
@@ -254,7 +261,5 @@
                 break;
         }
     });
-
-
 
 }());
