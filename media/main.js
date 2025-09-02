@@ -143,7 +143,7 @@
                 addMessage(sender, text);
             });
         }
-    persistState();
+        persistState();
     }
 
     function toggleGeneralTabUI(visible) {
@@ -163,30 +163,6 @@
         });
     }
 
-    window.addEventListener('message', event => {
-        const message = event.data;
-        switch (message.type) {
-            case 'addMessage':
-                addMessage(message.sender, message.message);
-                break;
-            case 'threadList':
-                threads = message.threads || [];
-                activeThreadId = message.activeThreadId;
-                renderThreadListMenu();
-                // Always close dropdown and set hamburger to close mode when thread list updates
-                if (dropdownContainer) dropdownContainer.style.display = 'none';
-                if (hamburgerMenu) hamburgerMenu.classList.remove('open');
-                break;
-            case 'showHistory':
-                showHistory(message.history);
-                break;
-            case 'toggleGeneralTabUI':
-                toggleGeneralTabUI(message.visible);
-                break;
-        }
-    });
-
-    // No dropdown change handler needed
 
     if (hamburgerMenu && dropdownContainer) {
         hamburgerMenu.addEventListener('click', () => {
@@ -215,6 +191,8 @@
         linkify: true // Automatically link URLs
     });
 
+    // --- remove the first duplicate window.addEventListener(...) block above ---
+
     function addMessage(sender, message) {
         if (chatMessages) {
             const messageElement = document.createElement('div');
@@ -225,7 +203,6 @@
                 messageElement.classList.add('bot');
             }
 
-            // Use markdown-it to parse Markdown
             const parsedMessage = md.render(message);
             messageElement.innerHTML = parsedMessage;
 
@@ -234,6 +211,39 @@
         }
         persistState();
     }
+
+    // ✅ single unified listener
+    window.addEventListener('message', event => {
+        const message = event.data;
+        switch (message.type) {
+            case 'addMessage':
+                addMessage(message.sender, message.message);
+                break;
+            case 'threadList':
+                threads = message.threads || [];
+                activeThreadId = message.activeThreadId;
+                renderThreadListMenu();
+                if (dropdownContainer) dropdownContainer.style.display = 'none';
+                if (hamburgerMenu) hamburgerMenu.classList.remove('open');
+                break;
+            case 'showHistory':
+                showHistory(message.history);
+                break;
+            case 'toggleGeneralTabUI':
+                toggleGeneralTabUI(message.visible);
+                break;
+            case 'resetState':  // ✅ reset support
+                vscode.setState(null);
+                if (chatMessages) chatMessages.innerHTML = '';
+                if (currentDocName) currentDocName.textContent = '';
+                activeThreadId = undefined;
+                threads = [];
+                if (dropdownContainer) dropdownContainer.style.display = 'none';
+                if (hamburgerMenu) hamburgerMenu.classList.remove('open');
+                break;
+        }
+    });
+
 
 
 }());

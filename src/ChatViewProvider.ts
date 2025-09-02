@@ -56,9 +56,9 @@ You have tools to explore the project workspace. **You must use them proactively
 * **Be Proactive & Precise:** Provide the documentation or explanation directly. Don't be overly chatty.
 * **Use Markdown:** All your responses should be formatted with Markdown for readability. Use code blocks for code snippets.
 * **Ask for Clarification (If Necessary):** If a user's request is ambiguous and the context is insufficient, ask a targeted question to get the information you need.
-* **Assume Best Practices:** Generate documentation that aligns with industry best practices like PEP 257 for Python or JSDoc for JavaScript/TypeScript.`;		
-		
-	const session = createChat({ apiKey: this.apiKey, maxHistoryMessages: 40, systemMessage: sysMessage });
+* **Assume Best Practices:** Generate documentation that aligns with industry best practices like PEP 257 for Python or JSDoc for JavaScript/TypeScript.`;
+
+		const session = createChat({ apiKey: this.apiKey, maxHistoryMessages: 40, systemMessage: sysMessage });
 		this.sessions.set(generalThreadId, session);
 		this.threadTitles.set(generalThreadId, generalThreadTitle);
 		this.activeThreadId = generalThreadId; // Set as the default active thread
@@ -77,6 +77,10 @@ You have tools to explore the project workspace. **You must use them proactively
 		};
 
 		webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
+
+		if (this.context.extensionMode === vscode.ExtensionMode.Development) {
+			webviewView.webview.postMessage({ type: 'resetState' });
+		}
 
 		// Restore threads from workspaceState
 		const keys = Object.keys(this.context.workspaceState.keys ? this.context.workspaceState.keys() : {});
