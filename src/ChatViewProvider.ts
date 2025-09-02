@@ -186,9 +186,11 @@ You have tools to explore the project workspace. **You must use them proactively
 
 	private _getHtmlForWebview(webview: vscode.Webview) {
 		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.js'));
+		const markdownItUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'node_modules', 'markdown-it', 'dist', 'markdown-it.min.js'));
 		const styleResetUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'reset.css'));
 		const styleVSCodeUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'vscode.css'));
 		const styleMainUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.css'));
+		const styleMarkdownUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'markdown.css'));
 		const nonce = getNonce();
 
 		const generalTabUI = `<div id="general-tab-ui" style="display:none;">
@@ -212,6 +214,7 @@ You have tools to explore the project workspace. **You must use them proactively
 				<link href="${styleResetUri}" rel="stylesheet">
 				<link href="${styleVSCodeUri}" rel="stylesheet">
 				<link href="${styleMainUri}" rel="stylesheet">
+				<link href="${styleMarkdownUri}" rel="stylesheet">
 				
 				<title>NaruhoDocs Chat</title>
 			</head>
@@ -247,6 +250,7 @@ You have tools to explore the project workspace. **You must use them proactively
 					</div>
 				</div>
 
+				<script nonce="${nonce}" src="${markdownItUri}"></script>
 				<script nonce="${nonce}" src="${scriptUri}"></script>
 			</body>
 			</html>`;
