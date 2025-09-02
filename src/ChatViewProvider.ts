@@ -46,6 +46,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
 		webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
 
+		if (this.context.extensionMode === vscode.ExtensionMode.Development) {
+			webviewView.webview.postMessage({ type: 'resetState' });
+		}
+
 		// Restore threads from workspaceState
 		const keys = Object.keys(this.context.workspaceState.keys ? this.context.workspaceState.keys() : {});
 		await this.restoreThreads(keys);
