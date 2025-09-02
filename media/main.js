@@ -19,6 +19,18 @@
     let activeThreadId = undefined;
     let threads = [];
 
+    const oldState = vscode.getState() || {};
+    if (oldState.chatHTML && chatMessages) {
+        chatMessages.innerHTML = oldState.chatHTML;
+    }
+    if (oldState.activeDocName && currentDocName) {
+        currentDocName.textContent = oldState.activeDocName;
+    }
+    if (typeof oldState.isHamburgerOpen === 'boolean' && dropdownContainer && hamburgerMenu) {
+        dropdownContainer.style.display = oldState.isHamburgerOpen ? 'block' : 'none';
+        hamburgerMenu.classList.toggle('open', oldState.isHamburgerOpen);
+    }
+
     function sendMessage() {
         if (chatInput && (chatInput instanceof HTMLTextAreaElement) && chatInput.value) {
             console.log('[NaruhoDocs] sendMessage triggered:', chatInput.value);
@@ -54,19 +66,19 @@
         if (generalButtons) {
             generalButtons.style.display = (activeThreadId === 'naruhodocs-general-thread') ? 'flex' : 'none';
         }
-    // Add event listeners for general buttons
-    const generateDocBtn = document.getElementById('generate-doc-btn');
-    if (generateDocBtn) {
-        generateDocBtn.addEventListener('click', () => {
-            vscode.postMessage({ type: 'generateDoc' });
-        });
-    }
-    const suggestTemplateBtn = document.getElementById('suggest-template-btn');
-    if (suggestTemplateBtn) {
-        suggestTemplateBtn.addEventListener('click', () => {
-            vscode.postMessage({ type: 'suggestTemplate' });
-        });
-    }
+        // Add event listeners for general buttons
+        const generateDocBtn = document.getElementById('generate-doc-btn');
+        if (generateDocBtn) {
+            generateDocBtn.addEventListener('click', () => {
+                vscode.postMessage({ type: 'generateDoc' });
+            });
+        }
+        const suggestTemplateBtn = document.getElementById('suggest-template-btn');
+        if (suggestTemplateBtn) {
+            suggestTemplateBtn.addEventListener('click', () => {
+                vscode.postMessage({ type: 'suggestTemplate' });
+            });
+        }
         // Always keep General thread at the top, and ensure it exists in the dropdown
         let generalThread = threads.find(t => t.id === 'naruhodocs-general-thread');
         if (!generalThread) {
@@ -104,6 +116,7 @@
         if (currentDocName) {
             currentDocName.textContent = activeTitle;
         }
+        persistState();
     }
 
     function clearMessages() {
@@ -111,32 +124,43 @@
     }
 
     function showHistory(history) {
-    clearMessages();
-    if (Array.isArray(history)) {
-        console.log('[NaruhoDocs] Showing history:', history);
-        history.forEach(msg => {
-            let sender = 'Bot';
-            let text = '';
-            if (msg.id && msg.id[2] === 'HumanMessage') {
-                sender = 'You';
-                text = msg.kwargs?.content || '';
-            } else if (msg.id && msg.id[2] === 'AIMessage') {
-                sender = 'Bot';
-                text = msg.kwargs?.content || '';
-            } else {
-                // fallback for other formats
-                text = msg.text || msg.content || '';
-            }
-            addMessage(sender, text);
-        });
+        clearMessages();
+        if (Array.isArray(history)) {
+            console.log('[NaruhoDocs] Showing history:', history);
+            history.forEach(msg => {
+                let sender = 'Bot';
+                let text = '';
+                if (msg.id && msg.id[2] === 'HumanMessage') {
+                    sender = 'You';
+                    text = msg.kwargs?.content || '';
+                } else if (msg.id && msg.id[2] === 'AIMessage') {
+                    sender = 'Bot';
+                    text = msg.kwargs?.content || '';
+                } else {
+                    // fallback for other formats
+                    text = msg.text || msg.content || '';
+                }
+                addMessage(sender, text);
+            });
+        }
+    persistState();
     }
-}
 
     function toggleGeneralTabUI(visible) {
         const generalTabUI = document.getElementById('general-tab-ui');
         if (generalTabUI) {
             generalTabUI.style.display = visible ? 'block' : 'none';
         }
+    }
+
+    function persistState() {
+        vscode.setState({
+            chatHTML: chatMessages?.innerHTML,
+            activeDocName: currentDocName?.textContent,
+            activeThreadId,
+            threads,
+            isHamburgerOpen: dropdownContainer?.style.display === 'block'
+        });
     }
 
     window.addEventListener('message', event => {
@@ -184,12 +208,12 @@
     }
 
     // Import and initialize markdown-it
-// @ts-ignore: markdown-it is loaded as a global script
-const md = window.markdownit({
-    html: true, // Allow HTML tags in Markdown
-    breaks: true, // Convert \n to <br>
-    linkify: true // Automatically link URLs
-});
+    // @ts-ignore: markdown-it is loaded as a global script
+    const md = window.markdownit({
+        html: true, // Allow HTML tags in Markdown
+        breaks: true, // Convert \n to <br>
+        linkify: true // Automatically link URLs
+    });
 
     function addMessage(sender, message) {
         if (chatMessages) {
@@ -208,5 +232,8 @@ const md = window.markdownit({
             chatMessages.appendChild(messageElement);
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
+        persistState();
     }
+
+
 }());
