@@ -1,0 +1,129 @@
+/* Styles for Markdown elements */
+
+/* Bold and Italic */
+strong {
+  font-weight: bold;
+}
+
+em {
+  font-style: italic;
+}
+
+/* Headings */
+h1 {
+  font-size: 1.8em;
+  font-weight: bold;
+  margin: 0.67em 0;
+}
+
+h2 {
+  font-size: 1.5em;
+  font-weight: bold;
+  margin: 0.75em 0;
+}
+
+h3 {
+  font-size: 1.17em;
+  font-weight: bold;
+  margin: 0.83em 0;
+}
+
+h4 {
+  font-size: 1em;
+  font-weight: bold;
+  margin: 1.12em 0;
+}
+
+h5 {
+  font-size: 0.83em;
+  font-weight: bold;
+  margin: 1.5em 0;
+}
+
+h6 {
+  font-size: 0.75em;
+  font-weight: bold;
+  margin: 1.67em 0;
+}
+
+/* Lists */
+ul {
+  list-style-type: disc;
+  /* Use bullet points */
+  margin: 1em 0;
+  /* Add spacing above and below the list */
+  padding-left: 16px;
+  /* Reduce indentation for the list */
+}
+
+ul ul {
+  list-style: circle;
+}
+
+ul ul ul {
+  list-style: square;
+}
+
+ol {
+  display: block;
+  list-style: decimal;
+  margin: 1em 0;
+  padding-left: 16px;
+}
+
+ol,
+ul {
+  display: block;
+  list-style: decimal;
+  margin: 1em 0;
+  padding-left: 16px;
+}
+
+ol li {
+  list-style: decimal;
+}
+
+ul li {
+  list-style: disc;
+}
+
+li {
+  margin-bottom: 0.5em;
+  /* Add spacing between list items */
+}
+
+/* Links */
+a {
+  color: var(--vscode-textLink-foreground);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+/* Blockquotes */
+blockquote {
+  margin: 1em 0;
+  padding: 0.5em 1em;
+  border-left: 4px solid var(--vscode-editorLineNumber-foreground);
+  color: var(--vscode-editorLineNumber-foreground);
+  font-style: italic;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* Code */
+code {
+  font-family: var(--vscode-editor-font-family);
+  background-color: var(--vscode-editorGutter-background);
+  padding: 2px 4px;
+  border-radius: 3px;
+
+  white-space: pre-wrap;      /* Wrap long lines, preserve spaces */
+  word-wrap: break-word;      /* Break long words */
+  overflow-wrap: break-word;  /* Modern version of word-wrap */
+  max-width: 100%;
+  display: inline-block;      /* Optional: helps with width bounds */
+  vertical-align: middle;     /* Prevent layout shift */
+}

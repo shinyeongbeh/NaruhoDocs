@@ -120,6 +120,14 @@
         });
     }
 
+    // Import and initialize markdown-it
+// @ts-ignore: markdown-it is loaded as a global script
+const md = window.markdownit({
+    html: true, // Allow HTML tags in Markdown
+    breaks: true, // Convert \n to <br>
+    linkify: true // Automatically link URLs
+});
+
     function addMessage(sender, message) {
         if (chatMessages) {
             const messageElement = document.createElement('div');
@@ -129,7 +137,11 @@
             } else {
                 messageElement.classList.add('bot');
             }
-            messageElement.innerHTML = `</strong> ${message}`;
+
+            // Use markdown-it to parse Markdown
+            const parsedMessage = md.render(message);
+            messageElement.innerHTML = parsedMessage;
+
             chatMessages.appendChild(messageElement);
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
