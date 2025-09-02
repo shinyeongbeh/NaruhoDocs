@@ -1,15 +1,38 @@
+#general-buttons {
+	display: flex;
+	justify-content: center;
+	gap: 12px;
+	margin-top: 18px;
+	margin-bottom: 8px;
+}
+#general-buttons button {
+	background: #2196f3;
+	color: #fff;
+	border: none;
+	border-radius: 6px;
+	padding: 8px 18px;
+	font-size: 1rem;
+	cursor: pointer;
+	transition: background 0.18s;
+}
+#general-buttons button:hover {
+	background: #1976d2;
+}
 /* Hamburger menu open/close visual state */
 #hamburger-menu.open svg {
 	/* Hide hamburger lines, show X */
 	display: none;
 }
+
 #hamburger-menu.open::before {
-	content: '\2715'; /* Unicode X */
+	content: '\2715';
+	/* Unicode X */
 	font-size: 24px;
 	color: #2196f3;
 	display: inline-block;
 	vertical-align: middle;
 }
+
 #hamburger-menu {
 	transition: background 0.2s;
 }
@@ -26,7 +49,7 @@
 	z-index: 10;
 	background: #222;
 	border-radius: 10px;
-	box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
 	padding: 10px 0;
 	min-width: 200px;
 	border: 1px solid #333;
@@ -37,6 +60,7 @@
 	flex-direction: column;
 	gap: 2px;
 }
+
 .thread-list-item {
 	padding: 8px 18px;
 	cursor: pointer;
@@ -45,16 +69,18 @@
 	border-radius: 6px;
 	transition: background 0.18s;
 }
+
 .thread-list-item:hover {
 	background: #1976d2;
 }
+
 .thread-list-item.active {
 	background: #2196f3;
 	color: #fff;
 	font-weight: 600;
 }
 
-body, html {
+
 body,
 html {
 	height: 100%;
@@ -80,7 +106,8 @@ html {
 	flex-grow: 1;
 	overflow-y: auto;
 	padding-bottom: 10px;
-	line-height: 1.6; /* Set a comfortable line height for better readability */
+	line-height: 1.6;
+	/* Set a comfortable line height for better readability */
 }
 
 .message {
@@ -184,6 +211,7 @@ html {
 	gap: 6px;
 	height: 32px;
 }
+
 #hamburger-menu {
 	display: flex;
 	align-items: center;
@@ -191,6 +219,7 @@ html {
 	width: 32px;
 	height: 32px;
 }
+
 #current-doc-name {
 	font-weight: 500;
 	font-size: 1rem;

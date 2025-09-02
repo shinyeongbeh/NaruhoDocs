@@ -21,6 +21,7 @@
 
     function sendMessage() {
         if (chatInput && (chatInput instanceof HTMLTextAreaElement) && chatInput.value) {
+            console.log('[NaruhoDocs] sendMessage triggered:', chatInput.value);
             vscode.postMessage({
                 type: 'sendMessage',
                 value: chatInput.value
@@ -48,6 +49,24 @@
         threadListMenu.innerHTML = '';
         let activeTitle = '';
         let foundActive = false;
+        // Show/hide general buttons
+        const generalButtons = document.getElementById('general-buttons');
+        if (generalButtons) {
+            generalButtons.style.display = (activeThreadId === 'naruhodocs-general-thread') ? 'flex' : 'none';
+        }
+    // Add event listeners for general buttons
+    const generateDocBtn = document.getElementById('generate-doc-btn');
+    if (generateDocBtn) {
+        generateDocBtn.addEventListener('click', () => {
+            vscode.postMessage({ type: 'generateDoc' });
+        });
+    }
+    const suggestTemplateBtn = document.getElementById('suggest-template-btn');
+    if (suggestTemplateBtn) {
+        suggestTemplateBtn.addEventListener('click', () => {
+            vscode.postMessage({ type: 'suggestTemplate' });
+        });
+    }
         // Always keep General thread at the top, and ensure it exists in the dropdown
         let generalThread = threads.find(t => t.id === 'naruhodocs-general-thread');
         if (!generalThread) {
@@ -71,6 +90,8 @@
                 foundActive = true;
             }
             item.addEventListener('click', () => {
+                activeThreadId = thread.id;
+                renderThreadListMenu(); // update UI immediately
                 vscode.postMessage({ type: 'switchThread', sessionId: thread.id });
                 if (dropdownContainer) dropdownContainer.style.display = 'none';
             });
