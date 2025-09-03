@@ -154,8 +154,8 @@ export function activate(context: vscode.ExtensionContext) {
 	const generalThreadTitle = 'General Purpose';
 	if (!threadMap.has(generalThreadId)) {
 		const sysMessage = SystemMessages.GENERAL_PURPOSE;
-		
-	threadMap.set(generalThreadId, { document: undefined as any, sessionId: generalThreadId });
+
+		threadMap.set(generalThreadId, { document: undefined as any, sessionId: generalThreadId });
 		provider.createThread(generalThreadId, sysMessage, generalThreadTitle);
 		activeThreadId = generalThreadId;
 		provider.setActiveThread(generalThreadId);

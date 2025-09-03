@@ -7,7 +7,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 	 * Switch the system message for a document-based thread to beginner mode.
 	 */
 	public async setThreadBeginnerMode(sessionId: string) {
-		if(sessionId === 'naruhodocs-general-thread') {
+		if (sessionId === 'naruhodocs-general-thread') {
 			return;
 		}
 		console.log('ChatViewProvider: setThreadBeginnerMode called', sessionId);
@@ -32,7 +32,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 	 * Switch the system message for a document-based thread to developer mode.
 	 */
 	public async setThreadDeveloperMode(sessionId: string) {
-		if(sessionId === 'naruhodocs-general-thread') {
+		if (sessionId === 'naruhodocs-general-thread') {
 			return;
 		}
 		console.log('ChatViewProvider: setThreadDeveloperMode called');
@@ -56,28 +56,28 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 	 * Send a message to a specific thread and display the bot response.
 	 */
 	public async sendMessageToThread(sessionId: string, prompt: string) {
-	this.setActiveThread(sessionId);
-	const session = this.sessions.get(sessionId);
-	if (!session) {
-		this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: 'No active thread.' });
-		return Promise.resolve('No active thread.');
+		this.setActiveThread(sessionId);
+		const session = this.sessions.get(sessionId);
+		if (!session) {
+			this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: 'No active thread.' });
+			return Promise.resolve('No active thread.');
+		}
+		// Immediately show user message
+		this._view?.webview.postMessage({ type: 'addMessage', sender: 'You', message: prompt });
+		// Await and return bot response
+		try {
+			const botResponse = await session.chat(prompt);
+			this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: botResponse });
+			const history = session.getHistory();
+			await this.context.workspaceState.update(`thread-history-${sessionId}`, history);
+			return botResponse;
+		} catch (error: any) {
+			const errorMsg = `Error: ${error.message || 'Unable to connect to LLM.'}`;
+			this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: errorMsg });
+			return errorMsg;
+		}
 	}
-	// Immediately show user message
-	this._view?.webview.postMessage({ type: 'addMessage', sender: 'You', message: prompt });
-	// Await and return bot response
-	try {
-		const botResponse = await session.chat(prompt);
-		this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: botResponse });
-		const history = session.getHistory();
-		await this.context.workspaceState.update(`thread-history-${sessionId}`, history);
-		return botResponse;
-	} catch (error: any) {
-		const errorMsg = `Error: ${error.message || 'Unable to connect to LLM.'}`;
-		this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: errorMsg });
-		return errorMsg;
-	}
-}
-	
+
 	public static readonly viewType = 'naruhodocs.chatView';
 
 	private _view?: vscode.WebviewView;
@@ -201,44 +201,44 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 					}
 				//this one Shin created for saving translation
 				case 'createAndSaveFile':
-				{
-					// Accept a text parameter for file content
-					const text = data.text || '';
-					const uri = data.uri || '';
-					let newUri = '';
-					if (uri) {
-						try {
-							const fileUri = vscode.Uri.parse(uri);
-							// Get parent folder URI
-							const parentPaths = fileUri.path.split('/');
-							const originalFileName = parentPaths.pop() || '';
-							// Insert '-translated' before extension
-							const dotIdx = originalFileName.lastIndexOf('.');
-							let translatedFileName = '';
-							if (dotIdx > 0) {
-								translatedFileName = originalFileName.slice(0, dotIdx) + '-translated' + originalFileName.slice(dotIdx);
-							} else {
-								translatedFileName = originalFileName + '-translated';
+					{
+						// Accept a text parameter for file content
+						const text = data.text || '';
+						const uri = data.uri || '';
+						let newUri = '';
+						if (uri) {
+							try {
+								const fileUri = vscode.Uri.parse(uri);
+								// Get parent folder URI
+								const parentPaths = fileUri.path.split('/');
+								const originalFileName = parentPaths.pop() || '';
+								// Insert '-translated' before extension
+								const dotIdx = originalFileName.lastIndexOf('.');
+								let translatedFileName = '';
+								if (dotIdx > 0) {
+									translatedFileName = originalFileName.slice(0, dotIdx) + '-translated' + originalFileName.slice(dotIdx);
+								} else {
+									translatedFileName = originalFileName + '-translated';
+								}
+								const translatedFileUri = vscode.Uri.joinPath(fileUri.with({ path: parentPaths.join('/') }), translatedFileName);
+
+								const content = text ? Buffer.from(text, 'utf8') : new Uint8Array();
+								await vscode.workspace.fs.writeFile(translatedFileUri, content);
+								this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: `File created: ${translatedFileUri.fsPath}` });
+
+
+							} catch (e: any) {
+								newUri = '';
+								this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: `Error creating file: ${e.message}` });
 							}
-							const translatedFileUri = vscode.Uri.joinPath(fileUri.with({ path: parentPaths.join('/') }), translatedFileName);
-
-							const content = text ? Buffer.from(text, 'utf8') : new Uint8Array();
-							await vscode.workspace.fs.writeFile(translatedFileUri, content);
-							this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: `File created: ${translatedFileUri.fsPath}` });
-						
-
-						} catch (e: any) {
-							newUri = '';
-							this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: `Error creating file: ${e.message}` });
+						} else {
+							this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: 'No valid folder to save translated file.' });
 						}
-					} else {
-						this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: 'No valid folder to save translated file.' });
-					}				
-					break;
-				}
-			} 
-	});
-}	
+						break;
+					}
+			}
+		});
+	}
 	public postMessage(message: any) {
 		if (this._view) {
 			this._view.webview.postMessage(message);

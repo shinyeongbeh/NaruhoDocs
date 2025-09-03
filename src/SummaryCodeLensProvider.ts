@@ -12,11 +12,11 @@ export class SummaryCodeLensProvider implements vscode.CodeLensProvider {
         }));
 
         // Switch Mode button
-            codeLenses.push(new vscode.CodeLens(range, {
-                command: 'naruhodocs.translateDocument',
-                title: '🌐 Translate Document',
-                arguments: [document.uri]
-            }));
+        codeLenses.push(new vscode.CodeLens(range, {
+            command: 'naruhodocs.translateDocument',
+            title: '🌐 Translate Document',
+            arguments: [document.uri]
+        }));
 
         return codeLenses;
     }

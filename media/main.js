@@ -80,7 +80,7 @@
             }
         }
         console.log('[NaruhoDocs] Rendering thread list menu. Active thread ID:', activeThreadId, 'Threads:', threads);
-        if (!threadListMenu) {return;}
+        if (!threadListMenu) { return; }
         threadListMenu.innerHTML = '';
         let activeTitle = '';
         let foundActive = false;
@@ -362,7 +362,7 @@
 
     // ✅ single unified listener
     window.addEventListener('message', event => {
-          
+
         const message = event.data;
         switch (message.type) {
             case 'addMessage':
@@ -405,7 +405,7 @@
                 if (chatMessages) {
                     // Remove any previous translation button container
                     const prev = document.getElementById('save-translation-btn-container');
-                    if (prev) prev.remove();
+                    if (prev) {prev.remove();}
 
                     const btnContainer = document.createElement('div');
                     btnContainer.id = 'save-translation-btn-container';
@@ -433,7 +433,7 @@
                     yesBtn.style.cursor = 'pointer';
                     yesBtn.onclick = () => {
                         vscode.postMessage({ type: 'createAndSaveFile', text: message.translation, uri: message.sessionId });
-                        console.log('uri: ',message.sessionId);
+                        console.log('uri: ', message.sessionId);
                         btnContainer.remove();
                     };
 
