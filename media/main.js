@@ -362,6 +362,7 @@
 
     // ✅ single unified listener
     window.addEventListener('message', event => {
+          
         const message = event.data;
         switch (message.type) {
             case 'addMessage':
@@ -399,6 +400,60 @@
                 threads = [];
                 if (dropdownContainer) { dropdownContainer.style.display = 'none'; }
                 if (hamburgerMenu) { hamburgerMenu.classList.remove('open'); }
+                break;
+            case 'showSaveTranslationButtons':
+                if (chatMessages) {
+                    // Remove any previous translation button container
+                    const prev = document.getElementById('save-translation-btn-container');
+                    if (prev) prev.remove();
+
+                    const btnContainer = document.createElement('div');
+                    btnContainer.id = 'save-translation-btn-container';
+                    btnContainer.style.display = 'flex';
+                    btnContainer.style.gap = '12px';
+                    btnContainer.style.marginTop = '18px';
+                    btnContainer.style.justifyContent = 'center';
+
+                    const translationDiv = document.createElement('div');
+                    translationDiv.textContent = 'Save translation as new file?';
+                    translationDiv.style.padding = '8px 0';
+                    translationDiv.style.fontWeight = 'bold';
+                    translationDiv.style.background = 'var(--vscode-editor-background)';
+                    translationDiv.style.color = 'var(--vscode-foreground)';
+                    translationDiv.style.marginRight = '16px';
+                    btnContainer.appendChild(translationDiv);
+
+                    const yesBtn = document.createElement('button');
+                    yesBtn.textContent = 'Yes';
+                    yesBtn.style.padding = '6px 18px';
+                    yesBtn.style.background = 'var(--vscode-button-background)';
+                    yesBtn.style.color = 'var(--vscode-button-foreground)';
+                    yesBtn.style.border = 'none';
+                    yesBtn.style.borderRadius = '6px';
+                    yesBtn.style.cursor = 'pointer';
+                    yesBtn.onclick = () => {
+                        vscode.postMessage({ type: 'createAndSaveFile', text: message.translation, uri: message.sessionId });
+                        console.log('uri: ',message.sessionId);
+                        btnContainer.remove();
+                    };
+
+                    const noBtn = document.createElement('button');
+                    noBtn.textContent = 'No';
+                    noBtn.style.padding = '6px 18px';
+                    noBtn.style.background = 'var(--vscode-button-background)';
+                    noBtn.style.color = 'var(--vscode-button-foreground)';
+                    noBtn.style.border = 'none';
+                    noBtn.style.borderRadius = '6px';
+                    noBtn.style.cursor = 'pointer';
+                    noBtn.onclick = () => {
+                        btnContainer.remove();
+                    };
+
+                    btnContainer.appendChild(yesBtn);
+                    btnContainer.appendChild(noBtn);
+                    chatMessages.appendChild(btnContainer);
+                    chatMessages.scrollTop = chatMessages.scrollHeight;
+                }
                 break;
         }
     });
