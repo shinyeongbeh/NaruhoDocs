@@ -211,28 +211,84 @@
         if (oldModal) oldModal.remove();
 
         const modal = document.createElement('div');
-    modal.id = 'doc-type-modal';
+        modal.id = 'doc-type-modal';
+
+        const box = document.createElement('div');
+
+        // Add close button inside the modal content box
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'doc-modal-close-btn';
+        closeBtn.innerHTML = '&times;';
+        closeBtn.title = 'Close';
+        closeBtn.addEventListener('click', () => {
+            modal.remove();
+        });
+        box.appendChild(closeBtn);
+        modal.appendChild(box);
+
+        const title = document.createElement('h2');
+        title.textContent = 'Select Documentation Type';
+        box.appendChild(title);
 
 
-    const box = document.createElement('div');
 
-    // Add close button inside the modal content box
-    const closeBtn = document.createElement('button');
-    closeBtn.className = 'doc-modal-close-btn';
-    closeBtn.innerHTML = '&times;';
-    closeBtn.title = 'Close';
-    closeBtn.addEventListener('click', () => {
-        modal.remove();
-    });
-    box.appendChild(closeBtn);
-    modal.appendChild(box);
+        // List of doc types and their corresponding filenames
+        const docTypeMap = {
+            'README': 'README.md',
+            'API Reference': 'API_REFERENCE.md',
+            'Getting Started': 'GETTING_STARTED.md',
+            'Contributing Guide': 'CONTRIBUTING.md',
+            'Changelog': 'CHANGELOG.md',
+            'Quickstart Guide': 'vsc-extension-quickstart.md',
+            'Extension Manifest Reference': 'package.json'
+        };
 
-    const title = document.createElement('h2');
-    title.textContent = 'Select Documentation Type';
-    box.appendChild(title);
+        // VS Code extension detection
+        let docTypes = [
+            'README',
+            'API Reference',
+            'Getting Started',
+            'Contributing Guide',
+            'Changelog',
+            'Quickstart Guide',
+            'Extension Manifest Reference',
+            'Others'
+        ];
 
-        // Example starter doc types
-        const docTypes = ['README', 'API Reference', 'Getting Started', 'Contributing Guide', 'Others'];
+        // Request existing doc files from backend
+        vscode.postMessage({ type: 'scanDocs' });
+
+        // Only render choices after scanDocs returns
+        window.addEventListener('message', event => {
+            const message = event.data;
+            if (message.type === 'existingDocs') {
+                const foundFiles = Array.isArray(message.files) ? message.files : [];
+                // Extract just the filenames from the full paths
+                const foundFileNames = foundFiles.map(f => f.split(/[/\\]/).pop());
+                const filteredDocTypes = docTypes.filter(type => {
+                    const fileName = docTypeMap[type];
+                    return !fileName || !foundFileNames.includes(fileName);
+                });
+                // Render modal choices
+                box.innerHTML = '';
+                box.appendChild(closeBtn);
+                box.appendChild(title);
+                filteredDocTypes.forEach(type => {
+                    const btn = document.createElement('button');
+                    btn.textContent = type;
+                    btn.addEventListener('click', () => {
+                        if (type === 'Others') {
+                            showCustomDocPrompt(modal);
+                        } else {
+                            vscode.postMessage({ type: 'generateDoc', docType: type });
+                            modal.remove();
+                        }
+                    });
+                    box.appendChild(btn);
+                });
+            }
+        }, { once: true });
+
         docTypes.forEach(type => {
             const btn = document.createElement('button');
             btn.textContent = type;

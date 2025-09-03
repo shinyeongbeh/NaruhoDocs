@@ -3,6 +3,7 @@ import { createChat, ChatSession } from './langchain-backend/llm.js';
 import { SystemMessages } from './SystemMessages';
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
+	private existingDocFiles: string[] = [];
 	/**
 	 * Switch the system message for a document-based thread to beginner mode.
 	 */
@@ -139,6 +140,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		}
 
 		webviewView.webview.onDidReceiveMessage(async data => {
+			if (data.type === 'scanDocs') {
+				await vscode.commands.executeCommand('naruhodocs.scanDocs');
+				return;
+			}
+			if (data.type === 'existingDocs') {
+				this.existingDocFiles = Array.isArray(data.files) ? data.files : [];
+				return;
+			}
 			const session = this.activeThreadId ? this.sessions.get(this.activeThreadId) : undefined;
 			switch (data.type) {
 				case 'generateDoc': {

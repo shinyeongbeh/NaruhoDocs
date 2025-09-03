@@ -11,6 +11,32 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
+	// Command to scan workspace for existing doc files
+	context.subscriptions.push(
+		vscode.commands.registerCommand('naruhodocs.scanDocs', async () => {
+			const wsFolders = vscode.workspace.workspaceFolders;
+			if (!wsFolders || wsFolders.length === 0) {
+				return [];
+			}
+			const patterns = [
+				'**/README.md',
+				'**/API_REFERENCE.md',
+				'**/GETTING_STARTED.md',
+				'**/CONTRIBUTING.md',
+				'**/CHANGELOG.md',
+				'**/vsc-extension-quickstart.md',
+				'**/package.json'
+			];
+			let foundFiles: string[] = [];
+			for (const pattern of patterns) {
+				const uris = await vscode.workspace.findFiles(pattern, '**/node_modules/**');
+				foundFiles.push(...uris.map(u => u.fsPath));
+			}
+			// Send to webview
+			provider.postMessage({ type: 'existingDocs', files: foundFiles });
+			return foundFiles;
+		})
+	);
 
 	// Thread management: map document URI to thread info
 	const threadMap: Map<string, { document: vscode.TextDocument, sessionId: string }> = new Map();
