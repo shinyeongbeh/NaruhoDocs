@@ -141,6 +141,56 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		webviewView.webview.onDidReceiveMessage(async data => {
 			const session = this.activeThreadId ? this.sessions.get(this.activeThreadId) : undefined;
 			switch (data.type) {
+				case 'generateDoc': {
+					// Determine file name and starter content
+					let fileName = '';
+					let starterContent = '';
+					switch (data.docType) {
+						case 'README':
+							fileName = 'README.md';
+							starterContent = `# ${vscode.workspace.name || 'Project'}\n\nDescribe your project here.`;
+							break;
+						case 'API Reference':
+							fileName = 'API_REFERENCE.md';
+							starterContent = `# API Reference\n\nDocument your extension's commands, features, and usage here.`;
+							break;
+						case 'Getting Started':
+							fileName = 'GETTING_STARTED.md';
+							starterContent = `# Getting Started\n\nHow to install, configure, and use your extension.`;
+							break;
+						case 'Contributing Guide':
+							fileName = 'CONTRIBUTING.md';
+							starterContent = `# Contributing\n\nGuidelines for contributing to this project.`;
+							break;
+						case 'Changelog':
+							fileName = 'CHANGELOG.md';
+							starterContent = `# Changelog\n\nAll notable changes to this project will be documented here.`;
+							break;
+						case 'Quickstart Guide':
+							fileName = 'vsc-extension-quickstart.md';
+							starterContent = `# VS Code Extension Quickstart\n\nHow to get started with this extension.`;
+							break;
+						default:
+							fileName = `${data.docType.replace(/\s+/g, '_').toUpperCase()}.md`;
+							starterContent = `# ${data.docType}\n\nDescribe your documentation needs here.`;
+							break;
+					}
+					// Create file in workspace root
+					const wsFolders = vscode.workspace.workspaceFolders;
+					if (wsFolders && wsFolders.length > 0) {
+						const wsUri = wsFolders[0].uri;
+						const fileUri = vscode.Uri.joinPath(wsUri, fileName);
+						try {
+							await vscode.workspace.fs.writeFile(fileUri, Buffer.from(starterContent, 'utf8'));
+							this._view?.webview.postMessage({ type: 'docCreated', filePath: fileUri.fsPath });
+						} catch (err: any) {
+							this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: `Error creating doc: ${err.message}` });
+						}
+					} else {
+						this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: 'No workspace folder open.' });
+					}
+					break;
+				}
 				case 'setThreadBeginnerMode': {
 					await this.setThreadBeginnerMode(data.sessionId);
 					break;
@@ -179,24 +229,23 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 					this.setActiveThread(sessionId);
 					break;
 				}
-				case 'createFile':
-					{
-						// Create a default file in the workspace root
-						const wsFolders = vscode.workspace.workspaceFolders;
-						if (wsFolders && wsFolders.length > 0) {
-							const wsUri = wsFolders[0].uri;
-							const fileUri = vscode.Uri.joinPath(wsUri, 'NaruhoDocsFile.txt');
-							try {
-								await vscode.workspace.fs.writeFile(fileUri, new Uint8Array());
-								this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: `File created: ${fileUri.fsPath}` });
-							} catch (err: any) {
-								this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: `Error creating file: ${err.message}` });
-							}
-						} else {
-							this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: 'No workspace folder open.' });
+				case 'createFile': {
+					// Create a default file in the workspace root
+					const wsFolders = vscode.workspace.workspaceFolders;
+					if (wsFolders && wsFolders.length > 0) {
+						const wsUri = wsFolders[0].uri;
+						const fileUri = vscode.Uri.joinPath(wsUri, 'NaruhoDocsFile.txt');
+						try {
+							await vscode.workspace.fs.writeFile(fileUri, new Uint8Array());
+							this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: `File created: ${fileUri.fsPath}` });
+						} catch (err: any) {
+							this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: `Error creating file: ${err.message}` });
 						}
-						break;
+					} else {
+						this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: 'No workspace folder open.' });
 					}
+					break;
+				}
 			}
 		});
 	}

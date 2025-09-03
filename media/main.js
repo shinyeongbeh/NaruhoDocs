@@ -121,9 +121,73 @@
         const generateDocBtn = document.getElementById('generate-doc-btn');
         if (generateDocBtn) {
             generateDocBtn.addEventListener('click', () => {
-                vscode.postMessage({ type: 'generateDoc' });
+                // Show modal dialog for doc type selection
+                showDocTypeModal();
             });
         }
+    // Modal for doc type selection
+    function showDocTypeModal() {
+        // Remove existing modal if present
+        let oldModal = document.getElementById('doc-type-modal');
+        if (oldModal) oldModal.remove();
+
+        const modal = document.createElement('div');
+    modal.id = 'doc-type-modal';
+
+    const box = document.createElement('div');
+
+    const title = document.createElement('h2');
+    title.textContent = 'Select Documentation Type';
+    box.appendChild(title);
+
+        // Example starter doc types
+        const docTypes = ['README', 'API Reference', 'Getting Started', 'Contributing Guide', 'Others'];
+        docTypes.forEach(type => {
+            const btn = document.createElement('button');
+            btn.textContent = type;
+            btn.addEventListener('click', () => {
+                if (type === 'Others') {
+                    showCustomDocPrompt(modal);
+                } else {
+                    vscode.postMessage({ type: 'generateDoc', docType: type });
+                    modal.remove();
+                }
+            });
+            box.appendChild(btn);
+        });
+
+        modal.appendChild(box);
+        document.body.appendChild(modal);
+    }
+
+    function showCustomDocPrompt(modal) {
+        // Remove previous prompt if any
+        let oldPrompt = document.getElementById('custom-doc-prompt');
+        if (oldPrompt) oldPrompt.remove();
+
+        const promptBox = document.createElement('div');
+        promptBox.id = 'custom-doc-prompt';
+
+        const label = document.createElement('label');
+        label.textContent = 'What documentation do you want?';
+        promptBox.appendChild(label);
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        promptBox.appendChild(input);
+
+        const submitBtn = document.createElement('button');
+        submitBtn.textContent = 'Submit';
+        submitBtn.addEventListener('click', () => {
+            if (input.value.trim()) {
+                vscode.postMessage({ type: 'generateDoc', docType: input.value.trim() });
+                if (modal) modal.remove();
+            }
+        });
+        promptBox.appendChild(submitBtn);
+
+        modal.querySelector('div').appendChild(promptBox);
+    }
         const suggestTemplateBtn = document.getElementById('suggest-template-btn');
         if (suggestTemplateBtn) {
             suggestTemplateBtn.addEventListener('click', () => {
@@ -271,6 +335,9 @@
             case 'addMessage':
                 addMessage(message.sender, message.message);
                 break;
+            case 'docCreated':
+                addMessage('System', `Documentation file created: <code>${message.filePath}</code>`);
+                break;
             case 'threadList':
                 threads = message.threads || [];
                 activeThreadId = message.activeThreadId;
@@ -282,19 +349,19 @@
             case 'toggleGeneralTabUI':
                 toggleGeneralTabUI(message.visible);
                 break;
-                case 'sendMessage':
-                    // If sessionId is provided, set active thread
-                    if (message.sessionId) {
-                        activeThreadId = message.sessionId;
-                        renderThreadListMenu();
+            case 'sendMessage':
+                // If sessionId is provided, set active thread
+                if (message.sessionId) {
+                    activeThreadId = message.sessionId;
+                    renderThreadListMenu();
+                }
+                if (chatInput && message.value) {
+                    if (chatInput instanceof HTMLTextAreaElement) {
+                        chatInput.value = message.value;
+                        sendMessage();
                     }
-                    if (chatInput && message.value) {
-                        if (chatInput instanceof HTMLTextAreaElement) {
-                            chatInput.value = message.value;
-                            sendMessage();
-                        }
-                    }
-                    break;
+                }
+                break;
             case 'resetState':  // ✅ reset support
                 vscode.setState(null);
                 if (chatMessages) chatMessages.innerHTML = '';
