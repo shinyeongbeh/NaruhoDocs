@@ -65,7 +65,7 @@
     }
 
     function renderThreadListMenu() {
-        if (!threadListMenu) return;
+        if (!threadListMenu) {return;}
         threadListMenu.innerHTML = '';
         let activeTitle = '';
         let foundActive = false;
@@ -75,48 +75,121 @@
             generalButtons.style.display = (activeThreadId === 'naruhodocs-general-thread') ? 'flex' : 'none';
         }
 
-    // Remove mode buttons from menu area
-    // Add mode switch buttons inside chat area for document-specific threads
-    let chatModeButtons = document.getElementById('chat-mode-buttons');
-    if (!chatModeButtons) {
-        chatModeButtons = document.createElement('div');
-        chatModeButtons.id = 'chat-mode-buttons';
-        chatModeButtons.style.display = 'flex';
-        chatModeButtons.style.gap = '8px';
-        chatModeButtons.style.margin = '12px 0';
-        // Insert above chat input container
+        // Remove mode buttons from menu area
+        // Add mode switch buttons above chat input container
+        let chatModeButtons = document.getElementById('chat-mode-buttons');
         const chatInputContainer = document.querySelector('.chat-input-container');
-        if (chatInputContainer && chatInputContainer.parentElement) {
-            chatInputContainer.parentElement.insertBefore(chatModeButtons, chatInputContainer);
+        if (!chatModeButtons) {
+            chatModeButtons = document.createElement('div');
+            chatModeButtons.id = 'chat-mode-buttons';
+            chatModeButtons.style.display = 'flex';
+            chatModeButtons.style.gap = '8px';
+            chatModeButtons.style.margin = '12px 0';
+            // Insert above chat input container
+            if (chatInputContainer && chatInputContainer.parentElement) {
+                chatInputContainer.parentElement.insertBefore(chatModeButtons, chatInputContainer);
+            }
         }
-    }
-    if (activeThreadId !== 'naruhodocs-general-thread') {
-        chatModeButtons.innerHTML = '';
-        const beginnerBtn = document.createElement('button');
-        beginnerBtn.textContent = 'Beginner Mode';
-        beginnerBtn.onclick = () => {
-            console.log('Beginner mode clicked');
-            vscode.postMessage({
-                type: 'setThreadBeginnerMode',
-                sessionId: activeThreadId
+        if (activeThreadId !== 'naruhodocs-general-thread') {
+            chatModeButtons.innerHTML = '';
+            // Create custom slide switch for mode selection (no visible checkbox)
+            const switchLabel = document.createElement('label');
+            switchLabel.className = 'switch';
+            switchLabel.style.display = 'flex';
+            switchLabel.style.alignItems = 'center';
+            switchLabel.style.gap = '4px';
+
+            // Hidden checkbox for accessibility and state
+            const switchInput = document.createElement('input');
+            switchInput.type = 'checkbox';
+            switchInput.checked = false; // Off by default = Developer
+            switchInput.style.display = 'none';
+
+            // Custom slider
+            const sliderSpan = document.createElement('span');
+            sliderSpan.className = 'slider';
+            sliderSpan.style.width = '28px';
+            sliderSpan.style.height = '14px';
+            sliderSpan.style.background = '#ccc';
+            sliderSpan.style.borderRadius = '20px';
+            sliderSpan.style.position = 'relative';
+            sliderSpan.style.display = 'inline-block';
+            sliderSpan.style.cursor = 'pointer';
+            sliderSpan.style.transition = 'background 0.2s';
+
+            // Knob
+            const knob = document.createElement('span');
+            knob.style.position = 'absolute';
+            knob.style.left = '2px';
+            knob.style.top = '2px';
+            knob.style.width = '10px';
+            knob.style.height = '10px';
+            knob.style.background = '#fff';
+            knob.style.borderRadius = '50%';
+            knob.style.boxShadow = '0 1px 4px rgba(0,0,0,0.12)';
+            knob.style.transition = 'left 0.2s';
+            sliderSpan.appendChild(knob);
+
+            // Add text label
+            const modeText = document.createElement('span');
+            modeText.textContent = 'Beginner Mode';
+            modeText.style.marginLeft = '6px';
+            modeText.style.fontSize = '0.85em';
+
+            // Click slider to toggle
+            sliderSpan.addEventListener('click', () => {
+                switchInput.checked = !switchInput.checked;
+                updateSwitchUI();
+                if (switchInput.checked) {
+                    modeText.style.color = '#6ab1e8ff';
+                    vscode.postMessage({
+                        type: 'setThreadBeginnerMode',
+                        sessionId: activeThreadId
+                    });
+                    // Show chat message for switching to Beginner Mode
+                    if (chatMessages) {
+                        const msg = document.createElement('div');
+                        msg.className = 'message system';
+                        msg.textContent = 'Switched to Beginner Mode';
+                        chatMessages.appendChild(msg);
+                        chatMessages.scrollTop = chatMessages.scrollHeight;
+                    }
+                } else {
+                    modeText.style.color = '#ccc';
+                    vscode.postMessage({
+                        type: 'setThreadDeveloperMode',
+                        sessionId: activeThreadId
+                    });
+                    // Show chat message for switching to Developer Mode
+                    if (chatMessages) {
+                        const msg = document.createElement('div');
+                        msg.className = 'message system';
+                        msg.textContent = 'Switched to Developer Mode';
+                        chatMessages.appendChild(msg);
+                        chatMessages.scrollTop = chatMessages.scrollHeight;
+                    }
+                }
             });
-        };
-        const devBtn = document.createElement('button');
-        devBtn.textContent = 'Developer Mode';
-        devBtn.onclick = () => {
-            console.log('Developer mode clicked');
-            vscode.postMessage({
-                type: 'setThreadDeveloperMode',
-                sessionId: activeThreadId
-            });
-        };
-        chatModeButtons.appendChild(beginnerBtn);
-        chatModeButtons.appendChild(devBtn);
-        chatModeButtons.style.display = 'flex';
-    } else {
-        chatModeButtons.innerHTML = '';
-        chatModeButtons.style.display = 'none';
-    }
+
+            function updateSwitchUI() {
+                if (switchInput.checked) {
+                    knob.style.left = '16px';
+                    sliderSpan.style.background = 'var(--vscode-list-activeSelectionBackground)';
+                } else {
+                    knob.style.left = '2px';
+                    sliderSpan.style.background = 'var(--vscode-input-background)';
+                }
+            }
+            updateSwitchUI();
+
+            switchLabel.appendChild(sliderSpan);
+            switchLabel.appendChild(modeText);
+            chatModeButtons.appendChild(switchLabel);
+            chatModeButtons.style.display = 'flex';
+        } else {
+            chatModeButtons.innerHTML = '';
+            chatModeButtons.style.display = 'none';
+        }
         // Add event listeners for general buttons
         const generateDocBtn = document.getElementById('generate-doc-btn');
         if (generateDocBtn) {
@@ -156,8 +229,8 @@
                 activeThreadId = thread.id;
                 renderThreadListMenu(); // update UI immediately
                 vscode.postMessage({ type: 'switchThread', sessionId: thread.id });
-                if (dropdownContainer) dropdownContainer.style.display = 'none';
-                if (hamburgerMenu) hamburgerMenu.classList.remove('open');
+                if (dropdownContainer) { dropdownContainer.style.display = 'none'; }
+                if (hamburgerMenu) { hamburgerMenu.classList.remove('open'); }
             });
             threadListMenu.appendChild(item);
         });
@@ -230,8 +303,8 @@
         createFileBtn.addEventListener('click', () => {
             vscode.postMessage({ type: 'createFile' });
             // Always close dropdown and set hamburger to close mode
-            if (dropdownContainer) dropdownContainer.style.display = 'none';
-            if (hamburgerMenu) hamburgerMenu.classList.remove('open');
+            if (dropdownContainer) { dropdownContainer.style.display = 'none'; }
+            if (hamburgerMenu) { hamburgerMenu.classList.remove('open'); }
         });
     }
 
@@ -282,27 +355,27 @@
             case 'toggleGeneralTabUI':
                 toggleGeneralTabUI(message.visible);
                 break;
-                case 'sendMessage':
-                    // If sessionId is provided, set active thread
-                    if (message.sessionId) {
-                        activeThreadId = message.sessionId;
-                        renderThreadListMenu();
+            case 'sendMessage':
+                // If sessionId is provided, set active thread
+                if (message.sessionId) {
+                    activeThreadId = message.sessionId;
+                    renderThreadListMenu();
+                }
+                if (chatInput && message.value) {
+                    if (chatInput instanceof HTMLTextAreaElement) {
+                        chatInput.value = message.value;
+                        sendMessage();
                     }
-                    if (chatInput && message.value) {
-                        if (chatInput instanceof HTMLTextAreaElement) {
-                            chatInput.value = message.value;
-                            sendMessage();
-                        }
-                    }
-                    break;
+                }
+                break;
             case 'resetState':  // ✅ reset support
                 vscode.setState(null);
-                if (chatMessages) chatMessages.innerHTML = '';
-                if (currentDocName) currentDocName.textContent = '';
+                if (chatMessages) { chatMessages.innerHTML = ''; }
+                if (currentDocName) { currentDocName.textContent = ''; }
                 activeThreadId = undefined;
                 threads = [];
-                if (dropdownContainer) dropdownContainer.style.display = 'none';
-                if (hamburgerMenu) hamburgerMenu.classList.remove('open');
+                if (dropdownContainer) { dropdownContainer.style.display = 'none'; }
+                if (hamburgerMenu) { hamburgerMenu.classList.remove('open'); }
                 break;
         }
     });
