@@ -110,14 +110,11 @@
             // Create custom slide switch for mode selection
             const switchLabel = document.createElement('label');
             switchLabel.className = 'switch';
-            switchLabel.style.display = 'flex';
-            switchLabel.style.alignItems = 'center';
-            switchLabel.style.gap = '4px';
 
             // Hidden checkbox for accessibility and state
             const switchInput = document.createElement('input');
             switchInput.type = 'checkbox';
-            // Set checked state based on threadModes
+            switchInput.className = 'switch-checkbox';
             let mode = threadModes[activeThreadId] || 'developer';
             switchInput.checked = (mode === 'beginner');
             switchInput.style.display = 'none';
@@ -125,34 +122,15 @@
             // Custom slider
             const sliderSpan = document.createElement('span');
             sliderSpan.className = 'slider';
-            sliderSpan.style.width = '28px';
-            sliderSpan.style.height = '14px';
-            sliderSpan.style.background = '#ccc';
-            sliderSpan.style.borderRadius = '20px';
-            sliderSpan.style.position = 'relative';
-            sliderSpan.style.display = 'inline-block';
-            sliderSpan.style.cursor = 'pointer';
-            sliderSpan.style.transition = 'background 0.2s';
-
             // Knob
             const knob = document.createElement('span');
-            knob.style.position = 'absolute';
-            knob.style.left = '2px';
-            knob.style.top = '2px';
-            knob.style.width = '10px';
-            knob.style.height = '10px';
-            knob.style.background = '#fff';
-            knob.style.borderRadius = '50%';
-            knob.style.boxShadow = '0 1px 4px rgba(0,0,0,0.12)';
-            knob.style.transition = 'left 0.2s';
+            knob.className = 'slider-knob';
             sliderSpan.appendChild(knob);
 
             // Add text label
             const modeText = document.createElement('span');
+            modeText.className = 'mode-text';
             modeText.textContent = switchInput.checked ? 'Beginner Mode' : 'Developer Mode';
-            modeText.style.marginLeft = '6px';
-            modeText.style.fontSize = '0.85em';
-            modeText.style.color = switchInput.checked ? '#6ab1e8ff' : '#ccc';
 
             // Click slider to toggle
             sliderSpan.addEventListener('click', () => {
@@ -162,7 +140,8 @@
                 updateSwitchUI();
                 if (switchInput.checked) {
                     modeText.textContent = 'Beginner Mode';
-                    modeText.style.color = '#6ab1e8ff';
+                    modeText.classList.add('beginner');
+                    modeText.classList.remove('developer');
                     vscode.postMessage({
                         type: 'setThreadBeginnerMode',
                         sessionId: activeThreadId
@@ -177,7 +156,8 @@
                     }
                 } else {
                     modeText.textContent = 'Developer Mode';
-                    modeText.style.color = '#ccc';
+                    modeText.classList.add('developer');
+                    modeText.classList.remove('beginner');
                     vscode.postMessage({
                         type: 'setThreadDeveloperMode',
                         sessionId: activeThreadId
@@ -195,11 +175,15 @@
 
             function updateSwitchUI() {
                 if (switchInput.checked) {
-                    knob.style.left = '16px';
-                    sliderSpan.style.background = 'var(--vscode-list-activeSelectionBackground)';
+                    knob.classList.add('checked');
+                    sliderSpan.classList.add('checked');
+                    modeText.classList.add('beginner');
+                    modeText.classList.remove('developer');
                 } else {
-                    knob.style.left = '2px';
-                    sliderSpan.style.background = 'var(--vscode-input-background)';
+                    knob.classList.remove('checked');
+                    sliderSpan.classList.remove('checked');
+                    modeText.classList.add('developer');
+                    modeText.classList.remove('beginner');
                 }
             }
             updateSwitchUI();
@@ -229,7 +213,19 @@
         const modal = document.createElement('div');
     modal.id = 'doc-type-modal';
 
+
     const box = document.createElement('div');
+
+    // Add close button inside the modal content box
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'doc-modal-close-btn';
+    closeBtn.innerHTML = '&times;';
+    closeBtn.title = 'Close';
+    closeBtn.addEventListener('click', () => {
+        modal.remove();
+    });
+    box.appendChild(closeBtn);
+    modal.appendChild(box);
 
     const title = document.createElement('h2');
     title.textContent = 'Select Documentation Type';

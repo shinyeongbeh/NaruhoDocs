@@ -1,3 +1,51 @@
+/* Chat Mode Switch Styles */
+.switch {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+.switch-checkbox {
+	display: none;
+}
+.slider {
+	width: 28px;
+	height: 14px;
+	background: #ccc;
+	border-radius: 20px;
+	position: relative;
+	display: inline-block;
+	cursor: pointer;
+	transition: background 0.2s;
+}
+.slider.checked {
+	background: var(--vscode-list-activeSelectionBackground);
+}
+.slider-knob {
+	position: absolute;
+	left: 2px;
+	top: 2px;
+	width: 10px;
+	height: 10px;
+	background: #fff;
+	border-radius: 50%;
+	box-shadow: 0 1px 4px rgba(0,0,0,0.12);
+	transition: left 0.2s;
+}
+.slider-knob.checked {
+	left: 16px;
+}
+.mode-text {
+	margin-left: 6px;
+	font-size: 0.85em;
+	color: #ccc;
+	transition: color 0.2s;
+}
+.mode-text.beginner {
+	color: #6ab1e8ff;
+}
+.mode-text.developer {
+	color: #ccc;
+}
 /* Modal for documentation type selection */
 #doc-type-modal {
 	position: fixed;
@@ -18,6 +66,46 @@
 	border-radius: 12px;
 	min-width: 320px;
 	box-shadow: 0 2px 16px rgba(0,0,0,0.2);
+	position: relative;
+}
+
+.doc-modal-close-btn {
+	position: absolute;
+	top: 16px;
+	right: 16px;
+	width: 32px;
+	height: 32px;
+	border-radius: 50%;
+	font-size: 1.5rem;
+	background: rgba(0,0,0,0.18);
+	border: none;
+	color: #fff;
+	cursor: pointer;
+	z-index: 10;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	transition: background 0.18s, color 0.18s;
+	box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+}
+.doc-modal-close-btn:hover {
+	background: #ff5252;
+	color: #fff;
+}
+#doc-type-modal > div {
+	position: relative;
+}
+#doc-type-modal {
+	position: fixed;
+	top: 0;
+	left: 0;
+	width: 100vw;
+	height: 100vh;
+	background: rgba(0,0,0,0.3);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 9999;
 }
 
 #doc-type-modal h2 {
