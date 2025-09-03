@@ -310,7 +310,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 								</svg>
 							</span>
 						</div>
-						<button id="create-file-btn" style="margin-top:10px;">Create Default File</button>
+						<!--<button id="create-file-btn" style="margin-top:10px;">Create Default File</button>-->
 					</div>
 				</div>
 
