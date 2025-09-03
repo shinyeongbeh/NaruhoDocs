@@ -4,6 +4,55 @@ import { SystemMessages } from './SystemMessages';
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
 	/**
+	 * Switch the system message for a document-based thread to beginner mode.
+	 */
+	public async setThreadBeginnerMode(sessionId: string) {
+		if(sessionId === 'naruhodocs-general-thread') {
+			return;
+		}
+		console.log('ChatViewProvider: setThreadBeginnerMode called', sessionId);
+		const session = this.sessions.get(sessionId);
+		const title = this.threadTitles.get(sessionId) || '';
+		let initialContext = '';
+		// Use sessionId as file path for document threads
+		try {
+			const uri = vscode.Uri.parse(sessionId);
+			const doc = await vscode.workspace.openTextDocument(uri);
+			initialContext = doc.getText();
+		} catch (e) {
+			initialContext = '';
+		}
+		if (session) {
+			const sysMessage = SystemMessages.DOCUMENT_SPECIFIC_BEGINNER(title, initialContext);
+			session.setCustomSystemMessage(sysMessage);
+		}
+	}
+
+	/**
+	 * Switch the system message for a document-based thread to developer mode.
+	 */
+	public async setThreadDeveloperMode(sessionId: string) {
+		if(sessionId === 'naruhodocs-general-thread') {
+			return;
+		}
+		console.log('ChatViewProvider: setThreadDeveloperMode called');
+		const session = this.sessions.get(sessionId);
+		const title = this.threadTitles.get(sessionId) || '';
+		let initialContext = '';
+		// Use sessionId as file path for document threads
+		try {
+			const uri = vscode.Uri.parse(sessionId);
+			const doc = await vscode.workspace.openTextDocument(uri);
+			initialContext = doc.getText();
+		} catch (e) {
+			initialContext = '';
+		}
+		if (session) {
+			const sysMessage = SystemMessages.DOCUMENT_SPECIFIC_DEVELOPER(title, initialContext);
+			session.setCustomSystemMessage(sysMessage);
+		}
+	}
+	/**
 	 * Send a message to a specific thread and display the bot response.
 	 */
 	public async sendMessageToThread(sessionId: string, prompt: string) {
@@ -92,6 +141,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		webviewView.webview.onDidReceiveMessage(async data => {
 			const session = this.activeThreadId ? this.sessions.get(this.activeThreadId) : undefined;
 			switch (data.type) {
+				case 'setThreadBeginnerMode': {
+					await this.setThreadBeginnerMode(data.sessionId);
+					break;
+				}
+				case 'setThreadDeveloperMode': {
+					await this.setThreadDeveloperMode(data.sessionId);
+					break;
+				}
 				case 'sendMessage': {
 					const userMessage = data.value as string;
 					try {
@@ -153,7 +210,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 	// Create a new thread/session for a document
 	public createThread(sessionId: string, initialContext: string, title: string) {
 		if (!this.sessions.has(sessionId)) {
-			const sysMessage = SystemMessages.DOCUMENT_SPECIFIC(title, initialContext);
+			const sysMessage = SystemMessages.DOCUMENT_SPECIFIC_DEVELOPER(title, initialContext);
 			// Try to load history from workspaceState
 			const savedHistory = this.context.workspaceState.get<any[]>(`thread-history-${sessionId}`);
 			const session = createChat({ apiKey: this.apiKey, maxHistoryMessages: 40, systemMessage: sysMessage });

@@ -19,6 +19,7 @@ export interface ChatSession {
   reset(): void;
   getHistory(): BaseMessage[]; // optional accessor
   setHistory(historyArr: BaseMessage[]): void; // new method for restoring history
+  setCustomSystemMessage(msg: string): void;
 }
 
 export function createChat(opts: CreateChatOptions = {}): ChatSession {
@@ -138,6 +139,13 @@ export function createChat(opts: CreateChatOptions = {}): ChatSession {
         if (type === 'human') { history.push(new HumanMessage(text)); }
         if (type === 'ai') { history.push(new AIMessage(text)); }
       }
+    },
+    setCustomSystemMessage(msg: string) {
+      // Remove any existing SystemMessage
+      history = history.filter(m => !(m instanceof SystemMessage));
+      // Add new SystemMessage at the start
+      history.unshift(new SystemMessage(msg));
+      console.log('System message: ',msg);
     }
   };
 }

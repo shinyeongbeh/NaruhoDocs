@@ -74,6 +74,49 @@
         if (generalButtons) {
             generalButtons.style.display = (activeThreadId === 'naruhodocs-general-thread') ? 'flex' : 'none';
         }
+
+    // Remove mode buttons from menu area
+    // Add mode switch buttons inside chat area for document-specific threads
+    let chatModeButtons = document.getElementById('chat-mode-buttons');
+    if (!chatModeButtons) {
+        chatModeButtons = document.createElement('div');
+        chatModeButtons.id = 'chat-mode-buttons';
+        chatModeButtons.style.display = 'flex';
+        chatModeButtons.style.gap = '8px';
+        chatModeButtons.style.margin = '12px 0';
+        // Insert above chat input container
+        const chatInputContainer = document.querySelector('.chat-input-container');
+        if (chatInputContainer && chatInputContainer.parentElement) {
+            chatInputContainer.parentElement.insertBefore(chatModeButtons, chatInputContainer);
+        }
+    }
+    if (activeThreadId !== 'naruhodocs-general-thread') {
+        chatModeButtons.innerHTML = '';
+        const beginnerBtn = document.createElement('button');
+        beginnerBtn.textContent = 'Beginner Mode';
+        beginnerBtn.onclick = () => {
+            console.log('Beginner mode clicked');
+            vscode.postMessage({
+                type: 'setThreadBeginnerMode',
+                sessionId: activeThreadId
+            });
+        };
+        const devBtn = document.createElement('button');
+        devBtn.textContent = 'Developer Mode';
+        devBtn.onclick = () => {
+            console.log('Developer mode clicked');
+            vscode.postMessage({
+                type: 'setThreadDeveloperMode',
+                sessionId: activeThreadId
+            });
+        };
+        chatModeButtons.appendChild(beginnerBtn);
+        chatModeButtons.appendChild(devBtn);
+        chatModeButtons.style.display = 'flex';
+    } else {
+        chatModeButtons.innerHTML = '';
+        chatModeButtons.style.display = 'none';
+    }
         // Add event listeners for general buttons
         const generateDocBtn = document.getElementById('generate-doc-btn');
         if (generateDocBtn) {
