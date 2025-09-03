@@ -17,6 +17,8 @@
 
     let activeThreadId = undefined;
     let threads = [];
+    // Store mode for each thread: 'beginner' or 'developer'
+    let threadModes = {};
 
     const oldState = vscode.getState() || {};
 
@@ -31,6 +33,9 @@
     }
     if (oldState.activeThreadId) {
         activeThreadId = oldState.activeThreadId;
+    }
+    if (oldState.threadModes) {
+        threadModes = oldState.threadModes;
     }
     if (typeof oldState.isHamburgerOpen === 'boolean' && dropdownContainer && hamburgerMenu) {
         dropdownContainer.style.display = oldState.isHamburgerOpen ? 'block' : 'none';
@@ -65,6 +70,16 @@
     }
 
     function renderThreadListMenu() {
+        // Sync backend mode on tab switch (if not general thread)
+        if (activeThreadId && activeThreadId !== 'naruhodocs-general-thread') {
+            let mode = threadModes[activeThreadId] || 'developer';
+            if (mode === 'beginner') {
+                vscode.postMessage({ type: 'setThreadBeginnerMode', sessionId: activeThreadId });
+            } else {
+                vscode.postMessage({ type: 'setThreadDeveloperMode', sessionId: activeThreadId });
+            }
+        }
+        console.log('[NaruhoDocs] Rendering thread list menu. Active thread ID:', activeThreadId, 'Threads:', threads);
         if (!threadListMenu) {return;}
         threadListMenu.innerHTML = '';
         let activeTitle = '';
@@ -92,7 +107,7 @@
         }
         if (activeThreadId !== 'naruhodocs-general-thread') {
             chatModeButtons.innerHTML = '';
-            // Create custom slide switch for mode selection (no visible checkbox)
+            // Create custom slide switch for mode selection
             const switchLabel = document.createElement('label');
             switchLabel.className = 'switch';
             switchLabel.style.display = 'flex';
@@ -102,7 +117,9 @@
             // Hidden checkbox for accessibility and state
             const switchInput = document.createElement('input');
             switchInput.type = 'checkbox';
-            switchInput.checked = false; // Off by default = Developer
+            // Set checked state based on threadModes
+            let mode = threadModes[activeThreadId] || 'developer';
+            switchInput.checked = (mode === 'beginner');
             switchInput.style.display = 'none';
 
             // Custom slider
@@ -132,15 +149,19 @@
 
             // Add text label
             const modeText = document.createElement('span');
-            modeText.textContent = 'Beginner Mode';
+            modeText.textContent = switchInput.checked ? 'Beginner Mode' : 'Developer Mode';
             modeText.style.marginLeft = '6px';
             modeText.style.fontSize = '0.85em';
+            modeText.style.color = switchInput.checked ? '#6ab1e8ff' : '#ccc';
 
             // Click slider to toggle
             sliderSpan.addEventListener('click', () => {
                 switchInput.checked = !switchInput.checked;
+                threadModes[activeThreadId] = switchInput.checked ? 'beginner' : 'developer';
+                persistState();
                 updateSwitchUI();
                 if (switchInput.checked) {
+                    modeText.textContent = 'Beginner Mode';
                     modeText.style.color = '#6ab1e8ff';
                     vscode.postMessage({
                         type: 'setThreadBeginnerMode',
@@ -155,6 +176,7 @@
                         chatMessages.scrollTop = chatMessages.scrollHeight;
                     }
                 } else {
+                    modeText.textContent = 'Developer Mode';
                     modeText.style.color = '#ccc';
                     vscode.postMessage({
                         type: 'setThreadDeveloperMode',
@@ -284,6 +306,7 @@
             activeDocName: currentDocName?.textContent,
             activeThreadId,
             threads,
+            threadModes,
             isHamburgerOpen: dropdownContainer?.style.display === 'block'
         });
     }
