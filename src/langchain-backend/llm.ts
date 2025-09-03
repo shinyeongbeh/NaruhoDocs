@@ -145,7 +145,6 @@ export function createChat(opts: CreateChatOptions = {}): ChatSession {
       history = history.filter(m => !(m instanceof SystemMessage));
       // Add new SystemMessage at the start
       history.unshift(new SystemMessage(msg));
-      console.log('System message: ',msg);
     }
   };
 }
