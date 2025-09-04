@@ -225,7 +225,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 					let fileName = data.fileName && typeof data.fileName === 'string' && data.fileName.trim() !== ''
 						? data.fileName.trim()
 						: `${data.docType.replace(/\s+/g, '_').toUpperCase()}.md`;
-					// Check if file already exists in workspace
 					const wsFolders = vscode.workspace.workspaceFolders;
 					if (wsFolders && wsFolders.length > 0) {
 						const wsUri = wsFolders[0].uri;
@@ -233,26 +232,55 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 						if (foundFiles.length > 0) {
 							this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: `This file already exists at: ${foundFiles[0].fsPath}` });
 						} else {
-							// Gather workspace context for AI
+							// Gather workspace filenames
 							const { RetrieveWorkspaceFilenamesTool, RetrieveFileContentTool } = require('./langchain-backend/features');
 							const filenamesTool = new RetrieveWorkspaceFilenamesTool();
 							const fileListStr = await filenamesTool._call();
 							const fileList = fileListStr.split('\n').filter((line: string) => line && !line.startsWith('Files in the workspace:'));
+
+							// Always include project metadata and README/config files for richer context
+							const metaFiles = ['package.json', 'tsconfig.json', 'README.md', 'readme.md', 'api_reference.md', 'API_REFERENCE.md'];
+							const extraFiles = fileList.filter((f: string) => metaFiles.includes(f.split(/[/\\]/).pop()?.toLowerCase() || ''));
+
+							// Ask AI which files are relevant for documentation
+							const sys = `You are an AI assistant that helps users create project documentation files based on the project files and contents. The output should be in markdown format. Do not include code fences or explanations, just the documentation. First, select the most relevant files from this list for generating documentation for ${fileName}. Always include project metadata and README/config files if available. Return only a JSON array of file paths, no explanation.`;
+							const chat = createChat({ apiKey: this.apiKey, maxHistoryMessages: 10, systemMessage: sys });
+							let relevantFiles: string[] = [];
+							try {
+								const aiResponse = await chat.chat(`Here is the list of files in the workspace:\n${fileList.join('\n')}\nWhich files are most relevant for generating documentation for ${fileName}? Always include project metadata and README/config files if available. Return only a JSON array of file paths.`);
+								// Try to parse the AI response as JSON array
+								const match = aiResponse.match(/\[.*\]/s);
+								if (match) {
+									relevantFiles = JSON.parse(match[0]);
+								} else {
+									// fallback: use all files
+									relevantFiles = fileList;
+								}
+							} catch (err) {
+								relevantFiles = fileList;
+							}
+							// Ensure meta files are always included
+							for (const meta of extraFiles) {
+								if (!relevantFiles.includes(meta)) {
+									relevantFiles.push(meta);
+								}
+							}
+							// Now scan only relevant files
 							const contentTool = new RetrieveFileContentTool();
 							const filesAndContents = [];
-							for (let i = 0; i < Math.min(fileList.length, 20); i++) {
-	 							const path = fileList[i];
-	 							console.log('[NaruhoDocs][DEBUG] Scanning file:', path);
-	 							const content = await contentTool._call(path);
-	 							filesAndContents.push({ path, content });
+							for (const path of relevantFiles) {
+								try {
+									const content = await contentTool._call(path);
+									filesAndContents.push({ path, content });
+								} catch (e) {}
 							}
 							// Use AI to generate starter content
 							let aiContent = '';
 							try {
-								const sys = "You are an AI assistant that helps users to create project documentation files based on the project files and contents. The output should be in markdown format. The output should not include '\`\`\`markdown' in the message or any explanation, just the documentation.";
-								const chat = createChat({ apiKey: this.apiKey, maxHistoryMessages: 10, systemMessage: sys });
-								aiContent = await chat.chat(`Generate a starter documentation for ${fileName} based on this project. Here are the workspace files and contents:
-${filesAndContents.map(f => `File: ${f.path}\n${f.content}`).join('\n\n')}`);
+								const sys2 = `You are an AI assistant that helps users create project documentation files based on the project files and contents. The output should be in markdown format. Do not include code fences or explanations, just the documentation.`;
+								const chat2 = createChat({ apiKey: this.apiKey, maxHistoryMessages: 10, systemMessage: sys2 });
+								const filesAndContentsString = filesAndContents.map(f => `File: ${f.path}\n${f.content}`).join('\n\n');
+								aiContent = await chat2.chat(`Generate a starter documentation for ${fileName} based on this project. Here are the relevant workspace files and contents:\n${filesAndContentsString}`);
 								aiContent = aiContent.replace(/^```markdown\s*/i, '').replace(/^\*\*\*markdown\s*/i, '').replace(/```$/g, '').trim();
 							} catch (err) {
 								aiContent = `# ${data.docType}\n\nDescribe your documentation needs here.`;
@@ -265,8 +293,9 @@ ${filesAndContents.map(f => `File: ${f.path}\n${f.content}`).join('\n\n')}`);
 								// Trigger a fresh scan to update modal choices
 								await vscode.commands.executeCommand('naruhodocs.scanDocs');
 								console.log('[NaruhoDocs] scanDocs triggered after doc creation');
-							} catch (err: any) {
-								this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: `Error creating doc: ${err.message}` });
+							} catch (err) {
+								const errorMsg = typeof err === 'object' && err !== null && 'message' in err ? (err as any).message : String(err);
+								this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: `Error creating doc: ${errorMsg}` });
 							}
 						}
 					} else {
