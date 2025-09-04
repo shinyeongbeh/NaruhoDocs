@@ -173,6 +173,37 @@ export function activate(context: vscode.ExtensionContext) {
 	);
 
 	context.subscriptions.push(
+		vscode.commands.registerCommand('naruhodocs.translateDocument', async (documentUri: vscode.Uri) => {
+			const languages = [
+				{ label: 'Malay', value: 'ms' },
+				{ label: 'English', value: 'en' },
+				{ label: 'Chinese', value: 'zh' },
+				{ label: 'Japanese', value: 'ja' },
+				{ label: 'Korean', value: 'ko' },
+				{ label: 'Spanish', value: 'es' },
+				{ label: 'French', value: 'fr' },
+				{ label: 'German', value: 'de' },
+				{ label: 'Russian', value: 'ru' },
+				{ label: 'Arabic', value: 'ar' },
+				{ label: 'Hindi', value: 'hi' }
+			];
+			const picked = await vscode.window.showQuickPick(languages.map(l => l.label), {
+				placeHolder: 'Select a language to translate the document'
+			});
+			if (picked) {
+				const selected = languages.find(l => l.label === picked);
+				const response = await provider.sendMessageToThread(documentUri.toString(), `Translate this document to ${selected?.label}`);
+				// Show Yes/No buttons in the sidebar via webview message
+				provider.postMessage({
+					type: 'showSaveTranslationButtons',
+					translation: response,
+					sessionId: documentUri.toString()
+				});
+			}
+		})
+	);
+
+	context.subscriptions.push(
 		vscode.commands.registerCommand('naruhodocs.start', () => {
 			vscode.window.showInformationMessage('NaruhoDocs started!');
 		}));
@@ -192,8 +223,8 @@ export function activate(context: vscode.ExtensionContext) {
 	const generalThreadTitle = 'General Purpose';
 	if (!threadMap.has(generalThreadId)) {
 		const sysMessage = SystemMessages.GENERAL_PURPOSE;
-		
-	threadMap.set(generalThreadId, { document: undefined as any, sessionId: generalThreadId });
+
+		threadMap.set(generalThreadId, { document: undefined as any, sessionId: generalThreadId });
 		provider.createThread(generalThreadId, sysMessage, generalThreadTitle);
 		activeThreadId = generalThreadId;
 		provider.setActiveThread(generalThreadId);

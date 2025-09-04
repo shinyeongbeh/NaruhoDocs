@@ -4,12 +4,20 @@ export class SummaryCodeLensProvider implements vscode.CodeLensProvider {
     public provideCodeLenses(document: vscode.TextDocument, token: vscode.CancellationToken): vscode.CodeLens[] | Thenable<vscode.CodeLens[]> {
         const codeLenses: vscode.CodeLens[] = [];
         const range = new vscode.Range(0, 0, 0, 0);
-        const command: vscode.Command = {
+        // Summarize Document button
+        codeLenses.push(new vscode.CodeLens(range, {
             command: 'naruhodocs.summarizeDocument',
             title: '🌟 Summarize Document',
             arguments: [document.uri]
-        };
-        codeLenses.push(new vscode.CodeLens(range, command));
+        }));
+
+        // Switch Mode button
+        codeLenses.push(new vscode.CodeLens(range, {
+            command: 'naruhodocs.translateDocument',
+            title: '🌐 Translate Document',
+            arguments: [document.uri]
+        }));
+
         return codeLenses;
     }
 }
