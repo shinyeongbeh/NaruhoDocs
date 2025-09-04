@@ -5,6 +5,7 @@ import { SystemMessages } from './SystemMessages';
 export class ChatViewProvider implements vscode.WebviewViewProvider {
 	private existingDocFiles: string[] = [];
 	private didDevCleanupOnce: boolean = false;
+	private fileWatcher?: vscode.FileSystemWatcher;
 	/**
 	 * Switch the system message for a document-based thread to beginner mode.
 	 */
@@ -100,11 +101,29 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		const generalThreadTitle = 'General Purpose';
 		const sysMessage = SystemMessages.GENERAL_PURPOSE;
 
-
 		const session = createChat({ apiKey: this.apiKey, maxHistoryMessages: 40, systemMessage: sysMessage });
 		this.sessions.set(generalThreadId, session);
 		this.threadTitles.set(generalThreadId, generalThreadTitle);
 		this.activeThreadId = generalThreadId; // Set as the default active thread
+
+		// Watch for file deletions (markdown/txt)
+		this.fileWatcher = vscode.workspace.createFileSystemWatcher('**/*.{md,txt}');
+		this.fileWatcher.onDidDelete(async (uri) => {
+			const sessionId = uri.toString();
+			if (this.sessions.has(sessionId)) {
+				this.sessions.delete(sessionId);
+				this.threadTitles.delete(sessionId);
+				await this.context.workspaceState.update(`thread-history-${sessionId}`, undefined);
+				// If the deleted thread was active, switch to general
+				if (this.activeThreadId === sessionId) {
+					this.activeThreadId = 'naruhodocs-general-thread';
+				}
+				this._postThreadList();
+				if (this._view) {
+					this._view.webview.postMessage({ type: 'resetState' });
+				}
+			}
+		});
 	}
 
 	public async resolveWebviewView(
