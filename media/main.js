@@ -205,117 +205,117 @@
                 if (oldModal) oldModal.remove();
                 // Always trigger a fresh scan before showing modal
                 vscode.postMessage({ type: 'scanDocs' });
-                   console.log('[NaruhoDocs][UI] Generate Doc button clicked, scanDocs posted');
+                console.log('[NaruhoDocs][UI] Generate Doc button clicked, scanDocs posted');
                 // Show modal dialog for doc type selection
                 showDocTypeModal();
-                   console.log('[NaruhoDocs][UI] showDocTypeModal called');
-                       console.log('[NaruhoDocs][UI] showDocTypeModal rendering modal');
+                console.log('[NaruhoDocs][UI] showDocTypeModal called');
+                console.log('[NaruhoDocs][UI] showDocTypeModal rendering modal');
             });
         }
-    // Modal for doc type selection
-    function showDocTypeModal() {
-        // Remove existing modal if present
-        let oldModal = document.getElementById('doc-type-modal');
-        if (oldModal) oldModal.remove();
+        // Modal for doc type selection
+        function showDocTypeModal() {
+            // Remove existing modal if present
+            let oldModal = document.getElementById('doc-type-modal');
+            if (oldModal) oldModal.remove();
 
-        const modal = document.createElement('div');
-        modal.id = 'doc-type-modal';
+            const modal = document.createElement('div');
+            modal.id = 'doc-type-modal';
 
-        const box = document.createElement('div');
+            const box = document.createElement('div');
 
-        // Add close button inside the modal content box
-        const closeBtn = document.createElement('button');
-        closeBtn.className = 'doc-modal-close-btn';
-        closeBtn.innerHTML = '&times;';
-        closeBtn.title = 'Close';
-        closeBtn.addEventListener('click', () => {
-            modal.remove();
-        });
-        box.appendChild(closeBtn);
-        modal.appendChild(box);
+            // Add close button inside the modal content box
+            const closeBtn = document.createElement('button');
+            closeBtn.className = 'doc-modal-close-btn';
+            closeBtn.innerHTML = '&times;';
+            closeBtn.title = 'Close';
+            closeBtn.addEventListener('click', () => {
+                modal.remove();
+            });
+            box.appendChild(closeBtn);
+            modal.appendChild(box);
 
-        const title = document.createElement('h2');
-        title.textContent = 'Select Documentation Type';
-        box.appendChild(title);
+            const title = document.createElement('h2');
+            title.textContent = 'Select Documentation Type';
+            box.appendChild(title);
 
-        // Show loading spinner/message
-        const loading = document.createElement('div');
-        loading.className = 'doc-modal-loading';
-        loading.textContent = 'Loading suggestions...';
-        box.appendChild(loading);
+            // Show loading spinner/message
+            const loading = document.createElement('div');
+            loading.className = 'doc-modal-loading';
+            loading.textContent = 'Loading suggestions...';
+            box.appendChild(loading);
 
-        document.body.appendChild(modal);
+            document.body.appendChild(modal);
 
-        // Always request a fresh scan of workspace files when modal opens
-        vscode.postMessage({ type: 'scanDocs' });
+            // Always request a fresh scan of workspace files when modal opens
+            vscode.postMessage({ type: 'scanDocs' });
 
-        // Listen for aiSuggestedDocs and replace loading with real choices
-        function handleAISuggestedDocs(event) {
-            const message = event.data;
-            if (message.type === 'aiSuggestedDocs') {
-                // Remove loading
-                box.innerHTML = '';
-                box.appendChild(closeBtn);
-                box.appendChild(title);
-                // Filter AI suggestions using existingFiles
-                const existingFiles = Array.isArray(message.existingFiles) ? message.existingFiles : [];
-                const filteredSuggestions = message.suggestions.filter(s =>
-                    s.fileName && !existingFiles.includes(s.fileName.toLowerCase())
-                );
-                filteredSuggestions.forEach(suggestion => {
-                    const btn = document.createElement('button');
-                    btn.textContent = suggestion.displayName;
-                    btn.title = suggestion.description || '';
-                    btn.addEventListener('click', () => {
-                        addMessage('System', 'Generating documentation...');
-                        vscode.postMessage({ type: 'generateDoc', docType: suggestion.displayName, fileName: suggestion.fileName });
-                        modal.remove();
+            // Listen for aiSuggestedDocs and replace loading with real choices
+            function handleAISuggestedDocs(event) {
+                const message = event.data;
+                if (message.type === 'aiSuggestedDocs') {
+                    // Remove loading
+                    box.innerHTML = '';
+                    box.appendChild(closeBtn);
+                    box.appendChild(title);
+                    // Filter AI suggestions using existingFiles
+                    const existingFiles = Array.isArray(message.existingFiles) ? message.existingFiles : [];
+                    const filteredSuggestions = message.suggestions.filter(s =>
+                        s.fileName && !existingFiles.includes(s.fileName.toLowerCase())
+                    );
+                    filteredSuggestions.forEach(suggestion => {
+                        const btn = document.createElement('button');
+                        btn.textContent = suggestion.displayName;
+                        btn.title = suggestion.description || '';
+                        btn.addEventListener('click', () => {
+                            addMessage('System', 'Generating documentation...');
+                            vscode.postMessage({ type: 'generateDoc', docType: suggestion.displayName, fileName: suggestion.fileName });
+                            modal.remove();
+                        });
+                        box.appendChild(btn);
                     });
-                    box.appendChild(btn);
-                });
-                // Always add 'Others' button at the end
-                const othersBtn = document.createElement('button');
-                othersBtn.textContent = 'Others';
-                othersBtn.addEventListener('click', () => {
-                    addMessage('System', 'Generating documentation...');
-                    showCustomDocPrompt(modal);
-                });
-                box.appendChild(othersBtn);
-                window.removeEventListener('message', handleAISuggestedDocs);
+                    // Always add 'Others' button at the end
+                    const othersBtn = document.createElement('button');
+                    othersBtn.textContent = 'Others';
+                    othersBtn.addEventListener('click', () => {
+                        addMessage('System', 'Generating documentation...');
+                        showCustomDocPrompt(modal);
+                    });
+                    box.appendChild(othersBtn);
+                    window.removeEventListener('message', handleAISuggestedDocs);
+                }
             }
+            window.addEventListener('message', handleAISuggestedDocs);
         }
-        window.addEventListener('message', handleAISuggestedDocs);
-    }
 
-    function showCustomDocPrompt(modal) {
-        // Remove previous prompt if any
-        let oldPrompt = document.getElementById('custom-doc-prompt');
-        if (oldPrompt) oldPrompt.remove();
+        function showCustomDocPrompt(modal) {
+            // Remove previous prompt if any
+            let oldPrompt = document.getElementById('custom-doc-prompt');
+            if (oldPrompt) oldPrompt.remove();
 
-        const promptBox = document.createElement('div');
-        promptBox.id = 'custom-doc-prompt';
+            const promptBox = document.createElement('div');
+            promptBox.id = 'custom-doc-prompt';
 
-        const label = document.createElement('label');
-        label.textContent = 'What documentation do you want?';
-        promptBox.appendChild(label);
+            const label = document.createElement('label');
+            label.textContent = 'What documentation do you want?';
+            promptBox.appendChild(label);
 
-        const input = document.createElement('input');
-        input.type = 'text';
-        promptBox.appendChild(input);
+            const input = document.createElement('input');
+            input.type = 'text';
+            promptBox.appendChild(input);
 
-        const submitBtn = document.createElement('button');
-        submitBtn.textContent = 'Submit';
-        submitBtn.addEventListener('click', () => {
-            if (input.value.trim()) {
-                addMessage('System', 'Generating documentation...');
-                vscode.postMessage({ type: 'generateDoc', docType: input.value.trim() });
-                if (modal) modal.remove();
-            }
-        });
-        promptBox.appendChild(submitBtn);
+            const submitBtn = document.createElement('button');
+            submitBtn.textContent = 'Submit';
+            submitBtn.addEventListener('click', () => {
+                if (input.value.trim()) {
+                    addMessage('System', 'Generating documentation...');
+                    vscode.postMessage({ type: 'generateDoc', docType: input.value.trim() });
+                    if (modal) modal.remove();
+                }
+            });
+            promptBox.appendChild(submitBtn);
 
-        modal.querySelector('div').appendChild(promptBox);
-    }
+            modal.querySelector('div').appendChild(promptBox);
+        }
         const suggestTemplateBtn = document.getElementById('suggest-template-btn');
         if (suggestTemplateBtn) {
             suggestTemplateBtn.addEventListener('click', () => {
@@ -560,7 +560,6 @@
 
     // ✅ single unified listener
     window.addEventListener('message', event => {
-
         const message = event.data;
         switch (message.type) {
             case 'addMessage':
@@ -581,7 +580,6 @@
                 toggleGeneralTabUI(message.visible);
                 break;
             case 'sendMessage':
-                // If sessionId is provided, set active thread
                 if (message.sessionId) {
                     activeThreadId = message.sessionId;
                     renderThreadListMenu();
@@ -593,7 +591,7 @@
                     }
                 }
                 break;
-            case 'resetState':  // ✅ reset support
+            case 'resetState':
                 vscode.setState(null);
                 if (chatMessages) { chatMessages.innerHTML = ''; }
                 if (currentDocName) { currentDocName.textContent = ''; }
@@ -604,51 +602,63 @@
                 break;
             case 'showSaveTranslationButtons':
                 if (chatMessages) {
-                    // Remove any previous translation button container
                     const prev = document.getElementById('save-translation-btn-container');
-                    if (prev) {prev.remove();}
+                    if (prev) prev.remove();
 
                     const btnContainer = document.createElement('div');
                     btnContainer.id = 'save-translation-btn-container';
-                    btnContainer.style.display = 'flex';
-                    btnContainer.style.gap = '12px';
-                    btnContainer.style.marginTop = '18px';
-                    btnContainer.style.justifyContent = 'center';
+                    btnContainer.className = 'save-btn-container';
 
                     const translationDiv = document.createElement('div');
                     translationDiv.textContent = 'Save translation as new file?';
-                    translationDiv.style.padding = '8px 0';
-                    translationDiv.style.fontWeight = 'bold';
-                    translationDiv.style.background = 'var(--vscode-editor-background)';
-                    translationDiv.style.color = 'var(--vscode-foreground)';
-                    translationDiv.style.marginRight = '16px';
+                    translationDiv.className = 'save-btn-prompt';
                     btnContainer.appendChild(translationDiv);
 
                     const yesBtn = document.createElement('button');
                     yesBtn.textContent = 'Yes';
-                    yesBtn.style.padding = '6px 18px';
-                    yesBtn.style.background = 'var(--vscode-button-background)';
-                    yesBtn.style.color = 'var(--vscode-button-foreground)';
-                    yesBtn.style.border = 'none';
-                    yesBtn.style.borderRadius = '6px';
-                    yesBtn.style.cursor = 'pointer';
+                    yesBtn.className = 'save-btn';
                     yesBtn.onclick = () => {
                         vscode.postMessage({ type: 'createAndSaveFile', text: message.translation, uri: message.sessionId });
-                        console.log('uri: ', message.sessionId);
                         btnContainer.remove();
                     };
 
                     const noBtn = document.createElement('button');
                     noBtn.textContent = 'No';
-                    noBtn.style.padding = '6px 18px';
-                    noBtn.style.background = 'var(--vscode-button-background)';
-                    noBtn.style.color = 'var(--vscode-button-foreground)';
-                    noBtn.style.border = 'none';
-                    noBtn.style.borderRadius = '6px';
-                    noBtn.style.cursor = 'pointer';
-                    noBtn.onclick = () => {
+                    noBtn.className = 'save-btn';
+                    noBtn.onclick = () => { btnContainer.remove(); };
+
+                    btnContainer.appendChild(yesBtn);
+                    btnContainer.appendChild(noBtn);
+                    chatMessages.appendChild(btnContainer);
+                    chatMessages.scrollTop = chatMessages.scrollHeight;
+                }
+                break;
+            case 'showSaveTemplateButtons':
+                if (chatMessages) {
+                    const prev = document.getElementById('save-template-btn-container');
+                    if (prev) prev.remove();
+
+                    const btnContainer = document.createElement('div');
+                    btnContainer.id = 'save-template-btn-container';
+                    btnContainer.className = 'save-btn-container';
+
+                    const templateDiv = document.createElement('div');
+                    templateDiv.textContent = 'Save template as new file?';
+                    templateDiv.className = 'save-btn-prompt';
+                    btnContainer.appendChild(templateDiv);
+
+                    const yesBtn = document.createElement('button');
+                    yesBtn.textContent = 'Yes';
+                    yesBtn.className = 'save-btn';
+                    yesBtn.onclick = () => {
+                        vscode.postMessage({ type: 'createAndSaveTemplateFile', text: message.template, uri: message.sessionId });
                         btnContainer.remove();
                     };
+
+                    const noBtn = document.createElement('button');
+                    noBtn.textContent = 'No';
+                    noBtn.className = 'save-btn';
+                    noBtn.onclick = () => { btnContainer.remove(); };
 
                     btnContainer.appendChild(yesBtn);
                     btnContainer.appendChild(noBtn);

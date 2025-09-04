@@ -219,6 +219,22 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 			}
 			const session = this.activeThreadId ? this.sessions.get(this.activeThreadId) : undefined;
 			switch (data.type) {
+				case 'suggestTemplate': {
+					// Generate template using AI and show save modal
+					let templateContent = '';
+					try {
+						if (!session) throw new Error('No active thread');
+						templateContent = await session.chat(`Generate a documentation template for ${data.templateType || 'this project'}.`);
+					} catch (err) {
+						templateContent = 'Unable to generate template.';
+					}
+					this._view?.webview.postMessage({
+						type: 'showSaveTemplateButtons',
+						template: templateContent,
+						sessionId: this.activeThreadId
+					});
+					break;
+				}
 				case 'generateDoc': {
 					console.log('[NaruhoDocs] generateDoc triggered:', data.docType, data.fileName);
 					// Use AI-provided filename if available, otherwise fallback
@@ -322,6 +338,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 							const history = session.getHistory();
 							await this.context.workspaceState.update(`thread-history-${this.activeThreadId}`, history);
 						}
+						// If the user message is a template request, show save prompt
+						if (/generate (a )?.*template/i.test(userMessage)) {
+							this._view?.webview.postMessage({
+								type: 'showSaveTemplateButtons',
+								template: botResponse,
+								sessionId: this.activeThreadId
+							});
+						}
 					} catch (error: any) {
 						this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: `Error: ${error.message || 'Unable to connect to LLM.'}` });
 					}
@@ -394,7 +418,56 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 							this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: 'No valid folder to save translated file.' });
 						}
 						break;
+				}
+				case 'createAndSaveTemplateFile': {
+					// Accept a text parameter for template content
+					let text = data.text || '';
+					// Clean up markdown code fences and extra formatting
+					text = text.replace(/^```markdown\s*/i, '').replace(/^\*\*\*markdown\s*/i, '').replace(/```$/g, '').trim();
+					const uri = data.uri || '';
+					let newUri = '';
+					const generalThreadId = 'naruhodocs-general-thread';
+					let suggestedFileName = '';
+					try {
+						// Use AI to suggest filename based on template content
+						const sysMsg = 'You are an AI assistant. Suggest a concise, valid filename for the following documentation template content. Return only the filename, no explanation.';
+						const chat = require('./langchain-backend/llm.js').createChat({ apiKey: this.apiKey, maxHistoryMessages: 5, systemMessage: sysMsg });
+						suggestedFileName = await chat.chat(text);
+						suggestedFileName = suggestedFileName.replace(/[^\w\-.]/g, '').replace(/^\s+|\s+$/g, '');
+						if (!suggestedFileName.endsWith('.md')) suggestedFileName += '.md';
+					} catch (e) {
+						suggestedFileName = 'Template.md';
 					}
+					if (uri === generalThreadId || !uri) {
+						// Save in workspace root using AI-suggested filename
+						const wsFolders = vscode.workspace.workspaceFolders;
+						if (wsFolders && wsFolders.length > 0) {
+							const wsUri = wsFolders[0].uri;
+							const templateFileUri = vscode.Uri.joinPath(wsUri, suggestedFileName);
+							const content = text ? Buffer.from(text, 'utf8') : new Uint8Array();
+							try {
+								await vscode.workspace.fs.writeFile(templateFileUri, content);
+								this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: `Template file created: ${templateFileUri.fsPath}` });
+							} catch (e: any) {
+								this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: `Error creating template file: ${e.message}` });
+							}
+						} else {
+							this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: 'No workspace folder open.' });
+						}
+					} else {
+						try {
+							const fileUri = vscode.Uri.parse(uri);
+							const parentPaths = fileUri.path.split('/');
+							const templateFileUri = vscode.Uri.joinPath(fileUri.with({ path: parentPaths.join('/') }), suggestedFileName);
+							const content = text ? Buffer.from(text, 'utf8') : new Uint8Array();
+							await vscode.workspace.fs.writeFile(templateFileUri, content);
+							this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: `Template file created: ${templateFileUri.fsPath}` });
+						} catch (e: any) {
+							this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: `Error creating template file: ${e.message}` });
+						}
+					}
+					break;
+				}
 			}
 		});
 	}
