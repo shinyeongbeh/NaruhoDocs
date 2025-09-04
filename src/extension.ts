@@ -11,31 +11,29 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
-	// Command to scan workspace for existing doc files
+	// Use RetrieveWorkspaceFilenamesTool for scanning workspace files
+	const { RetrieveWorkspaceFilenamesTool } = require('./langchain-backend/features');
+	const scanDocs = async () => {
+		const tool = new RetrieveWorkspaceFilenamesTool();
+		const fileListStr = await tool._call();
+		// Parse file paths from string
+	const fileList = fileListStr.split('\n').filter((line: string) => line && !line.startsWith('Files in the workspace:'));
+		// Filter for doc files
+		const docFileNames = [
+			'README.md',
+			'API_REFERENCE.md',
+			'GETTING_STARTED.md',
+			'CONTRIBUTING.md',
+			'CHANGELOG.md',
+			'vsc-extension-quickstart.md',
+			'package.json'
+		];
+	const foundFiles = fileList.filter((f: string) => docFileNames.includes(f.split(/[/\\]/).pop() as string));
+		provider.postMessage({ type: 'existingDocs', files: foundFiles });
+		return foundFiles;
+	};
 	context.subscriptions.push(
-		vscode.commands.registerCommand('naruhodocs.scanDocs', async () => {
-			const wsFolders = vscode.workspace.workspaceFolders;
-			if (!wsFolders || wsFolders.length === 0) {
-				return [];
-			}
-			const patterns = [
-				'**/README.md',
-				'**/API_REFERENCE.md',
-				'**/GETTING_STARTED.md',
-				'**/CONTRIBUTING.md',
-				'**/CHANGELOG.md',
-				'**/vsc-extension-quickstart.md',
-				'**/package.json'
-			];
-			let foundFiles: string[] = [];
-			for (const pattern of patterns) {
-				const uris = await vscode.workspace.findFiles(pattern, '**/node_modules/**');
-				foundFiles.push(...uris.map(u => u.fsPath));
-			}
-			// Send to webview
-			provider.postMessage({ type: 'existingDocs', files: foundFiles });
-			return foundFiles;
-		})
+		vscode.commands.registerCommand('naruhodocs.scanDocs', scanDocs)
 	);
 
 	// Thread management: map document URI to thread info
