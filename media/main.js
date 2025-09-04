@@ -319,18 +319,22 @@
         const suggestTemplateBtn = document.getElementById('suggest-template-btn');
         if (suggestTemplateBtn) {
             suggestTemplateBtn.addEventListener('click', () => {
-                    // Show template selection modal
-                    showTemplateSelectionModal();
+                // Remove any previous modal and listeners
+                let oldModal = document.getElementById('doc-type-modal');
+                if (oldModal) oldModal.remove();
+                // Always trigger a fresh scan before showing modal
+                vscode.postMessage({ type: 'scanDocs' });
+                showTemplateSelectionModal();
             });
         }
 
-        // Modal for template selection
+        // Modal for template selection (uses AI suggestions and filters out existing docs)
         function showTemplateSelectionModal() {
             let oldModal = document.getElementById('doc-type-modal');
             if (oldModal) oldModal.remove();
 
             const modal = document.createElement('div');
-            modal.id = 'doc-type-modal'; // Use same id and CSS as generate doc modal
+            modal.id = 'doc-type-modal';
 
             const box = document.createElement('div');
 
@@ -345,35 +349,50 @@
             title.textContent = 'Select Documentation Template';
             box.appendChild(title);
 
-            // Template options
-            const templates = [
-                { name: 'README', prompt: 'Generate a README template for my project.' },
-                { name: 'API Reference', prompt: 'Generate an API Reference template.' },
-                { name: 'Getting Started', prompt: 'Generate a Getting Started guide template.' },
-                { name: 'Contributing Guide', prompt: 'Generate a Contributing Guide template.' },
-                { name: 'Changelog', prompt: 'Generate a Changelog template.' },
-                { name: 'Quickstart Guide', prompt: 'Generate a Quickstart Guide template.' }
-            ];
-            templates.forEach(t => {
-                const btn = document.createElement('button');
-                btn.textContent = t.name;
-                btn.addEventListener('click', () => {
-                    addMessage('You', t.prompt);
-                    vscode.postMessage({ type: 'sendMessage', value: t.prompt });
-                    modal.remove();
-                });
-                box.appendChild(btn);
-            });
-            // Others option
-            const othersBtn = document.createElement('button');
-            othersBtn.textContent = 'Others';
-            othersBtn.addEventListener('click', () => {
-                showCustomTemplatePrompt(modal);
-            });
-            box.appendChild(othersBtn);
+            // Show loading spinner/message
+            const loading = document.createElement('div');
+            loading.className = 'doc-modal-loading';
+            loading.textContent = 'Loading suggestions...';
+            box.appendChild(loading);
 
             modal.appendChild(box);
             document.body.appendChild(modal);
+
+            // Listen for aiSuggestedDocs and replace loading with real choices
+            function handleAISuggestedDocs(event) {
+                const message = event.data;
+                if (message.type === 'aiSuggestedDocs') {
+                    // Remove loading
+                    box.innerHTML = '';
+                    box.appendChild(closeBtn);
+                    box.appendChild(title);
+                    // Filter AI suggestions using existingFiles
+                    const existingFiles = Array.isArray(message.existingFiles) ? message.existingFiles : [];
+                    const filteredSuggestions = message.suggestions.filter(s =>
+                        s.fileName && !existingFiles.includes(s.fileName.toLowerCase())
+                    );
+                    filteredSuggestions.forEach(suggestion => {
+                        const btn = document.createElement('button');
+                        btn.textContent = suggestion.displayName;
+                        btn.title = suggestion.description || '';
+                        btn.addEventListener('click', () => {
+                            addMessage('You', `Generate a ${suggestion.displayName} template.`);
+                            vscode.postMessage({ type: 'sendMessage', value: `Generate a ${suggestion.displayName} template.` });
+                            modal.remove();
+                        });
+                        box.appendChild(btn);
+                    });
+                    // Always add 'Others' button at the end
+                    const othersBtn = document.createElement('button');
+                    othersBtn.textContent = 'Others';
+                    othersBtn.addEventListener('click', () => {
+                        showCustomTemplatePrompt(modal);
+                    });
+                    box.appendChild(othersBtn);
+                    window.removeEventListener('message', handleAISuggestedDocs);
+                }
+            }
+            window.addEventListener('message', handleAISuggestedDocs);
         }
 
         function showCustomTemplatePrompt(modal) {
@@ -381,7 +400,7 @@
             if (oldPrompt) oldPrompt.remove();
 
             const promptBox = document.createElement('div');
-            promptBox.id = 'custom-doc-prompt'; // Use same id and CSS as generate doc modal
+            promptBox.id = 'custom-doc-prompt';
 
             const label = document.createElement('label');
             label.textContent = 'Describe your documentation template:';

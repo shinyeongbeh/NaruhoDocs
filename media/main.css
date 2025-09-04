@@ -69,24 +69,25 @@
 	position: relative;
 }
 
+/* Make the close button more top right and visually prominent */
 .doc-modal-close-btn {
 	position: absolute;
-	top: 16px;
-	right: 16px;
-	width: 32px;
-	height: 32px;
+	top: 5px;
+	right: 5px;
+	width: 24px;
+	height: 30px;
 	border-radius: 50%;
-	font-size: 1.5rem;
-	background: rgba(0,0,0,0.18);
+	font-size: 1.7rem;
+	background: rgba(0,0,0,0.22);
 	border: none;
 	color: #fff;
 	cursor: pointer;
-	z-index: 10;
+	z-index: 20;
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	transition: background 0.18s, color 0.18s;
-	box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+	box-shadow: 0 2px 12px rgba(0,0,0,0.18);
 }
 .doc-modal-close-btn:hover {
 	background: #ff5252;
