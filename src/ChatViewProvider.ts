@@ -221,31 +221,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 			switch (data.type) {
 				case 'generateDoc': {
 					console.log('[NaruhoDocs] generateDoc triggered:', data.docType, data.fileName);
-					// Determine file name
-					let fileName = '';
-					switch (data.docType) {
-						case 'README':
-							fileName = 'README.md';
-							break;
-						case 'API Reference':
-							fileName = 'API_REFERENCE.md';
-							break;
-						case 'Getting Started':
-							fileName = 'GETTING_STARTED.md';
-							break;
-						case 'Contributing Guide':
-							fileName = 'CONTRIBUTING.md';
-							break;
-						case 'Changelog':
-							fileName = 'CHANGELOG.md';
-							break;
-						case 'Quickstart Guide':
-							fileName = 'vsc-extension-quickstart.md';
-							break;
-						default:
-							fileName = `${data.docType.replace(/\s+/g, '_').toUpperCase()}.md`;
-							break;
-					}
+					// Use AI-provided filename if available, otherwise fallback
+					let fileName = data.fileName && typeof data.fileName === 'string' && data.fileName.trim() !== ''
+						? data.fileName.trim()
+						: `${data.docType.replace(/\s+/g, '_').toUpperCase()}.md`;
 					// Check if file already exists in workspace
 					const wsFolders = vscode.workspace.workspaceFolders;
 					if (wsFolders && wsFolders.length > 0) {
