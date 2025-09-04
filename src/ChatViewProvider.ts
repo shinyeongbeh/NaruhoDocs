@@ -4,6 +4,7 @@ import { SystemMessages } from './SystemMessages';
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
 	private existingDocFiles: string[] = [];
+	private didDevCleanupOnce: boolean = false;
 	/**
 	 * Switch the system message for a document-based thread to beginner mode.
 	 */
@@ -120,14 +121,45 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
 		webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
 
-		// Always reset state in dev mode
-		if (this.context.extensionMode === vscode.ExtensionMode.Development) {
+		// Always reset state in dev mode (only once per debug session)
+		if (this.context.extensionMode === vscode.ExtensionMode.Development && !this.didDevCleanupOnce) {
 			webviewView.webview.postMessage({ type: 'resetState' });
+			// Clear persisted thread histories and reset thread list to only General once
+			const historyKeys = this.context.workspaceState.keys ? this.context.workspaceState.keys() : [];
+			for (const key of historyKeys) {
+				if (typeof key === 'string' && key.startsWith('thread-history-')) {
+					await this.context.workspaceState.update(key, undefined);
+				}
+			}
+			// Preserve General thread, clear others
+			const generalId = 'naruhodocs-general-thread';
+			const preservedSession = this.sessions.get(generalId);
+			const preservedTitle = this.threadTitles.get(generalId);
+			this.sessions = new Map();
+			this.threadTitles = new Map();
+			if (preservedSession && preservedTitle) {
+				this.sessions.set(generalId, preservedSession);
+				this.threadTitles.set(generalId, preservedTitle);
+				this.activeThreadId = generalId;
+			}
+			this.didDevCleanupOnce = true;
 		}
 
 		// Restore threads from workspaceState
-		const keys = Object.keys(this.context.workspaceState.keys ? this.context.workspaceState.keys() : {});
+		const keys = this.context.workspaceState.keys ? this.context.workspaceState.keys() : [];
 		await this.restoreThreads(keys);
+
+		// Ensure currently open documents are represented as threads when the view opens
+		try {
+			const openDocs = vscode.workspace.textDocuments;
+			for (const document of openDocs) {
+				const fileNameLower = document.fileName.toLowerCase();
+				if (fileNameLower.endsWith('.md') || fileNameLower.endsWith('.txt')) {
+					const sessionId = document.uri.toString();
+					this.createThread(sessionId, document.getText(), document.fileName);
+				}
+			}
+		} catch {}
 
 		// 🔥 Always push active thread + history when webview is first resolved
 		this._postThreadList();
@@ -138,6 +170,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 				this._view?.webview.postMessage({ type: 'showHistory', history });
 			}
 		}
+
+		// Refresh UI whenever the view becomes visible again (e.g., after switching panels)
+		webviewView.onDidChangeVisibility(() => {
+			if (webviewView.visible) {
+				this._postThreadList();
+				if (this.activeThreadId) {
+					const session = this.sessions.get(this.activeThreadId);
+					if (session) {
+						const history = session.getHistory();
+						this._view?.webview.postMessage({ type: 'showHistory', history });
+					}
+				}
+			}
+		});
 
 		webviewView.webview.onDidReceiveMessage(async data => {
 			console.log('[NaruhoDocs] Webview received message:', data.type);
@@ -404,7 +450,7 @@ ${filesAndContents.map(f => `File: ${f.path}\n${f.content}`).join('\n\n')}`);
 			</html>`;
 	}
 
-	private async restoreThreads(keys: string[]) {
+	private async restoreThreads(keys: readonly string[]) {
 		for (const key of keys) {
 			if (key.startsWith('thread-history-')) {
 				const sessionId = key.replace('thread-history-', '');
