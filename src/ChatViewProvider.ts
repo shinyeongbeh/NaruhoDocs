@@ -180,7 +180,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 					this.createThread(sessionId, document.getText(), document.fileName);
 				}
 			}
-		} catch {}
+		} catch { }
 
 		// 🔥 Always push active thread + history when webview is first resolved
 		this._postThreadList();
@@ -288,7 +288,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 								try {
 									const content = await contentTool._call(path);
 									filesAndContents.push({ path, content });
-								} catch (e) {}
+								} catch (e) { }
 							}
 							// Use AI to generate starter content
 							let aiContent = '';
@@ -418,28 +418,29 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 							this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: 'No valid folder to save translated file.' });
 						}
 						break;
-				}
-				case 'createAndSaveTemplateFile': {
-					// Accept a text parameter for template content
-					let text = data.text || '';
-					// Clean up markdown code fences and extra formatting
-					text = text.replace(/^```markdown\s*/i, '').replace(/^\*\*\*markdown\s*/i, '').replace(/```$/g, '').trim();
-					const uri = data.uri || '';
-					let newUri = '';
-					const generalThreadId = 'naruhodocs-general-thread';
-					let suggestedFileName = '';
-					try {
-						// Use AI to suggest filename based on template content
-						const sysMsg = 'You are an AI assistant. Suggest a concise, valid filename for the following documentation template content. Return only the filename, no explanation.';
-						const chat = require('./langchain-backend/llm.js').createChat({ apiKey: this.apiKey, maxHistoryMessages: 5, systemMessage: sysMsg });
-						suggestedFileName = await chat.chat(text);
-						suggestedFileName = suggestedFileName.replace(/[^\w\-.]/g, '').replace(/^\s+|\s+$/g, '');
-						if (!suggestedFileName.endsWith('.md')) suggestedFileName += '.md';
-					} catch (e) {
-						suggestedFileName = 'Template.md';
 					}
+				case 'createAndSaveTemplateFile': {
+					let text = data.text || '';
+					text = text.replace(/^```markdown\s*/i, '')
+						.replace(/^\*\*\*markdown\s*/i, '')
+						.replace(/```$/g, '')
+						.trim();
+
+					const uri = data.uri || '';
+					const generalThreadId = 'naruhodocs-general-thread';
+
+					// ✅ Always use selection for filename
+					const baseType = (data.docType || data.templateType || 'generic').toLowerCase();
+
+					// Normalize → lowercase, snake_case, safe characters
+					const suggestedFileName = baseType
+						.trim()
+						.replace(/\s+/g, '_')      // spaces → underscores
+						.replace(/[^\w\-]/g, '')   // remove unsafe chars
+						+ '_template.md';
+
 					if (uri === generalThreadId || !uri) {
-						// Save in workspace root using AI-suggested filename
+						// Save in workspace root
 						const wsFolders = vscode.workspace.workspaceFolders;
 						if (wsFolders && wsFolders.length > 0) {
 							const wsUri = wsFolders[0].uri;
@@ -447,12 +448,24 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 							const content = text ? Buffer.from(text, 'utf8') : new Uint8Array();
 							try {
 								await vscode.workspace.fs.writeFile(templateFileUri, content);
-								this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: `Template file created: ${templateFileUri.fsPath}` });
+								this._view?.webview.postMessage({
+									type: 'addMessage',
+									sender: 'System',
+									message: `Template file created: ${templateFileUri.fsPath}`
+								});
 							} catch (e: any) {
-								this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: `Error creating template file: ${e.message}` });
+								this._view?.webview.postMessage({
+									type: 'addMessage',
+									sender: 'System',
+									message: `Error creating template file: ${e.message}`
+								});
 							}
 						} else {
-							this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: 'No workspace folder open.' });
+							this._view?.webview.postMessage({
+								type: 'addMessage',
+								sender: 'System',
+								message: 'No workspace folder open.'
+							});
 						}
 					} else {
 						try {
@@ -461,9 +474,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 							const templateFileUri = vscode.Uri.joinPath(fileUri.with({ path: parentPaths.join('/') }), suggestedFileName);
 							const content = text ? Buffer.from(text, 'utf8') : new Uint8Array();
 							await vscode.workspace.fs.writeFile(templateFileUri, content);
-							this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: `Template file created: ${templateFileUri.fsPath}` });
+							this._view?.webview.postMessage({
+								type: 'addMessage',
+								sender: 'System',
+								message: `Template file created: ${templateFileUri.fsPath}`
+							});
 						} catch (e: any) {
-							this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: `Error creating template file: ${e.message}` });
+							this._view?.webview.postMessage({
+								type: 'addMessage',
+								sender: 'System',
+								message: `Error creating template file: ${e.message}`
+							});
 						}
 					}
 					break;

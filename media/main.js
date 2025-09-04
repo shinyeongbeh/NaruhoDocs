@@ -651,7 +651,12 @@
                     yesBtn.textContent = 'Yes';
                     yesBtn.className = 'save-btn';
                     yesBtn.onclick = () => {
-                        vscode.postMessage({ type: 'createAndSaveTemplateFile', text: message.template, uri: message.sessionId });
+                        vscode.postMessage({
+                            type: 'createAndSaveTemplateFile',
+                            text: message.template,
+                            uri: message.sessionId,
+                            docType: message.docType || message.templateType || 'README'  // ✅ pass user’s choice
+                        });
                         btnContainer.remove();
                     };
 
