@@ -107,9 +107,10 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(
 		vscode.commands.registerCommand('naruhodocs.translateDocument', async (documentUri: vscode.Uri) => {
 			const languages = [
+				{ label: 'Malay', value: 'ms' },
 				{ label: 'English', value: 'en' },
-				{ label: 'Japanese', value: 'ja' },
 				{ label: 'Chinese', value: 'zh' },
+				{ label: 'Japanese', value: 'ja' },
 				{ label: 'Korean', value: 'ko' },
 				{ label: 'Spanish', value: 'es' },
 				{ label: 'French', value: 'fr' },
