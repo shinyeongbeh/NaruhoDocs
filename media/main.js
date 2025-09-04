@@ -319,8 +319,90 @@
         const suggestTemplateBtn = document.getElementById('suggest-template-btn');
         if (suggestTemplateBtn) {
             suggestTemplateBtn.addEventListener('click', () => {
-                vscode.postMessage({ type: 'suggestTemplate' });
+                    // Show template selection modal
+                    showTemplateSelectionModal();
             });
+        }
+
+        // Modal for template selection
+        function showTemplateSelectionModal() {
+            let oldModal = document.getElementById('doc-type-modal');
+            if (oldModal) oldModal.remove();
+
+            const modal = document.createElement('div');
+            modal.id = 'doc-type-modal'; // Use same id and CSS as generate doc modal
+
+            const box = document.createElement('div');
+
+            const closeBtn = document.createElement('button');
+            closeBtn.className = 'doc-modal-close-btn';
+            closeBtn.innerHTML = '&times;';
+            closeBtn.title = 'Close';
+            closeBtn.addEventListener('click', () => { modal.remove(); });
+            box.appendChild(closeBtn);
+
+            const title = document.createElement('h2');
+            title.textContent = 'Select Documentation Template';
+            box.appendChild(title);
+
+            // Template options
+            const templates = [
+                { name: 'README', prompt: 'Generate a README template for my project.' },
+                { name: 'API Reference', prompt: 'Generate an API Reference template.' },
+                { name: 'Getting Started', prompt: 'Generate a Getting Started guide template.' },
+                { name: 'Contributing Guide', prompt: 'Generate a Contributing Guide template.' },
+                { name: 'Changelog', prompt: 'Generate a Changelog template.' },
+                { name: 'Quickstart Guide', prompt: 'Generate a Quickstart Guide template.' }
+            ];
+            templates.forEach(t => {
+                const btn = document.createElement('button');
+                btn.textContent = t.name;
+                btn.addEventListener('click', () => {
+                    addMessage('You', t.prompt);
+                    vscode.postMessage({ type: 'sendMessage', value: t.prompt });
+                    modal.remove();
+                });
+                box.appendChild(btn);
+            });
+            // Others option
+            const othersBtn = document.createElement('button');
+            othersBtn.textContent = 'Others';
+            othersBtn.addEventListener('click', () => {
+                showCustomTemplatePrompt(modal);
+            });
+            box.appendChild(othersBtn);
+
+            modal.appendChild(box);
+            document.body.appendChild(modal);
+        }
+
+        function showCustomTemplatePrompt(modal) {
+            let oldPrompt = document.getElementById('custom-doc-prompt');
+            if (oldPrompt) oldPrompt.remove();
+
+            const promptBox = document.createElement('div');
+            promptBox.id = 'custom-doc-prompt'; // Use same id and CSS as generate doc modal
+
+            const label = document.createElement('label');
+            label.textContent = 'Describe your documentation template:';
+            promptBox.appendChild(label);
+
+            const input = document.createElement('input');
+            input.type = 'text';
+            promptBox.appendChild(input);
+
+            const submitBtn = document.createElement('button');
+            submitBtn.textContent = 'Submit';
+            submitBtn.addEventListener('click', () => {
+                if (input.value.trim()) {
+                    addMessage('You', input.value.trim());
+                    vscode.postMessage({ type: 'sendMessage', value: input.value.trim() });
+                    if (modal) modal.remove();
+                }
+            });
+            promptBox.appendChild(submitBtn);
+
+            modal.querySelector('div').appendChild(promptBox);
         }
         // Always keep General thread at the top, and ensure it exists in the dropdown
         let generalThread = threads.find(t => t.id === 'naruhodocs-general-thread');
