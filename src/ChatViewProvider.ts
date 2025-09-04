@@ -270,9 +270,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 							// Use AI to generate starter content
 							let aiContent = '';
 							try {
-								const chat = createChat({ apiKey: this.apiKey, maxHistoryMessages: 10 });
+								const sys = "You are an AI assistant that helps users to create project documentation files based on the project files and contents. The output should be in markdown format. The output should not include '\`\`\`markdown' in the message or any explanation, just the documentation.";
+								const chat = createChat({ apiKey: this.apiKey, maxHistoryMessages: 10, systemMessage: sys });
 								aiContent = await chat.chat(`Generate a starter documentation for ${fileName} based on this project. Here are the workspace files and contents:
 ${filesAndContents.map(f => `File: ${f.path}\n${f.content}`).join('\n\n')}`);
+								aiContent = aiContent.replace(/^```markdown\s*/i, '').replace(/^\*\*\*markdown\s*/i, '').replace(/```$/g, '').trim();
 							} catch (err) {
 								aiContent = `# ${data.docType}\n\nDescribe your documentation needs here.`;
 							}
