@@ -214,58 +214,6 @@
         }
     // Modal for doc type selection
     function showDocTypeModal() {
-        // Listen for workspaceFilesAndContents for smarter AI-based doc suggestions
-        window.addEventListener('message', event => {
-            const message = event.data;
-            if (message.type === 'aiSuggestedDocs') {
-                // Filter AI suggestions using existingFiles
-                const existingFiles = Array.isArray(message.existingFiles) ? message.existingFiles : [];
-                const filteredSuggestions = message.suggestions.filter(s =>
-                    s.fileName && !existingFiles.includes(s.fileName.toLowerCase())
-                );
-                // Debug logs after variables are defined
-                console.log('[NaruhoDocs][UI] Webview received message:', message.type);
-                console.log('[NaruhoDocs][UI] existingFiles:', existingFiles);
-                console.log('[NaruhoDocs][UI] filteredSuggestions:', filteredSuggestions);
-                box.innerHTML = '';
-                box.appendChild(closeBtn);
-                box.appendChild(title);
-                filteredSuggestions.forEach(suggestion => {
-                    const btn = document.createElement('button');
-                    btn.textContent = suggestion.displayName;
-                    btn.title = suggestion.description || '';
-                    btn.addEventListener('click', () => {
-                        vscode.postMessage({ type: 'generateDoc', docType: suggestion.displayName, fileName: suggestion.fileName });
-                        modal.remove();
-                    });
-                    box.appendChild(btn);
-                });
-                // Always add 'Others' button at the end
-                const othersBtn = document.createElement('button');
-                othersBtn.textContent = 'Others';
-                othersBtn.addEventListener('click', () => {
-                    showCustomDocPrompt(modal);
-                });
-                box.appendChild(othersBtn);
-            } else if (message.type === 'workspaceFilesAndContents') {
-                // Here you would call your AI/LLM to analyze files and contents
-                // For now, just log the data for debugging
-                console.log('[NaruhoDocs] Workspace files and contents:', message.filesAndContents);
-                // Example: you could send this data to your backend/LLM for doc suggestions
-                // TODO: Integrate with AI for context-aware doc choices and content
-            }
-        });
-        // Listen for workspaceFilesAndContents for smarter AI-based doc suggestions
-        window.addEventListener('message', event => {
-            const message = event.data;
-            if (message.type === 'workspaceFilesAndContents') {
-                // Here you would call your AI/LLM to analyze files and contents
-                // For now, just log the data for debugging
-                console.log('[NaruhoDocs] Workspace files and contents:', message.filesAndContents);
-                // Example: you could send this data to your backend/LLM for doc suggestions
-                // TODO: Integrate with AI for context-aware doc choices and content
-            }
-        });
         // Remove existing modal if present
         let oldModal = document.getElementById('doc-type-modal');
         if (oldModal) oldModal.remove();
@@ -290,53 +238,53 @@
         title.textContent = 'Select Documentation Type';
         box.appendChild(title);
 
+        // Show loading spinner/message
+        const loading = document.createElement('div');
+        loading.className = 'doc-modal-loading';
+        loading.textContent = 'Loading suggestions...';
+        box.appendChild(loading);
 
-
-        // List of doc types and their corresponding filenames
-        const docTypeMap = {
-            'README': 'README.md',
-            'API Reference': 'API_REFERENCE.md',
-            'Getting Started': 'GETTING_STARTED.md',
-            'Contributing Guide': 'CONTRIBUTING.md',
-            'Changelog': 'CHANGELOG.md',
-            'Quickstart Guide': 'vsc-extension-quickstart.md',
-            'Extension Manifest Reference': 'package.json'
-        };
-
-        // VS Code extension detection
-        let docTypes = [
-            'README',
-            'API Reference',
-            'Getting Started',
-            'Contributing Guide',
-            'Changelog',
-            'Quickstart Guide',
-            'Extension Manifest Reference',
-            'Others'
-        ];
-
-    // Always request a fresh scan of workspace files when modal opens
-    vscode.postMessage({ type: 'scanDocs' });
-
-        // Only render choices after scanDocs returns
-    // (Removed fallback rendering from existingDocs)
-
-        docTypes.forEach(type => {
-            const btn = document.createElement('button');
-            btn.textContent = type;
-            btn.addEventListener('click', () => {
-                if (type === 'Others') {
-                    showCustomDocPrompt(modal);
-                } else {
-                    vscode.postMessage({ type: 'generateDoc', docType: type });
-                    modal.remove();
-                }
-            });
-            box.appendChild(btn);
-        });
-
-        modal.appendChild(box);
         document.body.appendChild(modal);
+
+        // Always request a fresh scan of workspace files when modal opens
+        vscode.postMessage({ type: 'scanDocs' });
+
+        // Listen for aiSuggestedDocs and replace loading with real choices
+        function handleAISuggestedDocs(event) {
+            const message = event.data;
+            if (message.type === 'aiSuggestedDocs') {
+                // Remove loading
+                box.innerHTML = '';
+                box.appendChild(closeBtn);
+                box.appendChild(title);
+                // Filter AI suggestions using existingFiles
+                const existingFiles = Array.isArray(message.existingFiles) ? message.existingFiles : [];
+                const filteredSuggestions = message.suggestions.filter(s =>
+                    s.fileName && !existingFiles.includes(s.fileName.toLowerCase())
+                );
+                filteredSuggestions.forEach(suggestion => {
+                    const btn = document.createElement('button');
+                    btn.textContent = suggestion.displayName;
+                    btn.title = suggestion.description || '';
+                    btn.addEventListener('click', () => {
+                        addMessage('System', 'Generating documentation...');
+                        vscode.postMessage({ type: 'generateDoc', docType: suggestion.displayName, fileName: suggestion.fileName });
+                        modal.remove();
+                    });
+                    box.appendChild(btn);
+                });
+                // Always add 'Others' button at the end
+                const othersBtn = document.createElement('button');
+                othersBtn.textContent = 'Others';
+                othersBtn.addEventListener('click', () => {
+                    addMessage('System', 'Generating documentation...');
+                    showCustomDocPrompt(modal);
+                });
+                box.appendChild(othersBtn);
+                window.removeEventListener('message', handleAISuggestedDocs);
+            }
+        }
+        window.addEventListener('message', handleAISuggestedDocs);
     }
 
     function showCustomDocPrompt(modal) {
@@ -359,6 +307,7 @@
         submitBtn.textContent = 'Submit';
         submitBtn.addEventListener('click', () => {
             if (input.value.trim()) {
+                addMessage('System', 'Generating documentation...');
                 vscode.postMessage({ type: 'generateDoc', docType: input.value.trim() });
                 if (modal) modal.remove();
             }

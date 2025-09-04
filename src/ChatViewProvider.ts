@@ -195,9 +195,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 							const contentTool = new RetrieveFileContentTool();
 							const filesAndContents = [];
 							for (let i = 0; i < Math.min(fileList.length, 20); i++) {
-								const path = fileList[i];
-								const content = await contentTool._call(path);
-								filesAndContents.push({ path, content });
+	 							const path = fileList[i];
+	 							console.log('[NaruhoDocs][DEBUG] Scanning file:', path);
+	 							const content = await contentTool._call(path);
+	 							filesAndContents.push({ path, content });
 							}
 							// Use AI to generate starter content
 							let aiContent = '';

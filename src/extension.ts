@@ -31,7 +31,7 @@ export function activate(context: vscode.ExtensionContext) {
 		const contentTool = new RetrieveFileContentTool();
 		// Only get content for up to 20 files to avoid performance issues
 		const filesAndContents: { path: string, content: string }[] = [];
-		for (let i = 0; i < Math.min(fileList.length, 20); i++) {
+ 		for (let i = 0; i < fileList.length; i++) {
 			const path = fileList[i];
 			const content = await contentTool._call(path);
 			filesAndContents.push({ path, content });
@@ -63,12 +63,17 @@ export function activate(context: vscode.ExtensionContext) {
 	// Use RetrieveWorkspaceFilenamesTool for scanning workspace files
 	const { RetrieveWorkspaceFilenamesTool } = require('./langchain-backend/features');
 	const scanDocs = async () => {
-		// Get all filenames and contents
-		const filesAndContents = await getWorkspaceFilesAndContents();
-		// Get AI suggestions
-		const aiSuggestions = await getAISuggestions(filesAndContents);
-		// Filter and send to webview
-		await sendAISuggestedDocs(aiSuggestions, filesAndContents, provider);
+ 		// Get all filenames and contents
+ 		const { RetrieveWorkspaceFilenamesTool } = require('./langchain-backend/features');
+ 		const filenamesTool = new RetrieveWorkspaceFilenamesTool();
+ 		const fileListStr = await filenamesTool._call();
+ 		const fileList = fileListStr.split('\n').filter((line: string) => line && !line.startsWith('Files in the workspace:'));
+ 		// ...removed debug logging...
+ 		const filesAndContents = await getWorkspaceFilesAndContents();
+ 		// Get AI suggestions
+ 		const aiSuggestions = await getAISuggestions(filesAndContents);
+ 		// Filter and send to webview
+ 		await sendAISuggestedDocs(aiSuggestions, filesAndContents, provider);
 	};
 	context.subscriptions.push(
 		vscode.commands.registerCommand('naruhodocs.scanDocs', scanDocs)
