@@ -200,12 +200,72 @@
         const generateDocBtn = document.getElementById('generate-doc-btn');
         if (generateDocBtn) {
             generateDocBtn.addEventListener('click', () => {
+                // Remove any previous modal and listeners
+                let oldModal = document.getElementById('doc-type-modal');
+                if (oldModal) oldModal.remove();
+                // Always trigger a fresh scan before showing modal
+                vscode.postMessage({ type: 'scanDocs' });
+                   console.log('[NaruhoDocs][UI] Generate Doc button clicked, scanDocs posted');
                 // Show modal dialog for doc type selection
                 showDocTypeModal();
+                   console.log('[NaruhoDocs][UI] showDocTypeModal called');
+                       console.log('[NaruhoDocs][UI] showDocTypeModal rendering modal');
             });
         }
     // Modal for doc type selection
     function showDocTypeModal() {
+        // Listen for workspaceFilesAndContents for smarter AI-based doc suggestions
+        window.addEventListener('message', event => {
+            const message = event.data;
+            if (message.type === 'aiSuggestedDocs') {
+                // Filter AI suggestions using existingFiles
+                const existingFiles = Array.isArray(message.existingFiles) ? message.existingFiles : [];
+                const filteredSuggestions = message.suggestions.filter(s =>
+                    s.fileName && !existingFiles.includes(s.fileName.toLowerCase())
+                );
+                // Debug logs after variables are defined
+                console.log('[NaruhoDocs][UI] Webview received message:', message.type);
+                console.log('[NaruhoDocs][UI] existingFiles:', existingFiles);
+                console.log('[NaruhoDocs][UI] filteredSuggestions:', filteredSuggestions);
+                box.innerHTML = '';
+                box.appendChild(closeBtn);
+                box.appendChild(title);
+                filteredSuggestions.forEach(suggestion => {
+                    const btn = document.createElement('button');
+                    btn.textContent = suggestion.displayName;
+                    btn.title = suggestion.description || '';
+                    btn.addEventListener('click', () => {
+                        vscode.postMessage({ type: 'generateDoc', docType: suggestion.displayName, fileName: suggestion.fileName });
+                        modal.remove();
+                    });
+                    box.appendChild(btn);
+                });
+                // Always add 'Others' button at the end
+                const othersBtn = document.createElement('button');
+                othersBtn.textContent = 'Others';
+                othersBtn.addEventListener('click', () => {
+                    showCustomDocPrompt(modal);
+                });
+                box.appendChild(othersBtn);
+            } else if (message.type === 'workspaceFilesAndContents') {
+                // Here you would call your AI/LLM to analyze files and contents
+                // For now, just log the data for debugging
+                console.log('[NaruhoDocs] Workspace files and contents:', message.filesAndContents);
+                // Example: you could send this data to your backend/LLM for doc suggestions
+                // TODO: Integrate with AI for context-aware doc choices and content
+            }
+        });
+        // Listen for workspaceFilesAndContents for smarter AI-based doc suggestions
+        window.addEventListener('message', event => {
+            const message = event.data;
+            if (message.type === 'workspaceFilesAndContents') {
+                // Here you would call your AI/LLM to analyze files and contents
+                // For now, just log the data for debugging
+                console.log('[NaruhoDocs] Workspace files and contents:', message.filesAndContents);
+                // Example: you could send this data to your backend/LLM for doc suggestions
+                // TODO: Integrate with AI for context-aware doc choices and content
+            }
+        });
         // Remove existing modal if present
         let oldModal = document.getElementById('doc-type-modal');
         if (oldModal) oldModal.remove();
@@ -255,39 +315,11 @@
             'Others'
         ];
 
-        // Request existing doc files from backend
-        vscode.postMessage({ type: 'scanDocs' });
+    // Always request a fresh scan of workspace files when modal opens
+    vscode.postMessage({ type: 'scanDocs' });
 
         // Only render choices after scanDocs returns
-        window.addEventListener('message', event => {
-            const message = event.data;
-            if (message.type === 'existingDocs') {
-                const foundFiles = Array.isArray(message.files) ? message.files : [];
-                // Extract just the filenames from the full paths
-                const foundFileNames = foundFiles.map(f => f.split(/[/\\]/).pop());
-                const filteredDocTypes = docTypes.filter(type => {
-                    const fileName = docTypeMap[type];
-                    return !fileName || !foundFileNames.includes(fileName);
-                });
-                // Render modal choices
-                box.innerHTML = '';
-                box.appendChild(closeBtn);
-                box.appendChild(title);
-                filteredDocTypes.forEach(type => {
-                    const btn = document.createElement('button');
-                    btn.textContent = type;
-                    btn.addEventListener('click', () => {
-                        if (type === 'Others') {
-                            showCustomDocPrompt(modal);
-                        } else {
-                            vscode.postMessage({ type: 'generateDoc', docType: type });
-                            modal.remove();
-                        }
-                    });
-                    box.appendChild(btn);
-                });
-            }
-        }, { once: true });
+    // (Removed fallback rendering from existingDocs)
 
         docTypes.forEach(type => {
             const btn = document.createElement('button');

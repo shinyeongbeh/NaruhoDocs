@@ -140,7 +140,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		}
 
 		webviewView.webview.onDidReceiveMessage(async data => {
+			console.log('[NaruhoDocs] Webview received message:', data.type);
 			if (data.type === 'scanDocs') {
+				console.log('[NaruhoDocs] scanDocs triggered from webview');
 				await vscode.commands.executeCommand('naruhodocs.scanDocs');
 				return;
 			}
@@ -151,49 +153,72 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 			const session = this.activeThreadId ? this.sessions.get(this.activeThreadId) : undefined;
 			switch (data.type) {
 				case 'generateDoc': {
-					// Determine file name and starter content
+					console.log('[NaruhoDocs] generateDoc triggered:', data.docType, data.fileName);
+					// Determine file name
 					let fileName = '';
-					let starterContent = '';
 					switch (data.docType) {
 						case 'README':
 							fileName = 'README.md';
-							starterContent = `# ${vscode.workspace.name || 'Project'}\n\nDescribe your project here.`;
 							break;
 						case 'API Reference':
 							fileName = 'API_REFERENCE.md';
-							starterContent = `# API Reference\n\nDocument your extension's commands, features, and usage here.`;
 							break;
 						case 'Getting Started':
 							fileName = 'GETTING_STARTED.md';
-							starterContent = `# Getting Started\n\nHow to install, configure, and use your extension.`;
 							break;
 						case 'Contributing Guide':
 							fileName = 'CONTRIBUTING.md';
-							starterContent = `# Contributing\n\nGuidelines for contributing to this project.`;
 							break;
 						case 'Changelog':
 							fileName = 'CHANGELOG.md';
-							starterContent = `# Changelog\n\nAll notable changes to this project will be documented here.`;
 							break;
 						case 'Quickstart Guide':
 							fileName = 'vsc-extension-quickstart.md';
-							starterContent = `# VS Code Extension Quickstart\n\nHow to get started with this extension.`;
 							break;
 						default:
 							fileName = `${data.docType.replace(/\s+/g, '_').toUpperCase()}.md`;
-							starterContent = `# ${data.docType}\n\nDescribe your documentation needs here.`;
 							break;
 					}
-					// Create file in workspace root
+					// Check if file already exists in workspace
 					const wsFolders = vscode.workspace.workspaceFolders;
 					if (wsFolders && wsFolders.length > 0) {
 						const wsUri = wsFolders[0].uri;
-						const fileUri = vscode.Uri.joinPath(wsUri, fileName);
-						try {
-							await vscode.workspace.fs.writeFile(fileUri, Buffer.from(starterContent, 'utf8'));
-							this._view?.webview.postMessage({ type: 'docCreated', filePath: fileUri.fsPath });
-						} catch (err: any) {
-							this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: `Error creating doc: ${err.message}` });
+						const foundFiles = await vscode.workspace.findFiles(`**/${fileName}`);
+						if (foundFiles.length > 0) {
+							this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: `This file already exists at: ${foundFiles[0].fsPath}` });
+						} else {
+							// Gather workspace context for AI
+							const { RetrieveWorkspaceFilenamesTool, RetrieveFileContentTool } = require('./langchain-backend/features');
+							const filenamesTool = new RetrieveWorkspaceFilenamesTool();
+							const fileListStr = await filenamesTool._call();
+							const fileList = fileListStr.split('\n').filter((line: string) => line && !line.startsWith('Files in the workspace:'));
+							const contentTool = new RetrieveFileContentTool();
+							const filesAndContents = [];
+							for (let i = 0; i < Math.min(fileList.length, 20); i++) {
+								const path = fileList[i];
+								const content = await contentTool._call(path);
+								filesAndContents.push({ path, content });
+							}
+							// Use AI to generate starter content
+							let aiContent = '';
+							try {
+								const chat = createChat({ apiKey: this.apiKey, maxHistoryMessages: 10 });
+								aiContent = await chat.chat(`Generate a starter documentation for ${fileName} based on this project. Here are the workspace files and contents:
+${filesAndContents.map(f => `File: ${f.path}\n${f.content}`).join('\n\n')}`);
+							} catch (err) {
+								aiContent = `# ${data.docType}\n\nDescribe your documentation needs here.`;
+							}
+							const fileUri = vscode.Uri.joinPath(wsUri, fileName);
+							try {
+								await vscode.workspace.fs.writeFile(fileUri, Buffer.from(aiContent, 'utf8'));
+								this._view?.webview.postMessage({ type: 'docCreated', filePath: fileUri.fsPath });
+								console.log('[NaruhoDocs] Doc created:', fileUri.fsPath);
+								// Trigger a fresh scan to update modal choices
+								await vscode.commands.executeCommand('naruhodocs.scanDocs');
+								console.log('[NaruhoDocs] scanDocs triggered after doc creation');
+							} catch (err: any) {
+								this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: `Error creating doc: ${err.message}` });
+							}
 						}
 					} else {
 						this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: 'No workspace folder open.' });
