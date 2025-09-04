@@ -223,7 +223,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 					// Generate template using AI and show save modal
 					let templateContent = '';
 					try {
-						if (!session) throw new Error('No active thread');
+						if (!session) { throw new Error('No active thread');}
 						templateContent = await session.chat(`Generate a documentation template for ${data.templateType || 'this project'}.`);
 					} catch (err) {
 						templateContent = 'Unable to generate template.';

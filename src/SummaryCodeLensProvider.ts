@@ -18,6 +18,13 @@ export class SummaryCodeLensProvider implements vscode.CodeLensProvider {
             arguments: [document.uri]
         }));
 
+        // Add Check Grammar button
+        codeLenses.push(new vscode.CodeLens(range, {
+            command: 'naruhodocs.checkGrammar',
+            title: '📝 Check Grammar',
+            arguments: []
+        }));
+
         return codeLenses;
     }
 }

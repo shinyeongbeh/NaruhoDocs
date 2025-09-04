@@ -4,6 +4,7 @@ import { SummaryCodeLensProvider } from './SummaryCodeLensProvider.js';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 import { SystemMessages } from './SystemMessages';
+import { checkGrammar } from './LanguageTool-integration';
 
 // Load env once
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
@@ -14,7 +15,7 @@ export function activate(context: vscode.ExtensionContext) {
 	// Helper to check if a file exists in the workspace
 	async function fileExistsInWorkspace(fileName: string): Promise<string | null> {
 		const wsFolders = vscode.workspace.workspaceFolders;
-		if (!wsFolders || wsFolders.length === 0) return null;
+		if (!wsFolders || wsFolders.length === 0) {	return null; }
 		const files = await vscode.workspace.findFiles(`**/${fileName}`);
 		if (files.length > 0) {
 			return files[0].fsPath;
@@ -215,6 +216,57 @@ export function activate(context: vscode.ExtensionContext) {
 				await vscode.workspace.fs.writeFile(uri, new Uint8Array());
 				vscode.window.showInformationMessage(`File created: ${uri.fsPath}`);
 			}
+		})
+	);
+
+	const grammarDiagnostics = vscode.languages.createDiagnosticCollection('naruhodocs-grammar');
+	context.subscriptions.push(grammarDiagnostics);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand('naruhodocs.checkGrammar', async () => {
+			const editor = vscode.window.activeTextEditor;
+			if (!editor) {
+				vscode.window.showInformationMessage('No active editor.');
+				return;
+			}
+			const document = editor.document;
+			const fileName = document.fileName.toLowerCase();
+			if (!(fileName.endsWith('.md') || fileName.endsWith('.txt'))) {
+				vscode.window.showInformationMessage('Grammar checking is only available for document files (.md, .txt).');
+				return;
+			}
+			const text = document.getText();
+			let issues: any[] = [];
+			try {
+				issues = await checkGrammar(text, 'en-US');
+			} catch (e: any) {
+				vscode.window.showErrorMessage('Grammar check failed: ' + e.message);
+				return;
+			}
+			// Clear previous diagnostics for this document
+			grammarDiagnostics.delete(document.uri);
+
+			if (issues.length === 0) {
+				vscode.window.showInformationMessage('No grammar issues found!');
+				return;
+			}
+
+			const diagnostics: vscode.Diagnostic[] = issues.map(issue => {
+				const start = document.positionAt(issue.offset);
+				const end = document.positionAt(issue.offset + issue.length);
+				const range = new vscode.Range(start, end);
+				const message = `${issue.message}${issue.replacements.length ? ' Suggestion: ' + issue.replacements.join(', ') : ''}`;
+				return new vscode.Diagnostic(range, message, vscode.DiagnosticSeverity.Warning);
+			});
+			grammarDiagnostics.set(document.uri, diagnostics);
+			vscode.window.showInformationMessage(`Grammar issues found: ${issues.length}. See inline warnings.`);
+		})
+	);
+
+	// Optionally clear diagnostics when document is closed
+	context.subscriptions.push(
+		vscode.workspace.onDidCloseTextDocument(doc => {
+			grammarDiagnostics.delete(doc.uri);
 		})
 	);
 
