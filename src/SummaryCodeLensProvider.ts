@@ -25,6 +25,13 @@ export class SummaryCodeLensProvider implements vscode.CodeLensProvider {
             arguments: []
         }));
 
+        // Add Lint Markdown button
+        codeLenses.push(new vscode.CodeLens(range, {
+            command: 'naruhodocs.lintMarkdown',
+            title: '🔍 Validate Markdown',
+            arguments: []
+        }));
+
         return codeLenses;
     }
 }
