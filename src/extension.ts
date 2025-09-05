@@ -351,7 +351,7 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(lintStatusBar);
 	// Helper to lint and show diagnostics (used by command and on save)
 	async function lintAndReport(document: vscode.TextDocument) {
-		if (!document.fileName.toLowerCase().endsWith('.md')) return;
+		if (!document.fileName.toLowerCase().endsWith('.md')) { return;}
 		let issues: any[] = [];
 		try {
 			issues = await lintMarkdownDocument(document) as any[];
