@@ -75,7 +75,7 @@
 	color: #6ab1e8ff;
 }
 .mode-text.developer {
-	color: #ccc;
+	color: #c0c0c0bd;
 }
 /* Modal for documentation type selection */
 #doc-type-modal {
@@ -326,6 +326,7 @@ html {
 	font-style: italic;
 	padding: 6px 12px;
 	font-size: 0.9em;
+	margin-bottom: 1px;
 }
 
 .chat-input-container {

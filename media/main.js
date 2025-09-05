@@ -130,7 +130,7 @@
             // Add text label
             const modeText = document.createElement('span');
             modeText.className = 'mode-text';
-            modeText.textContent = switchInput.checked ? 'Beginner Mode' : 'Developer Mode';
+            modeText.textContent = 'Beginner Mode';
 
             // Click slider to toggle
             sliderSpan.addEventListener('click', () => {
@@ -151,11 +151,25 @@
                         const msg = document.createElement('div');
                         msg.className = 'message system';
                         msg.textContent = 'Switched to Beginner Mode';
+                        
+                        // Explanation
+                        const explain = document.createElement('div');
+                        explain.className = 'mode-explanation';
+                        explain.style.fontSize = '0.90em';
+                        explain.style.color = '#888';
+                        explain.style.marginTop = '2px';
+                        explain.style.fontStyle = 'italic';
+                        explain.style.lineHeight = '1.2em';
+                        explain.style.marginBottom = '10px';
+
+                        explain.textContent = 'Answers in this chatbot will be explained in a beginner-friendly way, with less technical jargon and more step-by-step guidance.';
+                        
                         chatMessages.appendChild(msg);
+                        chatMessages.appendChild(explain);
                         chatMessages.scrollTop = chatMessages.scrollHeight;
                     }
                 } else {
-                    modeText.textContent = 'Developer Mode';
+                    modeText.textContent = 'Beginner Mode';
                     modeText.classList.add('developer');
                     modeText.classList.remove('beginner');
                     vscode.postMessage({
@@ -167,7 +181,21 @@
                         const msg = document.createElement('div');
                         msg.className = 'message system';
                         msg.textContent = 'Switched to Developer Mode';
+                        
+                        // Explanation
+                        const explain = document.createElement('div');
+                        explain.className = 'mode-explanation';
+                        explain.style.fontSize = '0.95em';
+                        explain.style.color = '#888';
+                        explain.style.marginTop = '2px';
+                        explain.style.fontStyle = 'italic';
+                        explain.style.lineHeight = '1.2em';
+                        explain.style.marginBottom = '10px';
+
+                        explain.textContent = 'Answers in this chatbot will be more technical, concise, and assume programming experience.';
+
                         chatMessages.appendChild(msg);
+                        chatMessages.appendChild(explain);
                         chatMessages.scrollTop = chatMessages.scrollHeight;
                     }
                 }
