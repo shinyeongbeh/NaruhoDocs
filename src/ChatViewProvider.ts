@@ -259,11 +259,18 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 							const extraFiles = fileList.filter((f: string) => metaFiles.includes(f.split(/[/\\]/).pop()?.toLowerCase() || ''));
 
 							// Ask AI which files are relevant for documentation
-							const sys = `You are an AI assistant that helps users create project documentation files based on the project files and contents. The output should be in markdown format. Do not include code fences or explanations, just the documentation. First, select the most relevant files from this list for generating documentation for ${fileName}. Always include project metadata and README/config files if available. Return only a JSON array of file paths, no explanation.`;
+							const sys = `You are an AI assistant that helps users create project documentation files based on the project files and contents. 
+							The output should be in markdown format. Do not include code fences or explanations, just the documentation. 
+							First, select the most relevant files from this list for generating documentation for ${fileName}. 
+							Always include project metadata and README/config files if available. Return only a JSON array of file paths, no explanation.`;
 							const chat = createChat({ apiKey: this.apiKey, maxHistoryMessages: 10, systemMessage: sys });
 							let relevantFiles: string[] = [];
 							try {
-								const aiResponse = await chat.chat(`Here is the list of files in the workspace:\n${fileList.join('\n')}\nWhich files are most relevant for generating documentation for ${fileName}? Always include project metadata and README/config files if available. Return only a JSON array of file paths.`);
+								const aiResponse = await chat.chat(
+									`Here is the list of files in the workspace:\n${fileList.join('\n')}
+									\nWhich files are most relevant for generating documentation for ${fileName}? 
+									Always include project metadata and README/config files if available. Return only a JSON array of file paths.`
+								);
 								// Try to parse the AI response as JSON array
 								const match = aiResponse.match(/\[.*\]/s);
 								if (match) {
@@ -293,10 +300,29 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 							// Use AI to generate starter content
 							let aiContent = '';
 							try {
-								const sys2 = `You are an AI assistant that helps users create project documentation files based on the project files and contents. The output should be in markdown format. Do not include code fences or explanations, just the documentation.`;
+								const sys2 = `
+								You are an impeccable and meticulous technical documentation specialist. Your purpose is to produce clear, accurate, and professional technical documents based on the given content.
+
+								Primary Goal: Generate high-quality technical documentation that is comprehensive, logically structured, and easy for the intended audience to understand.
+
+								Instructions:
+								You will be given the file name of the documentation to create, along with the relevant files and their contents from the user's project workspace.
+								Your task is to analyze these files and generate a well-organized documentation file that thoroughly covers the subject matter implied by the file name.
+
+								Mandatory Rules:
+								Do not include private or sensitive information from the provided files. For example, API keys.
+								Handling Ambiguity: If a user request is vague or missing critical information (e.g., a technical name, a specific version, or the document's purpose), you must respond by asking for the necessary details. Never make assumptions or generate generic content.
+								Clarity and Simplicity: Prioritize clarity and conciseness above all else. Use plain language, active voice, and short sentences. Avoid jargon, buzzwords, and redundant phrases unless they are essential for technical accuracy.
+								Structured Content: All documents must follow a clear, hierarchical structure using Markdown.
+								Actionable and Factual: Documents must be useful. For guides, provide clear, step-by-step instructions. For concepts, provide accurate, verifiable information. Do not include opinions or subjective statements.
+								Review and Refine: Before finalizing, internally review the document for consistency, accuracy, and adherence to these rules. Ensure all headings are descriptive and the flow is logical.
+								Formatting: The final output must be in markdown format. Do not include code fences, explanations, or conversational text.
+								`;
 								const chat2 = createChat({ apiKey: this.apiKey, maxHistoryMessages: 10, systemMessage: sys2 });
 								const filesAndContentsString = filesAndContents.map(f => `File: ${f.path}\n${f.content}`).join('\n\n');
-								aiContent = await chat2.chat(`Generate a starter documentation for ${fileName} based on this project. Here are the relevant workspace files and contents:\n${filesAndContentsString}`);
+								aiContent = await chat2.chat(`
+									Generate a starter documentation for ${fileName} based on this project. 
+									Here are the relevant workspace files and contents:\n${filesAndContentsString}`);
 								aiContent = aiContent.replace(/^```markdown\s*/i, '').replace(/^\*\*\*markdown\s*/i, '').replace(/```$/g, '').trim();
 							} catch (err) {
 								aiContent = `# ${data.docType}\n\nDescribe your documentation needs here.`;
