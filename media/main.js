@@ -84,9 +84,14 @@
         threadListMenu.innerHTML = '';
         let activeTitle = '';
         let foundActive = false;
-        // Show/hide general buttons
+        // Move general buttons above chat input box
         const generalButtons = document.getElementById('general-buttons');
-        if (generalButtons) {
+        const generalButtonsAnchor = document.getElementById('general-buttons-anchor');
+        if (generalButtons && generalButtonsAnchor && generalButtonsAnchor.parentElement) {
+            // Only move if not already in correct place
+            if (generalButtons.parentElement !== generalButtonsAnchor.parentElement || generalButtons.previousElementSibling !== generalButtonsAnchor) {
+                generalButtonsAnchor.parentElement.insertBefore(generalButtons, generalButtonsAnchor.nextSibling);
+            }
             generalButtons.style.display = (activeThreadId === 'naruhodocs-general-thread') ? 'flex' : 'none';
         }
 

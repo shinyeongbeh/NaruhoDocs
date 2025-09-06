@@ -723,13 +723,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 						</div>
 					</div>
 					<!-- ...existing chat UI... -->
-					<div id="general-buttons" style="display:none; margin-top:18px; justify-content:center;">
-						<button id="generate-doc-btn" style="margin-right:8px;">Generate Document</button>
-						<button id="suggest-template-btn">Suggest Template</button>
-					</div>
+					   <!-- General buttons moved below chat messages, above chat input -->
+					   <div id="general-buttons" style="display:none; margin-top:18px; justify-content:center; margin-bottom:8px;">
+						   <button id="generate-doc-btn" style="margin-right:8px;">Generate Document</button>
+						   <button id="suggest-template-btn">Suggest Template</button>
+					   </div>
 					<div id="thread-tabs" style="display:flex; gap:4px; margin-bottom:8px;"></div>
-					<div id="chat-messages" class="chat-messages"></div>
-					<div class="chat-input-container">
+					   <div id="chat-messages" class="chat-messages"></div>
+					   <!-- General buttons will be shown here above the chat input box -->
+					   <div id="general-buttons-anchor"></div>
+					   <div class="chat-input-container">
 						<div class="chat-input-wrapper" style="position:relative; width:100%;">
 							<textarea id="chat-input" class="chat-input" placeholder="How can I help?" style="padding-right:32px;"></textarea>
 							<span id="send-icon" style="position:absolute; right:8px; top:50%; transform:translateY(-50%); cursor:pointer;">
