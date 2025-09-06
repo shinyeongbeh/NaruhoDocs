@@ -23,7 +23,7 @@ export async function checkGrammar(text: string, lang: string = 'en-US'): Promis
     if (!res.ok) {
         throw new Error('LanguageTool API error');
     }
-    const data = await res.json();
+    const data = await res.json() as any;
 
     return (data.matches || []).map((m: any) => ({
         message: m.message,

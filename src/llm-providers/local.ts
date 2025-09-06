@@ -1,0 +1,319 @@
+import { ChatOllama } from '@langchain/community/chat_models/ollama';
+import { ChatOpenAI } from '@langchain/openai';
+import { LLMProvider, LLMProviderOptions, LLMProviderError, UsageInfo } from './base';
+import { ChatSession } from '../langchain-backend/llm';
+import { AIMessage, HumanMessage, BaseMessage, SystemMessage } from '@langchain/core/messages';
+import fetch from 'node-fetch';
+
+export interface LocalBackendConfig {
+    type: 'ollama' | 'lmstudio' | 'llamacpp' | 'textgen' | 'custom';
+    baseUrl: string;
+    defaultModel: string;
+    apiFormat: 'ollama' | 'openai' | 'llamacpp' | 'textgen';
+    healthEndpoint?: string;
+    modelsEndpoint?: string;
+}
+
+export class LocalProvider implements LLMProvider {
+    readonly name = 'Local LLM';
+    private model?: any;
+    private backendConfig?: LocalBackendConfig;
+
+    get isAvailable(): boolean {
+        return !!this.model;
+    }
+
+    async initialize(options: LLMProviderOptions): Promise<void> {
+        const backend = options.backend || 'ollama';
+        const baseUrl = options.baseUrl || this.getDefaultUrl(backend);
+        const modelName = options.model || this.getDefaultModel(backend);
+
+        this.backendConfig = this.getBackendConfig(backend, baseUrl, modelName);
+
+        try {
+            // Test connection first
+            if (!(await this.testConnection())) {
+                throw new Error('Connection test failed');
+            }
+
+            // Create model based on backend type
+            this.model = this.createModelForBackend(this.backendConfig, options);
+
+        } catch (error) {
+            throw new LLMProviderError(
+                `Failed to connect to ${backend} at ${baseUrl}. Make sure the server is running.`,
+                this.name,
+                'NETWORK_ERROR'
+            );
+        }
+    }
+
+    private getBackendConfig(backend: string, baseUrl: string, model: string): LocalBackendConfig {
+        const configs: Record<string, LocalBackendConfig> = {
+            ollama: {
+                type: 'ollama',
+                baseUrl,
+                defaultModel: model,
+                apiFormat: 'ollama',
+                healthEndpoint: '/api/tags',
+                modelsEndpoint: '/api/tags'
+            },
+            lmstudio: {
+                type: 'lmstudio',
+                baseUrl: baseUrl.endsWith('/v1') ? baseUrl : `${baseUrl}/v1`,
+                defaultModel: model,
+                apiFormat: 'openai',
+                healthEndpoint: '/models',
+                modelsEndpoint: '/models'
+            },
+            llamacpp: {
+                type: 'llamacpp',
+                baseUrl,
+                defaultModel: model,
+                apiFormat: 'llamacpp',
+                healthEndpoint: '/health',
+                modelsEndpoint: '/v1/models'
+            },
+            textgen: {
+                type: 'textgen',
+                baseUrl: baseUrl.replace(':7860', ':5000'),
+                defaultModel: model,
+                apiFormat: 'textgen',
+                healthEndpoint: '/v1/models',
+                modelsEndpoint: '/v1/models'
+            },
+            custom: {
+                type: 'custom',
+                baseUrl,
+                defaultModel: model,
+                apiFormat: 'openai',
+                healthEndpoint: '/health',
+                modelsEndpoint: '/models'
+            }
+        };
+
+        return configs[backend] || configs.custom;
+    }
+
+    private getDefaultUrl(backend: string): string {
+        const defaultUrls: Record<string, string> = {
+            ollama: 'http://localhost:11434',
+            lmstudio: 'http://localhost:1234',
+            llamacpp: 'http://localhost:8080',
+            textgen: 'http://localhost:5000',
+            custom: 'http://localhost:8080'
+        };
+        return defaultUrls[backend] || defaultUrls.custom;
+    }
+
+    private getDefaultModel(backend: string): string {
+        const defaultModels: Record<string, string> = {
+            ollama: 'llama3.1:8b',
+            lmstudio: 'local-model',
+            llamacpp: 'model',
+            textgen: 'model',
+            custom: 'model'
+        };
+        return defaultModels[backend] || defaultModels.custom;
+    }
+
+    private createModelForBackend(config: LocalBackendConfig, options: LLMProviderOptions): any {
+        switch (config.apiFormat) {
+            case 'ollama':
+                return new ChatOllama({
+                    baseUrl: config.baseUrl,
+                    model: config.defaultModel,
+                    temperature: options.temperature || 0,
+                });
+
+            case 'openai':
+                // LM Studio, and other OpenAI-compatible APIs
+                return new ChatOpenAI({
+                    openAIApiKey: 'not-needed',
+                    configuration: {
+                        baseURL: config.baseUrl,
+                    },
+                    modelName: config.defaultModel,
+                    temperature: options.temperature || 0,
+                });
+
+            case 'llamacpp':
+                // llama.cpp server (OpenAI-compatible)
+                return new ChatOpenAI({
+                    openAIApiKey: 'not-needed',
+                    configuration: {
+                        baseURL: `${config.baseUrl}/v1`,
+                    },
+                    modelName: config.defaultModel,
+                    temperature: options.temperature || 0,
+                });
+
+            case 'textgen':
+                // Text Generation WebUI (OpenAI-compatible)
+                return new ChatOpenAI({
+                    openAIApiKey: 'not-needed',
+                    configuration: {
+                        baseURL: `${config.baseUrl}/v1`,
+                    },
+                    modelName: config.defaultModel,
+                    temperature: options.temperature || 0,
+                });
+
+            default:
+                throw new Error(`Unsupported API format: ${config.apiFormat}`);
+        }
+    }
+
+    async createChatSession(systemMessage: string): Promise<ChatSession> {
+        if (!this.model || !this.backendConfig) {
+            throw new LLMProviderError(
+                'Provider not initialized',
+                this.name,
+                'MODEL_ERROR'
+            );
+        }
+
+        return this.createLocalChatSession(systemMessage);
+    }
+
+    private createLocalChatSession(systemMessage: string): ChatSession {
+        const maxHistory = 40;
+        let history: BaseMessage[] = [];
+        const model = this.model; // Capture model reference
+
+        if (systemMessage) {
+            history.push(new SystemMessage(systemMessage));
+        }
+
+        // For local models, use a simpler approach without agents initially
+        // This avoids the bindTools requirement that some local models might not support
+
+        function prune() {
+            if (history.length > maxHistory) {
+                history = history.slice(history.length - maxHistory);
+            }
+        }
+
+        return {
+            async chat(userMessage: string): Promise<string> {
+                try {
+                    history.push(new HumanMessage(userMessage));
+                    prune();
+
+                    // Use the model directly without agents for now
+                    const response = await model.invoke(history);
+
+                    let aiText = '';
+                    
+                    if (typeof response.content === 'string') {
+                        aiText = response.content;
+                    } else if (Array.isArray(response.content)) {
+                        aiText = response.content.map((c: any) =>
+                            typeof c === 'string' ? c : JSON.stringify(c)
+                        ).join(' ');
+                    } else {
+                        aiText = JSON.stringify(response.content);
+                    }
+
+                    const aiMessage = new AIMessage(aiText);
+                    history.push(aiMessage);
+                    prune();
+
+                    return aiText;
+                } catch (error) {
+                    throw new Error(`Local LLM error: ${error}`);
+                }
+            },
+
+            reset() {
+                history = [];
+                if (systemMessage) {
+                    history.push(new SystemMessage(systemMessage));
+                }
+            },
+
+            getHistory() {
+                return history.filter(msg => !(msg instanceof SystemMessage));
+            },
+
+            setHistory(historyArr: BaseMessage[]) {
+                history = [];
+                if (systemMessage) {
+                    history.push(new SystemMessage(systemMessage));
+                }
+                for (const msg of historyArr) {
+                    const type = (msg as any).type;
+                    const text = (msg as any).text;
+                    if (type === 'human') { 
+                        history.push(new HumanMessage(text)); 
+                    }
+                    if (type === 'ai') { 
+                        history.push(new AIMessage(text)); 
+                    }
+                }
+            },
+
+            setCustomSystemMessage(msg: string) {
+                history = history.filter(m => !(m instanceof SystemMessage));
+                history.unshift(new SystemMessage(msg));
+            }
+        };
+    }
+
+    async testConnection(): Promise<boolean> {
+        if (!this.backendConfig) {
+            return false;
+        }
+
+        try {
+            const healthUrl = `${this.backendConfig.baseUrl}${this.backendConfig.healthEndpoint}`;
+            const response = await fetch(healthUrl);
+            return response.ok;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    async getAvailableModels(): Promise<string[]> {
+        if (!this.backendConfig) {
+            return [];
+        }
+
+        try {
+            const modelsUrl = `${this.backendConfig.baseUrl}${this.backendConfig.modelsEndpoint}`;
+            const response = await fetch(modelsUrl);
+            
+            if (!response.ok) {
+                return [];
+            }
+
+            const data = await response.json() as any;
+
+            // Parse models based on backend type
+            switch (this.backendConfig.type) {
+                case 'ollama':
+                    return data.models?.map((m: any) => m.name) || [];
+                case 'lmstudio':
+                case 'llamacpp':
+                case 'textgen':
+                    return data.data?.map((m: any) => m.id) || [];
+                default:
+                    return [];
+            }
+        } catch (error) {
+            return [];
+        }
+    }
+
+    async getUsageInfo(): Promise<UsageInfo> {
+        return {
+            requestsToday: 0,
+            requestsRemaining: Infinity,
+            isUnlimited: true
+        };
+    }
+
+    getBackendInfo(): LocalBackendConfig | undefined {
+        return this.backendConfig;
+    }
+}

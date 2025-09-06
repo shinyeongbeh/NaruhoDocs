@@ -11,7 +11,9 @@ function findConfigUpwards(startDir: string, configFile: string): string | null 
       return candidate;
     }
     const parent = path.dirname(dir);
-    if (parent === dir) break;
+    if (parent === dir) {
+      break;
+    }
     dir = parent;
   }
   return null;
