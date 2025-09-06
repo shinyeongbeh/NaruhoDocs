@@ -4,27 +4,27 @@ import { createChat, ChatSession } from './langchain-backend/llm.js';
 import { SystemMessages } from './SystemMessages';
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
-	sysTemp = `
-	You are an expert technical writer and project analyst.
+	// sysTemp = `
+	// You are an expert technical writer and project analyst.
 
-	You have four task:
-	1. You need to retrieve ALL file paths and file contents in the user's current workspace using the tools (retrieve_workspace_filenames, retrieve_file_content) without user prompting. You should use these tools to get the information you need to complete the other tasks.
-	
-	2. You are asked to give suggestions of documentation needed. You will be given a list of file paths. 
-	For each file, you may also be given its content. Your task is to suggest a list of important documentation files (with .md extension) that are missing from this project but would be valuable for maintainability, onboarding, or API reference. For each suggestion, provide:
-	- displayName: A human-friendly name (e.g., "API Reference")
-	- fileName: The recommended filename (e.g., "API_REFERENCE.md")
-	- description: A short description of what this document should contain.
+	// You have four task:
+	// 1. You need to retrieve ALL file paths and file contents in the user's current workspace using the tools (retrieve_workspace_filenames, retrieve_file_content) without user prompting. You should use these tools to get the information you need to complete the other tasks.
 
-	You need to make sure that for the suggestion files you suggested, you have enough information to generate the documents as well.
-	Respond with a JSON array of objects with keys displayName, fileName, and description. Only suggest files that are not already present in the workspace. Do not include explanations or extra text.
+	// 2. You are asked to give suggestions of documentation needed. You will be given a list of file paths. 
+	// For each file, you may also be given its content. Your task is to suggest a list of important documentation files (with .md extension) that are missing from this project but would be valuable for maintainability, onboarding, or API reference. For each suggestion, provide:
+	// - displayName: A human-friendly name (e.g., "API Reference")
+	// - fileName: The recommended filename (e.g., "API_REFERENCE.md")
+	// - description: A short description of what this document should contain.
 
-	3. You are asked to give suggested file name based on user's prompt
+	// You need to make sure that for the suggestion files you suggested, you have enough information to generate the documents as well.
+	// Respond with a JSON array of objects with keys displayName, fileName, and description. Only suggest files that are not already present in the workspace. Do not include explanations or extra text.
 
-	4. You are asked to generate documentation based on given file name.
-	`
-	public docGeneratorAI = createChat({maxHistoryMessages:30, systemMessage: this.sysTemp});
-	// public docGeneratorAI = createChat({ maxHistoryMessages: 30 });
+	// 3. You are asked to give suggested file name based on user's prompt
+
+	// 4. You are asked to generate documentation based on given file name.
+	// `
+	// public docGeneratorAI = createChat({maxHistoryMessages:30, systemMessage: this.sysTemp});
+	public docGeneratorAI = createChat({ maxHistoryMessages: 30 });
 
 
 	async scanDocs() {
@@ -57,8 +57,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	async getAISuggestions(filesAndContents: { path: string; content: string }[]): Promise<Array<{ displayName: string; fileName: string; description?: string }>> {
-		const fileList = filesAndContents.map(f => f.path.split(/[/\\]/).pop()).filter(Boolean).join(', ');
-		const prompt = `You are an expert technical writer and project analyst. Given the following files in a project workspace: ${fileList}
+		// const fileList = filesAndContents.map(f => f.path.split(/[/\\]/).pop()).filter(Boolean).join(', ');
+		const prompt = `You are an expert technical writer and project analyst.
 
 				For each file, you may also be given its content. Your task is to suggest a list of important documentation files (with .md extension) that are missing from this project but would be valuable for maintainability, onboarding, or API reference. For each suggestion, provide:
 				- displayName: A human-friendly name (e.g., "API Reference")
@@ -68,16 +68,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 				You need to make sure that for the suggestion files you suggested, you have enough information to generate the documents as well.
 				Respond with a JSON array of objects with keys displayName, fileName, and description. Only suggest files that are not already present in the workspace. Do not include explanations or extra text.`;
 
-		const contextFiles = filesAndContents.slice(0, 3).map(f => `File: ${f.path}\n${f.content.substring(0, 1000)}`).join('\n\n');
+		// const contextFiles = filesAndContents.slice(0, 3).map(f => `File: ${f.path}\n${f.content.substring(0, 1000)}`).join('\n\n');
 		let llmResponse = '';
 		try {
-			llmResponse = await this.docGeneratorAI.chat(`${prompt}\n\nHere are some file contents for context:\n${contextFiles}`);
+			llmResponse = await this.docGeneratorAI.chat(prompt);
+			// llmResponse = await this.docGeneratorAI.chat(`${prompt}\n\nHere are some file contents for context:\n${contextFiles}`);
 			const match = llmResponse.match(/\[.*\]/s);
 			if (match) {
+				console.log('JSON	found: ',match[0]);
 				const suggestions = JSON.parse(match[0]);
 				return Array.isArray(suggestions)
 					? suggestions.filter(s => s.displayName && s.fileName && s.fileName.endsWith('.md'))
 					: [];
+			} else {
+				console.log('No JSON array found in LLM response');
 			}
 		} catch (e) {
 			console.warn('LLM suggestion failed:', e, llmResponse, this.apiKey);
@@ -365,6 +369,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 							// Ask AI which files are relevant for documentation
 							const sys = `You are an AI assistant that helps users create project documentation files based on the project files and contents. \nThe output should be in markdown format. Do not include code fences or explanations, just the documentation. \nFirst, select ALL the relevant files from this list for generating documentation for ${fileName}. You need to select as many files as needed but be concise.\nAlways include project metadata and README/config files if available. Return only a JSON array of file paths, no explanation.`;
 							let relevantFiles = [];
+							this.docGeneratorAI.setCustomSystemMessage(sys);
 							try {
 								const aiResponse = await this.docGeneratorAI.chat(
 									`Here is the list of files in the workspace:\n${fileList.join('\n')}\n\nWhich files are most relevant for generating documentation for ${fileName}? Always include project metadata and README/config files if available. Return only a JSON array of file paths.`
@@ -393,9 +398,30 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 							// Generate the documentation using the general thread session
 							let aiContent = '';
 							try {
-								const sys2 = `\nYou are an impeccable and meticulous technical documentation specialist. Your purpose is to produce clear, accurate, and professional technical documents based on the given content.\n\nPrimary Goal: Generate high-quality technical documentation that is comprehensive, logically structured, and easy for the intended audience to understand.\n\nInstructions:\nYou will be given the file name of the documentation to create, along with the relevant files and their contents from the user's project workspace.\nYour task is to analyze these files and generate a well-organized documentation file that thoroughly covers the subject matter implied by the file name.\nYou may use tools (retrieve_workspace_filenames, retrieve_file_content) to retrieve additional file contents if needed without user prompted.\n\nMandatory Rules:\nDo not include private or sensitive information from the provided files. For example, API keys.\nHandling Ambiguity: If a user request is vague or missing critical information (e.g., a technical name, a specific version, or the document's purpose), you must respond by asking for the necessary details. Never make assumptions or generate generic content.\nClarity and Simplicity: Prioritize clarity and conciseness above all else. Use plain language, active voice, and short sentences. Avoid jargon, buzzwords, and redundant phrases unless they are essential for technical accuracy.\nStructured Content: All documents must follow a clear, hierarchical structure using Markdown.\nActionable and Factual: Documents must be useful. For guides, provide clear, step-by-step instructions. For concepts, provide accurate, verifiable information. Do not include opinions or subjective statements.\nReview and Refine: Before finalizing, internally review the document for consistency, accuracy, and adherence to these rules. Ensure all headings are descriptive and the flow is logical.\nFormatting: The final output must be in markdown format. Do not include code fences, explanations, or conversational text.`;
+								const sys2 = `\nYou are an impeccable and meticulous technical documentation specialist. 
+								Your purpose is to produce clear, accurate, and professional technical documents based on the given content.
+								\n\nPrimary Goal: Generate high-quality technical documentation that is comprehensive, logically structured, and easy for the intended audience to understand.
+								\n\nInstructions:\nYou will be given the file name of the documentation to create, along with the relevant files and their contents from the user's project workspace.
+								\nYour task is to analyze these files and generate a well-organized documentation file that thoroughly covers the subject matter implied by the file name.
+								\nYou may use tools (retrieve_workspace_filenames, retrieve_file_content) to retrieve additional file contents if needed without user prompted.
+								\n\nMandatory Rules:\nDo not include private or sensitive information from the provided files. For example, API keys.
+								\nHandling Ambiguity: If a user request is vague or missing critical information (e.g., a technical name, a specific version, or the document's purpose), you must respond by asking for the necessary details. 
+								Never make assumptions or generate generic content.
+								\nClarity and Simplicity: Prioritize clarity and conciseness above all else. 
+								Use plain language, active voice, and short sentences. 
+								Avoid jargon, buzzwords, and redundant phrases unless they are essential for technical accuracy.
+								\nStructured Content: All documents must follow a clear, hierarchical structure using Markdown.
+								\nActionable and Factual: Documents must be useful. For guides, provide clear, step-by-step instructions. 
+								For concepts, provide accurate, verifiable information. Do not include opinions or subjective statements.
+								\nReview and Refine: Before finalizing, internally review the document for consistency, accuracy, and adherence to these rules. 
+								Ensure all headings are descriptive and the flow is logical.
+								\nFormatting: The final output must be in markdown format. 
+								Do not include code fences, explanations, or conversational text.`;
+								
 								const filesAndContentsString = filesAndContents.map(f => `File: ${f.path}\n${f.content}`).join('\n\n');
-								aiContent = await this.docGeneratorAI.chat(`Generate a starter documentation for ${fileName} based on this project. Here are the relevant workspace files and contents:\n${filesAndContentsString}`) || '';
+								this.docGeneratorAI.setCustomSystemMessage(sys2);
+								aiContent = await this.docGeneratorAI.chat(`Generate a starter documentation for ${fileName} based on this project. Refer to the relevant workspace files and contents:\n${filesAndContentsString}`) || '';
+								console.log('AI doc generation response:', aiContent);
 								aiContent = aiContent.replace(/^```markdown\s*/i, '').replace(/^\*\*\*markdown\s*/i, '').replace(/```$/g, '').trim();
 							} catch (err) {
 								aiContent = `# ${data.docType}\n\nDescribe your documentation needs here.`;
