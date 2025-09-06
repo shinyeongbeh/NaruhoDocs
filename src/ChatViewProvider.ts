@@ -237,10 +237,40 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 				}
 				case 'generateDoc': {
 					console.log('[NaruhoDocs] generateDoc triggered:', data.docType, data.fileName);
-					// Use AI-provided filename if available, otherwise fallback
-					let fileName = data.fileName && typeof data.fileName === 'string' && data.fileName.trim() !== ''
-						? data.fileName.trim()
-						: `${data.docType.replace(/\s+/g, '_').toUpperCase()}.md`;
+
+					// Suggest filename with AI if not provided
+					let aiFilename = '';
+					let aiTried = false;
+					if (!data.fileName || typeof data.fileName !== 'string' || data.fileName.trim() === '') {
+						aiTried = true;
+						console.log('[NaruhoDocs][DEBUG] Attempting AI filename suggestion for docType:', data.docType);
+						try {
+							const tempChat = createChat({ apiKey: this.apiKey, maxHistoryMessages: 10 });
+							const suggestedName = await tempChat.chat(`Suggest a concise, filesystem-friendly filename (with .md extension) for a ${data.docType} document. Respond with only the filename, no explanation.`);
+							aiFilename = (suggestedName || '').trim();
+							console.log('[NaruhoDocs][DEBUG] AI-suggested filename:', aiFilename);
+						} catch (e) {
+							console.log('[NaruhoDocs][DEBUG] AI filename suggestion failed:', e);
+							aiFilename = '';
+						}
+					}
+					// Use AI filename if valid, else fallback
+					let fileName = '';
+					if (aiFilename && /^(?![. ]).+\.md$/i.test(aiFilename) && !/[\\/:*?"<>|]/.test(aiFilename)) {
+						fileName = aiFilename;
+						console.log('[NaruhoDocs][DEBUG] Using AI-suggested filename:', fileName);
+					} else if (data.fileName && typeof data.fileName === 'string' && data.fileName.trim() !== '') {
+						fileName = data.fileName.trim();
+						console.log('[NaruhoDocs][DEBUG] Using provided filename:', fileName);
+					} else {
+						fileName = `${data.docType.replace(/\s+/g, '_').toUpperCase()}.md`;
+						if (aiTried) {
+							console.log('[NaruhoDocs][DEBUG] AI suggestion invalid or empty, using fallback filename:', fileName);
+						} else {
+							console.log('[NaruhoDocs][DEBUG] Using fallback filename (no AI attempted):', fileName);
+						}
+					}
+
 					const wsFolders = vscode.workspace.workspaceFolders;
 					if (wsFolders && wsFolders.length > 0) {
 						const wsUri = wsFolders[0].uri;
@@ -308,6 +338,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 								Instructions:
 								You will be given the file name of the documentation to create, along with the relevant files and their contents from the user's project workspace.
 								Your task is to analyze these files and generate a well-organized documentation file that thoroughly covers the subject matter implied by the file name.
+								You may use tools (retrieve_workspace_filenames, retrieve_file_content) to retrieve additional file contents if needed without user prompted.
 
 								Mandatory Rules:
 								Do not include private or sensitive information from the provided files. For example, API keys.
