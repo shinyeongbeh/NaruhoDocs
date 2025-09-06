@@ -24,8 +24,86 @@
       {
         "command": "naruhodocs.createFile",
         "title": "Create File (NaruhoDocs)"
+      },
+      {
+        "command": "naruhodocs.configureLLM",
+        "title": "Configure LLM Provider",
+        "category": "NaruhoDocs"
+      },
+      {
+        "command": "naruhodocs.testLLMConnection",
+        "title": "Test LLM Connection",
+        "category": "NaruhoDocs"
+      },
+      {
+        "command": "naruhodocs.selectLocalModel",
+        "title": "Select Local Model",
+        "category": "NaruhoDocs"
+      },
+      {
+        "command": "naruhodocs.showProviderStatus",
+        "title": "Show Provider Status",
+        "category": "NaruhoDocs"
       }
     ],
+    "configuration": {
+      "title": "NaruhoDocs",
+      "properties": {
+        "naruhodocs.llm.provider": {
+          "type": "string",
+          "enum": [
+            "ootb",
+            "byok",
+            "local"
+          ],
+          "enumDescriptions": [
+            "Out-of-the-box: Use built-in Gemini with daily limits",
+            "Bring Your Own Key: Use your own API key for unlimited access",
+            "Local LLM: Use local models via Ollama or similar"
+          ],
+          "default": "ootb",
+          "description": "LLM provider option to use"
+        },
+        "naruhodocs.llm.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "API key for BYOK mode (stored securely)",
+          "when": "config.naruhodocs.llm.provider == 'byok'"
+        },
+        "naruhodocs.llm.localBackend": {
+          "type": "string",
+          "enum": [
+            "ollama",
+            "lmstudio",
+            "llamacpp",
+            "textgen",
+            "custom"
+          ],
+          "enumDescriptions": [
+            "Ollama - Easy model management with built-in API",
+            "LM Studio - User-friendly GUI with OpenAI-compatible API",
+            "llama.cpp - Lightweight C++ implementation",
+            "Text Generation WebUI - Advanced web interface",
+            "Custom - Custom API endpoint"
+          ],
+          "default": "ollama",
+          "description": "Local LLM backend to use",
+          "when": "config.naruhodocs.llm.provider == 'local'"
+        },
+        "naruhodocs.llm.localModel": {
+          "type": "string",
+          "default": "llama3.1:8b",
+          "description": "Local model name for local LLM",
+          "when": "config.naruhodocs.llm.provider == 'local'"
+        },
+        "naruhodocs.llm.localUrl": {
+          "type": "string",
+          "default": "http://localhost:11434",
+          "description": "Local LLM server URL",
+          "when": "config.naruhodocs.llm.provider == 'local'"
+        }
+      }
+    },
     "viewsContainers": {
       "activitybar": [
         {
@@ -78,12 +156,15 @@
   },
   "dependencies": {
     "@google/genai": "^1.16.0",
+    "@langchain/community": "^0.3.54",
     "@langchain/core": "^0.3.72",
     "@langchain/google-genai": "^0.2.16",
     "@langchain/langgraph": "^0.4.9",
+    "@langchain/openai": "^0.6.11",
     "dotenv": "^17.2.1",
     "langchain": "^0.3.31",
     "markdown-it": "^14.1.0",
+    "node-fetch": "^3.3.2",
     "watch": "^1.0.2"
   }
 }

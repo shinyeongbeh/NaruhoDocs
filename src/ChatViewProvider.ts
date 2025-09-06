@@ -2,6 +2,7 @@
 import * as vscode from 'vscode';
 import { createChat, ChatSession } from './langchain-backend/llm.js';
 import { SystemMessages } from './SystemMessages';
+import { LLMProviderManager } from './llm-providers/manager';
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
 	// sysTemp = `
@@ -184,8 +185,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 	private context: vscode.ExtensionContext;
 	constructor(
 		private readonly _extensionUri: vscode.Uri,
-		private apiKey?: string,
-		context?: vscode.ExtensionContext
+		private apiKey?: string, // Keep for backward compatibility
+		context?: vscode.ExtensionContext,
+		private llmManager?: LLMProviderManager
 	) {
 		this.context = context!;
 
@@ -194,10 +196,26 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		const generalThreadTitle = 'General Purpose';
 		const sysMessage = SystemMessages.GENERAL_PURPOSE;
 
-		const session = createChat({ apiKey: this.apiKey, maxHistoryMessages: 40, systemMessage: sysMessage });
-		this.sessions.set(generalThreadId, session);
-		this.threadTitles.set(generalThreadId, generalThreadTitle);
-		this.activeThreadId = generalThreadId; // Set as the default active thread
+		// Use LLM manager if available, fallback to direct createChat
+		if (this.llmManager) {
+			this.llmManager.createChatSession(sysMessage).then(session => {
+				this.sessions.set(generalThreadId, session);
+				this.threadTitles.set(generalThreadId, generalThreadTitle);
+				this.activeThreadId = generalThreadId;
+			}).catch(error => {
+				console.error('Failed to create general chat session:', error);
+				// Fallback to direct method
+				const session = createChat({ apiKey: this.apiKey, maxHistoryMessages: 40, systemMessage: sysMessage });
+				this.sessions.set(generalThreadId, session);
+				this.threadTitles.set(generalThreadId, generalThreadTitle);
+				this.activeThreadId = generalThreadId;
+			});
+		} else {
+			const session = createChat({ apiKey: this.apiKey, maxHistoryMessages: 40, systemMessage: sysMessage });
+			this.sessions.set(generalThreadId, session);
+			this.threadTitles.set(generalThreadId, generalThreadTitle);
+			this.activeThreadId = generalThreadId;
+		}
 
 		// Watch for file deletions (markdown/txt)
 		this.fileWatcher = vscode.workspace.createFileSystemWatcher('**/*.{md,txt}');
@@ -709,19 +727,112 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		}
 	}
 
+	public updateLLMManager(newLLMManager: LLMProviderManager) {
+		this.llmManager = newLLMManager;
+		
+		// Show provider update message with more details
+		const currentProvider = this.llmManager.getCurrentProvider();
+		if (this._view && currentProvider) {
+			let providerInfo = `✅ LLM Provider updated to: ${currentProvider.name}`;
+			
+			// Add provider-specific info
+			if (currentProvider.name === 'Local LLM') {
+				// Try to get backend info for local provider
+				const localProvider = currentProvider as any;
+				if (localProvider.getBackendInfo) {
+					const backendInfo = localProvider.getBackendInfo();
+					if (backendInfo) {
+						providerInfo += ` (${backendInfo.type} - ${backendInfo.defaultModel})`;
+					}
+				}
+			} else if (currentProvider.name.includes('Gemini')) {
+				// Add usage info for Gemini providers
+				this.llmManager.getUsageInfo().then(usage => {
+					if (usage && !usage.isUnlimited) {
+						const remainingInfo = ` (${usage.requestsRemaining} requests remaining today)`;
+						this._view?.webview.postMessage({ 
+							type: 'addMessage', 
+							sender: 'System', 
+							message: providerInfo + remainingInfo 
+						});
+					}
+				}).catch(() => {
+					// Ignore usage info errors
+				});
+				return; // Skip the immediate message since we're doing async
+			}
+			
+			this._view.webview.postMessage({ 
+				type: 'addMessage', 
+				sender: 'System', 
+				message: providerInfo 
+			});
+		}
+		
+		// Recreate the general purpose session with the new provider
+		const generalThreadId = 'naruhodocs-general-thread';
+		if (this.sessions.has(generalThreadId)) {
+			const generalThreadTitle = 'General Purpose';
+			const sysMessage = SystemMessages.GENERAL_PURPOSE;
+			
+			if (this.llmManager) {
+				this.llmManager.createChatSession(sysMessage).then(session => {
+					this.sessions.set(generalThreadId, session);
+					this.threadTitles.set(generalThreadId, generalThreadTitle);
+					if (this.activeThreadId === generalThreadId) {
+						this._postThreadList();
+					}
+				}).catch(error => {
+					console.error('Failed to update general chat session:', error);
+					if (this._view) {
+						this._view.webview.postMessage({ 
+							type: 'addMessage', 
+							sender: 'System', 
+							message: `❌ Failed to update LLM provider: ${error.message}` 
+						});
+					}
+				});
+			}
+		}
+	}
+
 	// Create a new thread/session for a document
 	public createThread(sessionId: string, initialContext: string, title: string) {
 		if (!this.sessions.has(sessionId)) {
 			const sysMessage = SystemMessages.DOCUMENT_SPECIFIC_DEVELOPER(title, initialContext);
 			// Try to load history from workspaceState
 			const savedHistory = this.context.workspaceState.get<any[]>(`thread-history-${sessionId}`);
-			const session = createChat({ apiKey: this.apiKey, maxHistoryMessages: 40, systemMessage: sysMessage });
-			if (savedHistory && Array.isArray(savedHistory)) {
-				session.setHistory(savedHistory);
+			
+			// Use the LLM manager instead of direct createChat
+			if (this.llmManager) {
+				this.llmManager.createChatSession(sysMessage).then(session => {
+					if (savedHistory && Array.isArray(savedHistory)) {
+						session.setHistory(savedHistory);
+					}
+					this.sessions.set(sessionId, session);
+					this.threadTitles.set(sessionId, title);
+					this._postThreadList();
+				}).catch(error => {
+					console.error('Failed to create chat session:', error);
+					// Fallback to existing method for backward compatibility
+					const session = createChat({ apiKey: this.apiKey, maxHistoryMessages: 40, systemMessage: sysMessage });
+					if (savedHistory && Array.isArray(savedHistory)) {
+						session.setHistory(savedHistory);
+					}
+					this.sessions.set(sessionId, session);
+					this.threadTitles.set(sessionId, title);
+					this._postThreadList();
+				});
+			} else {
+				// Fallback to existing method for backward compatibility
+				const session = createChat({ apiKey: this.apiKey, maxHistoryMessages: 40, systemMessage: sysMessage });
+				if (savedHistory && Array.isArray(savedHistory)) {
+					session.setHistory(savedHistory);
+				}
+				this.sessions.set(sessionId, session);
+				this.threadTitles.set(sessionId, title);
+				this._postThreadList();
 			}
-			this.sessions.set(sessionId, session);
-			this.threadTitles.set(sessionId, title);
-			this._postThreadList();
 		}
 	}
 
