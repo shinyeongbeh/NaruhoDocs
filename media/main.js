@@ -632,12 +632,12 @@
 
                     const btnContainer = document.createElement('div');
                     btnContainer.id = 'save-translation-btn-container';
-                    btnContainer.className = 'save-btn-container';
+                    btnContainer.className = 'button-group';
 
-                    const translationDiv = document.createElement('div');
-                    translationDiv.textContent = 'Save translation as new file?';
-                    translationDiv.className = 'save-btn-prompt';
-                    btnContainer.appendChild(translationDiv);
+                    const labelDiv = document.createElement('div');
+                    labelDiv.textContent = 'Save translation as new file?';
+                    labelDiv.className = 'button-group-label';
+                    btnContainer.appendChild(labelDiv);
 
                     const yesBtn = document.createElement('button');
                     yesBtn.textContent = 'Yes';
@@ -670,12 +670,12 @@
 
                     const btnContainer = document.createElement('div');
                     btnContainer.id = 'save-template-btn-container';
-                    btnContainer.className = 'save-btn-container';
+                    btnContainer.className = 'button-group';
 
-                    const templateDiv = document.createElement('div');
-                    templateDiv.textContent = 'Save template as new file?';
-                    templateDiv.className = 'save-btn-prompt';
-                    btnContainer.appendChild(templateDiv);
+                    const labelDiv = document.createElement('div');
+                    labelDiv.textContent = 'Save template as new file?';
+                    labelDiv.className = 'button-group-label';
+                    btnContainer.appendChild(labelDiv);
 
                     const yesBtn = document.createElement('button');
                     yesBtn.textContent = 'Yes';
