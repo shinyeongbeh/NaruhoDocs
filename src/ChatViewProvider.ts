@@ -223,7 +223,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 					// Generate template using AI and show save modal
 					let templateContent = '';
 					try {
-						if (!session) { throw new Error('No active thread');}
+						if (!session) { throw new Error('No active thread'); }
 						templateContent = await session.chat(`Generate a documentation template for ${data.templateType || 'this project'}.`);
 					} catch (err) {
 						templateContent = 'Unable to generate template.';
@@ -254,23 +254,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 							aiFilename = '';
 						}
 					}
-					// Use AI filename if valid, else fallback
 					let fileName = '';
 					if (aiFilename && /^(?![. ]).+\.md$/i.test(aiFilename) && !/[\\/:*?"<>|]/.test(aiFilename)) {
 						fileName = aiFilename;
-						console.log('[NaruhoDocs][DEBUG] Using AI-suggested filename:', fileName);
 					} else if (data.fileName && typeof data.fileName === 'string' && data.fileName.trim() !== '') {
 						fileName = data.fileName.trim();
-						console.log('[NaruhoDocs][DEBUG] Using provided filename:', fileName);
 					} else {
 						fileName = `${data.docType.replace(/\s+/g, '_').toUpperCase()}.md`;
-						if (aiTried) {
-							console.log('[NaruhoDocs][DEBUG] AI suggestion invalid or empty, using fallback filename:', fileName);
-						} else {
-							console.log('[NaruhoDocs][DEBUG] Using fallback filename (no AI attempted):', fileName);
-						}
 					}
 
+					//read files in workspace to see if the file already exists
 					const wsFolders = vscode.workspace.workspaceFolders;
 					if (wsFolders && wsFolders.length > 0) {
 						const wsUri = wsFolders[0].uri;
@@ -291,7 +284,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 							// Ask AI which files are relevant for documentation
 							const sys = `You are an AI assistant that helps users create project documentation files based on the project files and contents. 
 							The output should be in markdown format. Do not include code fences or explanations, just the documentation. 
-							First, select the most relevant files from this list for generating documentation for ${fileName}. 
+							First, select ALL the relevant files from this list for generating documentation for ${fileName}. You need to select as many files as needed but be concise.
 							Always include project metadata and README/config files if available. Return only a JSON array of file paths, no explanation.`;
 							const chat = createChat({ apiKey: this.apiKey, maxHistoryMessages: 10, systemMessage: sys });
 							let relevantFiles: string[] = [];
@@ -374,7 +367,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 					} else {
 						this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: 'No workspace folder open.' });
 					}
-					break;
+
 				}
 				case 'setThreadBeginnerMode': {
 					await this.setThreadBeginnerMode(data.sessionId);
