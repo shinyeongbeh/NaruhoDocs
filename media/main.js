@@ -102,9 +102,6 @@
         if (!chatModeButtons) {
             chatModeButtons = document.createElement('div');
             chatModeButtons.id = 'chat-mode-buttons';
-            chatModeButtons.style.display = 'flex';
-            chatModeButtons.style.gap = '8px';
-            chatModeButtons.style.margin = '12px 0';
             // Insert above chat input container
             if (chatInputContainer && chatInputContainer.parentElement) {
                 chatInputContainer.parentElement.insertBefore(chatModeButtons, chatInputContainer);
@@ -160,12 +157,6 @@
                         // Explanation
                         const explain = document.createElement('div');
                         explain.className = 'mode-explanation';
-                        explain.style.fontSize = '0.90em';
-                        explain.style.color = '#888';
-                        explain.style.marginTop = '2px';
-                        explain.style.fontStyle = 'italic';
-                        explain.style.lineHeight = '1.2em';
-                        explain.style.marginBottom = '10px';
 
                         explain.textContent = 'Answers in this chatbot will be explained in a beginner-friendly way, with less technical jargon and more step-by-step guidance.';
 
@@ -190,13 +181,6 @@
                         // Explanation
                         const explain = document.createElement('div');
                         explain.className = 'mode-explanation';
-                        explain.style.fontSize = '0.95em';
-                        explain.style.color = '#888';
-                        explain.style.marginTop = '2px';
-                        explain.style.fontStyle = 'italic';
-                        explain.style.lineHeight = '1.2em';
-                        explain.style.marginBottom = '10px';
-
                         explain.textContent = 'Answers in this chatbot will be more technical, concise, and assume programming experience.';
 
                         chatMessages.appendChild(msg);
@@ -267,14 +251,14 @@
             box.appendChild(closeBtn);
             modal.appendChild(box);
 
-            const title = document.createElement('h2');
-            title.textContent = 'Select Documentation Type';
-            box.appendChild(title);
-
-            // Show loading spinner/message
+            // Show a smaller loading spinner/message (no 'suggest what what' text)
             const loading = document.createElement('div');
             loading.className = 'doc-modal-loading';
-            loading.textContent = 'Loading suggestions...';
+            loading.textContent = '';
+            // Add a small spinner (all style in main.css)
+            const spinner = document.createElement('span');
+            spinner.className = 'doc-modal-spinner';
+            loading.appendChild(spinner);
             box.appendChild(loading);
 
             document.body.appendChild(modal);
@@ -289,6 +273,9 @@
                     // Remove loading
                     box.innerHTML = '';
                     box.appendChild(closeBtn);
+                    // Only show the title and suggestion buttons after loading
+                    const title = document.createElement('h2');
+                    title.textContent = 'Select Documentation Type';
                     box.appendChild(title);
                     // Filter AI suggestions using existingFiles
                     const existingFiles = Array.isArray(message.existingFiles) ? message.existingFiles : [];
@@ -378,14 +365,14 @@
             closeBtn.addEventListener('click', () => { modal.remove(); });
             box.appendChild(closeBtn);
 
-            const title = document.createElement('h2');
-            title.textContent = 'Select Documentation Template';
-            box.appendChild(title);
-
-            // Show loading spinner/message
+            // Show a smaller loading spinner/message (no text)
             const loading = document.createElement('div');
             loading.className = 'doc-modal-loading';
-            loading.textContent = 'Loading suggestions...';
+            loading.textContent = '';
+            // Add a small spinner (all style in main.css)
+            const spinner = document.createElement('span');
+            spinner.className = 'doc-modal-spinner';
+            loading.appendChild(spinner);
             box.appendChild(loading);
 
             modal.appendChild(box);
@@ -398,6 +385,9 @@
                     // Remove loading
                     box.innerHTML = '';
                     box.appendChild(closeBtn);
+                    // Only show the title and suggestion buttons after loading
+                    const title = document.createElement('h2');
+                    title.textContent = 'Select Documentation Template';
                     box.appendChild(title);
                     // Filter AI suggestions using existingFiles
                     const existingFiles = Array.isArray(message.existingFiles) ? message.existingFiles : [];
