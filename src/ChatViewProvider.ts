@@ -560,7 +560,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 					const templateType = (data.docType || data.templateType || 'generic').toLowerCase();
 					try {
 						const tempChat = createChat({ apiKey: this.apiKey, maxHistoryMessages: 10 });
-						const suggestedName = await tempChat.chat(`Suggest a concise, filesystem-friendly filename (with .md extension) for a ${templateType} template. Respond with only the filename, no explanation.`);
+						const suggestedName = await tempChat.chat(`Suggest a concise, filesystem-friendly filename (with .md extension) for a ${templateType} documentation file. Do not include the word 'template' in the filename. Respond with only the filename, no explanation.`);
 						aiFilename = (suggestedName || '').trim();
 					} catch (e) {
 						aiFilename = '';
