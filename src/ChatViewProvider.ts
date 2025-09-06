@@ -65,7 +65,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 				- fileName: The recommended filename (e.g., "API_REFERENCE.md")
 				- description: A short description of what this document should contain.
 
-				You need to make sure that for the suggestion files you suggested, you have enough information to generate the documents as well.
+				**You need to make sure that for the suggestion files you suggested, you have enough information to generate the documents as well.**
 				Respond with a JSON array of objects with keys displayName, fileName, and description. Only suggest files that are not already present in the workspace. Do not include explanations or extra text.`;
 
 		// const contextFiles = filesAndContents.slice(0, 3).map(f => `File: ${f.path}\n${f.content.substring(0, 1000)}`).join('\n\n');
@@ -420,7 +420,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 								
 								const filesAndContentsString = filesAndContents.map(f => `File: ${f.path}\n${f.content}`).join('\n\n');
 								this.docGeneratorAI.setCustomSystemMessage(sys2);
-								aiContent = await this.docGeneratorAI.chat(`Generate a starter documentation for ${fileName} based on this project. Refer to the relevant workspace files and contents:\n${filesAndContentsString}`) || '';
+								aiContent = await this.docGeneratorAI.chat(`Generate a starter documentation for ${fileName} based on this project. Refer to the relevant workspace files and contents:\n${filesAndContentsString}. If you are unable to generate the file based on information given, do not make up generic content yourself`) || '';
 								console.log('AI doc generation response:', aiContent);
 								aiContent = aiContent.replace(/^```markdown\s*/i, '').replace(/^\*\*\*markdown\s*/i, '').replace(/```$/g, '').trim();
 							} catch (err) {
