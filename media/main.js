@@ -151,7 +151,7 @@
                         const msg = document.createElement('div');
                         msg.className = 'message system';
                         msg.textContent = 'Switched to Beginner Mode';
-                        
+
                         // Explanation
                         const explain = document.createElement('div');
                         explain.className = 'mode-explanation';
@@ -163,7 +163,7 @@
                         explain.style.marginBottom = '10px';
 
                         explain.textContent = 'Answers in this chatbot will be explained in a beginner-friendly way, with less technical jargon and more step-by-step guidance.';
-                        
+
                         chatMessages.appendChild(msg);
                         chatMessages.appendChild(explain);
                         chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -181,7 +181,7 @@
                         const msg = document.createElement('div');
                         msg.className = 'message system';
                         msg.textContent = 'Switched to Developer Mode';
-                        
+
                         // Explanation
                         const explain = document.createElement('div');
                         explain.className = 'mode-explanation';
@@ -442,8 +442,10 @@
             submitBtn.textContent = 'Submit';
             submitBtn.addEventListener('click', () => {
                 if (input.value.trim()) {
-                    addMessage('You', input.value.trim());
-                    vscode.postMessage({ type: 'sendMessage', value: input.value.trim() });
+                    // Always send a canonical template request for custom input
+                    const templateType = input.value.trim();
+                    addMessage('You', `Generate a ${templateType} template.`);
+                    vscode.postMessage({ type: 'sendMessage', value: `Generate a ${templateType} template.` });
                     if (modal) modal.remove();
                 }
             });
@@ -663,6 +665,11 @@
                 break;
             case 'showSaveTemplateButtons':
                 if (chatMessages) {
+                    // If the template is a 'not needed' message, do not show save modal
+                    if (typeof message.template === 'string' && message.template.trim().toLowerCase().startsWith('this project does not require')) {
+                        // Do not show save modal
+                        break;
+                    }
                     const prev = document.getElementById('save-template-btn-container');
                     if (prev) prev.remove();
 
@@ -683,7 +690,7 @@
                             type: 'createAndSaveTemplateFile',
                             text: message.template,
                             uri: message.sessionId,
-                            docType: message.docType || message.templateType || 'README'  // ✅ pass user’s choice
+                            docType: message.docType || message.templateType || 'README'
                         });
                         btnContainer.remove();
                     };

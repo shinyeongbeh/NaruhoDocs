@@ -231,7 +231,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 					this._view?.webview.postMessage({
 						type: 'showSaveTemplateButtons',
 						template: templateContent,
-						sessionId: this.activeThreadId
+						sessionId: this.activeThreadId,
+						templateType: data.templateType || 'README'
 					});
 					break;
 				}
@@ -381,20 +382,94 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 					const userMessage = data.value as string;
 					try {
 						if (!session) { throw new Error('No active thread'); }
-						const botResponse = await session.chat(userMessage);
-						this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: botResponse });
-						// Save history after message
-						if (this.activeThreadId && session) {
-							const history = session.getHistory();
-							await this.context.workspaceState.update(`thread-history-${this.activeThreadId}`, history);
-						}
-						// If the user message is a template request, show save prompt
+						// If the user message is a template request, scan files and generate a template with full context
 						if (/generate (a )?.*template/i.test(userMessage)) {
+							// Extract template type
+							let templateType = 'README';
+							const match = userMessage.match(/generate (?:a )?(.*) template/i);
+							if (match && match[1]) {
+								templateType = match[1].trim();
+							}
+							// Gather workspace filenames
+							const { RetrieveWorkspaceFilenamesTool, RetrieveFileContentTool } = require('./langchain-backend/features');
+							const filenamesTool = new RetrieveWorkspaceFilenamesTool();
+							const fileListStr = await filenamesTool._call();
+							const fileList = fileListStr.split('\n').filter((line: string) => line && !line.startsWith('Files in the workspace:'));
+
+							// Always include project metadata and README/config files for richer context
+							const metaFiles = ['package.json', 'tsconfig.json', 'README.md', 'readme.md', 'api_reference.md', 'API_REFERENCE.md'];
+							const extraFiles = fileList.filter((f: string) => metaFiles.includes(f.split(/[/\\]/).pop()?.toLowerCase() || ''));
+
+							// Ask AI which files are relevant for documentation
+							const sys = `You are an AI assistant that helps users create project documentation templates based on the project files and contents.\nThe output should be in markdown format. Do not include code fences or explanations, just the template.\nFirst, select ALL the relevant files from this list for generating a ${templateType} template. You need to select as many files as needed but be concise.\nAlways include project metadata and README/config files if available. Return only a JSON array of file paths, no explanation.`;
+							const chat = createChat({ apiKey: this.apiKey, maxHistoryMessages: 10, systemMessage: sys });
+							let relevantFiles: string[] = [];
+							try {
+								const aiResponse = await chat.chat(
+									`Here is the list of files in the workspace:\n${fileList.join('\n')}\n\nWhich files are most relevant for generating a ${templateType} template? Always include project metadata and README/config files if available. Return only a JSON array of file paths.`
+								);
+								// Try to parse the AI response as JSON array
+								const matchFiles = aiResponse.match(/\[.*\]/s);
+								if (matchFiles) {
+									relevantFiles = JSON.parse(matchFiles[0]);
+								} else {
+									// fallback: use all files
+									relevantFiles = fileList;
+								}
+							} catch (err) {
+								relevantFiles = fileList;
+							}
+							// Ensure meta files are always included
+							for (const meta of extraFiles) {
+								if (!relevantFiles.includes(meta)) {
+									relevantFiles.push(meta);
+								}
+							}
+							// Now scan only relevant files
+							const contentTool = new RetrieveFileContentTool();
+							const filesAndContents = [];
+							for (const path of relevantFiles) {
+								try {
+									const content = await contentTool._call(path);
+									filesAndContents.push({ path, content });
+								} catch (e) { }
+							}
+							// Use AI to generate template content
+							let templateContent = '';
+							   try {
+								   const sys2 = `You are an impeccable and meticulous technical documentation specialist. Your purpose is to produce clear, accurate, and professional documentation templates based on the given content.\n\nPrimary Goal: Generate a high-quality documentation template for ${templateType} that is comprehensive, logically structured, and easy for the intended audience to use.\n\nInstructions:\nYou will be given the template type to create, along with the relevant files and their contents from the user's project workspace.\nYour task is to analyze these files and generate a well-organized documentation template that thoroughly covers the subject matter implied by the template type.\nYou may use tools (retrieve_workspace_filenames, retrieve_file_content) to retrieve additional file contents if needed without user prompted.\n\nMandatory Rules:\n- Do not include private or sensitive information from the provided files. For example, API keys.\n- Clarity and Simplicity: Prioritize clarity and conciseness above all else. Use plain language, active voice, and short sentences. Avoid jargon, buzzwords, and redundant phrases unless they are essential for technical accuracy.\n- Structured Content: All templates must follow a clear, hierarchical structure using Markdown.\n- Formatting: The final output must be in markdown format. Do not include code fences, explanations, or conversational text.\n- Never return empty or placeholder content. If you determine that this project truly does not need this template, respond with a clear explanation such as: 'This project does not require a [${templateType}] template because ...' and do not generate a file.`;
+								   const chat2 = createChat({ apiKey: this.apiKey, maxHistoryMessages: 10, systemMessage: sys2 });
+								   const filesAndContentsString = filesAndContents.map(f => `File: ${f.path}\n${f.content}`).join('\n\n');
+								   templateContent = await chat2.chat(`Generate a documentation template for ${templateType} based on this project. Here are the relevant workspace files and contents:\n${filesAndContentsString}`);
+								   templateContent = templateContent.replace(/^```markdown\s*/i, '').replace(/^\*\*\*markdown\s*/i, '').replace(/```$/g, '').trim();
+							   } catch (err) {
+								   templateContent = `This project does not require a [${templateType}] template because no relevant content was found.`;
+							   }
+							this._view?.webview.postMessage({
+								type: 'addMessage',
+								sender: 'Bot',
+								message: templateContent
+							});
+							// Save history after message
+							if (this.activeThreadId && session) {
+								const history = session.getHistory();
+								await this.context.workspaceState.update(`thread-history-${this.activeThreadId}`, history);
+							}
 							this._view?.webview.postMessage({
 								type: 'showSaveTemplateButtons',
-								template: botResponse,
-								sessionId: this.activeThreadId
+								template: templateContent,
+								sessionId: this.activeThreadId,
+								templateType
 							});
+						} else {
+							// Default: just chat as before
+							const botResponse = await session.chat(userMessage);
+							this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: botResponse });
+							// Save history after message
+							if (this.activeThreadId && session) {
+								const history = session.getHistory();
+								await this.context.workspaceState.update(`thread-history-${this.activeThreadId}`, history);
+							}
 						}
 					} catch (error: any) {
 						this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: `Error: ${error.message || 'Unable to connect to LLM.'}` });
