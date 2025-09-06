@@ -84,9 +84,14 @@
         threadListMenu.innerHTML = '';
         let activeTitle = '';
         let foundActive = false;
-        // Show/hide general buttons
+        // Move general buttons above chat input box
         const generalButtons = document.getElementById('general-buttons');
-        if (generalButtons) {
+        const generalButtonsAnchor = document.getElementById('general-buttons-anchor');
+        if (generalButtons && generalButtonsAnchor && generalButtonsAnchor.parentElement) {
+            // Only move if not already in correct place
+            if (generalButtons.parentElement !== generalButtonsAnchor.parentElement || generalButtons.previousElementSibling !== generalButtonsAnchor) {
+                generalButtonsAnchor.parentElement.insertBefore(generalButtons, generalButtonsAnchor.nextSibling);
+            }
             generalButtons.style.display = (activeThreadId === 'naruhodocs-general-thread') ? 'flex' : 'none';
         }
 
@@ -97,9 +102,6 @@
         if (!chatModeButtons) {
             chatModeButtons = document.createElement('div');
             chatModeButtons.id = 'chat-mode-buttons';
-            chatModeButtons.style.display = 'flex';
-            chatModeButtons.style.gap = '8px';
-            chatModeButtons.style.margin = '12px 0';
             // Insert above chat input container
             if (chatInputContainer && chatInputContainer.parentElement) {
                 chatInputContainer.parentElement.insertBefore(chatModeButtons, chatInputContainer);
@@ -151,19 +153,13 @@
                         const msg = document.createElement('div');
                         msg.className = 'message system';
                         msg.textContent = 'Switched to Beginner Mode';
-                        
+
                         // Explanation
                         const explain = document.createElement('div');
                         explain.className = 'mode-explanation';
-                        explain.style.fontSize = '0.90em';
-                        explain.style.color = '#888';
-                        explain.style.marginTop = '2px';
-                        explain.style.fontStyle = 'italic';
-                        explain.style.lineHeight = '1.2em';
-                        explain.style.marginBottom = '10px';
 
                         explain.textContent = 'Answers in this chatbot will be explained in a beginner-friendly way, with less technical jargon and more step-by-step guidance.';
-                        
+
                         chatMessages.appendChild(msg);
                         chatMessages.appendChild(explain);
                         chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -181,17 +177,10 @@
                         const msg = document.createElement('div');
                         msg.className = 'message system';
                         msg.textContent = 'Switched to Developer Mode';
-                        
+
                         // Explanation
                         const explain = document.createElement('div');
                         explain.className = 'mode-explanation';
-                        explain.style.fontSize = '0.95em';
-                        explain.style.color = '#888';
-                        explain.style.marginTop = '2px';
-                        explain.style.fontStyle = 'italic';
-                        explain.style.lineHeight = '1.2em';
-                        explain.style.marginBottom = '10px';
-
                         explain.textContent = 'Answers in this chatbot will be more technical, concise, and assume programming experience.';
 
                         chatMessages.appendChild(msg);
@@ -262,14 +251,14 @@
             box.appendChild(closeBtn);
             modal.appendChild(box);
 
-            const title = document.createElement('h2');
-            title.textContent = 'Select Documentation Type';
-            box.appendChild(title);
-
-            // Show loading spinner/message
+            // Show a smaller loading spinner/message (no 'suggest what what' text)
             const loading = document.createElement('div');
             loading.className = 'doc-modal-loading';
-            loading.textContent = 'Loading suggestions...';
+            loading.textContent = '';
+            // Add a small spinner (all style in main.css)
+            const spinner = document.createElement('span');
+            spinner.className = 'doc-modal-spinner';
+            loading.appendChild(spinner);
             box.appendChild(loading);
 
             document.body.appendChild(modal);
@@ -284,6 +273,9 @@
                     // Remove loading
                     box.innerHTML = '';
                     box.appendChild(closeBtn);
+                    // Only show the title and suggestion buttons after loading
+                    const title = document.createElement('h2');
+                    title.textContent = 'Select Documentation Type';
                     box.appendChild(title);
                     // Filter AI suggestions using existingFiles
                     const existingFiles = Array.isArray(message.existingFiles) ? message.existingFiles : [];
@@ -373,14 +365,14 @@
             closeBtn.addEventListener('click', () => { modal.remove(); });
             box.appendChild(closeBtn);
 
-            const title = document.createElement('h2');
-            title.textContent = 'Select Documentation Template';
-            box.appendChild(title);
-
-            // Show loading spinner/message
+            // Show a smaller loading spinner/message (no text)
             const loading = document.createElement('div');
             loading.className = 'doc-modal-loading';
-            loading.textContent = 'Loading suggestions...';
+            loading.textContent = '';
+            // Add a small spinner (all style in main.css)
+            const spinner = document.createElement('span');
+            spinner.className = 'doc-modal-spinner';
+            loading.appendChild(spinner);
             box.appendChild(loading);
 
             modal.appendChild(box);
@@ -393,6 +385,9 @@
                     // Remove loading
                     box.innerHTML = '';
                     box.appendChild(closeBtn);
+                    // Only show the title and suggestion buttons after loading
+                    const title = document.createElement('h2');
+                    title.textContent = 'Select Documentation Template';
                     box.appendChild(title);
                     // Filter AI suggestions using existingFiles
                     const existingFiles = Array.isArray(message.existingFiles) ? message.existingFiles : [];
@@ -442,8 +437,10 @@
             submitBtn.textContent = 'Submit';
             submitBtn.addEventListener('click', () => {
                 if (input.value.trim()) {
-                    addMessage('You', input.value.trim());
-                    vscode.postMessage({ type: 'sendMessage', value: input.value.trim() });
+                    // Always send a canonical template request for custom input
+                    const templateType = input.value.trim();
+                    addMessage('You', `Generate a ${templateType} template.`);
+                    vscode.postMessage({ type: 'sendMessage', value: `Generate a ${templateType} template.` });
                     if (modal) modal.remove();
                 }
             });
@@ -635,12 +632,12 @@
 
                     const btnContainer = document.createElement('div');
                     btnContainer.id = 'save-translation-btn-container';
-                    btnContainer.className = 'save-btn-container';
+                    btnContainer.className = 'button-group';
 
-                    const translationDiv = document.createElement('div');
-                    translationDiv.textContent = 'Save translation as new file?';
-                    translationDiv.className = 'save-btn-prompt';
-                    btnContainer.appendChild(translationDiv);
+                    const labelDiv = document.createElement('div');
+                    labelDiv.textContent = 'Save translation as new file?';
+                    labelDiv.className = 'button-group-label';
+                    btnContainer.appendChild(labelDiv);
 
                     const yesBtn = document.createElement('button');
                     yesBtn.textContent = 'Yes';
@@ -663,17 +660,22 @@
                 break;
             case 'showSaveTemplateButtons':
                 if (chatMessages) {
+                    // If the template is a 'not needed' message, do not show save modal
+                    if (typeof message.template === 'string' && message.template.trim().toLowerCase().startsWith('this project does not require')) {
+                        // Do not show save modal
+                        break;
+                    }
                     const prev = document.getElementById('save-template-btn-container');
                     if (prev) prev.remove();
 
                     const btnContainer = document.createElement('div');
                     btnContainer.id = 'save-template-btn-container';
-                    btnContainer.className = 'save-btn-container';
+                    btnContainer.className = 'button-group';
 
-                    const templateDiv = document.createElement('div');
-                    templateDiv.textContent = 'Save template as new file?';
-                    templateDiv.className = 'save-btn-prompt';
-                    btnContainer.appendChild(templateDiv);
+                    const labelDiv = document.createElement('div');
+                    labelDiv.textContent = 'Save template as new file?';
+                    labelDiv.className = 'button-group-label';
+                    btnContainer.appendChild(labelDiv);
 
                     const yesBtn = document.createElement('button');
                     yesBtn.textContent = 'Yes';
@@ -683,7 +685,7 @@
                             type: 'createAndSaveTemplateFile',
                             text: message.template,
                             uri: message.sessionId,
-                            docType: message.docType || message.templateType || 'README'  // ✅ pass user’s choice
+                            docType: message.docType || message.templateType || 'README'
                         });
                         btnContainer.remove();
                     };
