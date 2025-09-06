@@ -436,15 +436,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 							}
 							// Use AI to generate template content
 							let templateContent = '';
-							   try {
-								   const sys2 = `You are an impeccable and meticulous technical documentation specialist. Your purpose is to produce clear, accurate, and professional documentation templates based on the given content.\n\nPrimary Goal: Generate a high-quality documentation template for ${templateType} that is comprehensive, logically structured, and easy for the intended audience to use.\n\nInstructions:\nYou will be given the template type to create, along with the relevant files and their contents from the user's project workspace.\nYour task is to analyze these files and generate a well-organized documentation template that thoroughly covers the subject matter implied by the template type.\nYou may use tools (retrieve_workspace_filenames, retrieve_file_content) to retrieve additional file contents if needed without user prompted.\n\nMandatory Rules:\n- Do not include private or sensitive information from the provided files. For example, API keys.\n- Clarity and Simplicity: Prioritize clarity and conciseness above all else. Use plain language, active voice, and short sentences. Avoid jargon, buzzwords, and redundant phrases unless they are essential for technical accuracy.\n- Structured Content: All templates must follow a clear, hierarchical structure using Markdown.\n- Formatting: The final output must be in markdown format. Do not include code fences, explanations, or conversational text.\n- Never return empty or placeholder content. If you determine that this project truly does not need this template, respond with a clear explanation such as: 'This project does not require a [${templateType}] template because ...' and do not generate a file.`;
-								   const chat2 = createChat({ apiKey: this.apiKey, maxHistoryMessages: 10, systemMessage: sys2 });
-								   const filesAndContentsString = filesAndContents.map(f => `File: ${f.path}\n${f.content}`).join('\n\n');
-								   templateContent = await chat2.chat(`Generate a documentation template for ${templateType} based on this project. Here are the relevant workspace files and contents:\n${filesAndContentsString}`);
-								   templateContent = templateContent.replace(/^```markdown\s*/i, '').replace(/^\*\*\*markdown\s*/i, '').replace(/```$/g, '').trim();
-							   } catch (err) {
-								   templateContent = `This project does not require a [${templateType}] template because no relevant content was found.`;
-							   }
+							try {
+								const sys2 = `You are an impeccable and meticulous technical documentation specialist. Your purpose is to produce clear, accurate, and professional documentation templates based on the given content.\n\nPrimary Goal: Generate a high-quality documentation template for ${templateType} that is comprehensive, logically structured, and easy for the intended audience to use.\n\nInstructions:\nYou will be given the template type to create, along with the relevant files and their contents from the user's project workspace.\nYour task is to analyze these files and generate a well-organized documentation template that thoroughly covers the subject matter implied by the template type.\nYou may use tools (retrieve_workspace_filenames, retrieve_file_content) to retrieve additional file contents if needed without user prompted.\n\nMandatory Rules:\n- Do not include private or sensitive information from the provided files. For example, API keys.\n- Clarity and Simplicity: Prioritize clarity and conciseness above all else. Use plain language, active voice, and short sentences. Avoid jargon, buzzwords, and redundant phrases unless they are essential for technical accuracy.\n- Structured Content: All templates must follow a clear, hierarchical structure using Markdown.\n- Formatting: The final output must be in markdown format. Do not include code fences, explanations, or conversational text.\n- Never return empty or placeholder content. If you determine that this project truly does not need this template, respond with a clear explanation such as: 'This project does not require a [${templateType}] template because ...' and do not generate a file.`;
+								const chat2 = createChat({ apiKey: this.apiKey, maxHistoryMessages: 10, systemMessage: sys2 });
+								const filesAndContentsString = filesAndContents.map(f => `File: ${f.path}\n${f.content}`).join('\n\n');
+								templateContent = await chat2.chat(`Generate a documentation template for ${templateType} based on this project. Here are the relevant workspace files and contents:\n${filesAndContentsString}`);
+								templateContent = templateContent.replace(/^```markdown\s*/i, '').replace(/^\*\*\*markdown\s*/i, '').replace(/```$/g, '').trim();
+							} catch (err) {
+								templateContent = `This project does not require a [${templateType}] template because no relevant content was found.`;
+							}
 							this._view?.webview.postMessage({
 								type: 'addMessage',
 								sender: 'Bot',
@@ -554,22 +554,35 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 					const uri = data.uri || '';
 					const generalThreadId = 'naruhodocs-general-thread';
 
-					// ✅ Always use selection for filename
-					const baseType = (data.docType || data.templateType || 'generic').toLowerCase();
-
-					// Normalize → lowercase, snake_case, safe characters
-					const suggestedFileName = baseType
-						.trim()
-						.replace(/\s+/g, '_')      // spaces → underscores
-						.replace(/[^\w\-]/g, '')   // remove unsafe chars
-						+ '_template.md';
+					// Use AI to suggest filename if possible, fallback to sanitized template type
+					let aiFilename = '';
+					let aiTried = false;
+					const templateType = (data.docType || data.templateType || 'generic').toLowerCase();
+					try {
+						const tempChat = createChat({ apiKey: this.apiKey, maxHistoryMessages: 10 });
+						const suggestedName = await tempChat.chat(`Suggest a concise, filesystem-friendly filename (with .md extension) for a ${templateType} template. Respond with only the filename, no explanation.`);
+						aiFilename = (suggestedName || '').trim();
+					} catch (e) {
+						aiFilename = '';
+					}
+					let fileName = '';
+					if (aiFilename && /^(?![. ]).+\.md$/i.test(aiFilename) && !/[\\/:*?"<>|]/.test(aiFilename)) {
+						// Remove _template.md or .md and add _template.md
+						fileName = aiFilename.replace(/(_template)?\.md$/i, '') + '_template.md';
+					} else {
+						fileName = templateType
+							.trim()
+							.replace(/\s+/g, '_')
+							.replace(/[^\w\-]/g, '')
+							+ '_template.md';
+					}
 
 					if (uri === generalThreadId || !uri) {
 						// Save in workspace root
 						const wsFolders = vscode.workspace.workspaceFolders;
 						if (wsFolders && wsFolders.length > 0) {
 							const wsUri = wsFolders[0].uri;
-							const templateFileUri = vscode.Uri.joinPath(wsUri, suggestedFileName);
+							const templateFileUri = vscode.Uri.joinPath(wsUri, fileName);
 							const content = text ? Buffer.from(text, 'utf8') : new Uint8Array();
 							try {
 								await vscode.workspace.fs.writeFile(templateFileUri, content);
@@ -596,7 +609,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 						try {
 							const fileUri = vscode.Uri.parse(uri);
 							const parentPaths = fileUri.path.split('/');
-							const templateFileUri = vscode.Uri.joinPath(fileUri.with({ path: parentPaths.join('/') }), suggestedFileName);
+							const templateFileUri = vscode.Uri.joinPath(fileUri.with({ path: parentPaths.join('/') }), fileName);
 							const content = text ? Buffer.from(text, 'utf8') : new Uint8Array();
 							await vscode.workspace.fs.writeFile(templateFileUri, content);
 							this._view?.webview.postMessage({
