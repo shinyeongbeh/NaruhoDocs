@@ -14,6 +14,7 @@ export class RetrieveWorkspaceFilenamesTool extends Tool {
 
     const files = await vscode.workspace.findFiles('**/*', '**/node_modules/**');
     const fileList = files.map(file => file.fsPath).join('\n');
+    console.log('Called TOOL retrieve_workspace_filenames');
     return `Files in the workspace:\n${fileList}`;
   }
 }
@@ -27,6 +28,7 @@ export class RetrieveFileContentTool extends Tool {
     try {
       const fileUri = vscode.Uri.file(filePath);
       const content = await vscode.workspace.fs.readFile(fileUri);
+      console.log(`Called TOOL retrieve_file_content for ${filePath}`);
       return `Content of ${filePath}:\n${content.toString()}`;
     } catch (error: any) {
       return `Error reading file ${filePath}: ${error.message}`;

@@ -13,102 +13,11 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
-	// Helper to check if a file exists in the workspace
-	async function fileExistsInWorkspace(fileName: string): Promise<string | null> {
-		const wsFolders = vscode.workspace.workspaceFolders;
-		if (!wsFolders || wsFolders.length === 0) { return null; }
-		const files = await vscode.workspace.findFiles(`**/${fileName}`);
-		if (files.length > 0) {
-			return files[0].fsPath;
-		}
-		return null;
-	}
-
-	// Helper to get all filenames and contents
-	async function getWorkspaceFilesAndContents() {
-		const { RetrieveWorkspaceFilenamesTool, RetrieveFileContentTool } = require('./langchain-backend/features');
-		const filenamesTool = new RetrieveWorkspaceFilenamesTool();
-		const fileListStr = await filenamesTool._call();
-		const fileList = fileListStr.split('\n').filter((line: string) => line && !line.startsWith('Files in the workspace:'));
-		const contentTool = new RetrieveFileContentTool();
-		// Only get content for up to 20 files to avoid performance issues
-		const filesAndContents: { path: string, content: string }[] = [];
-		for (let i = 0; i < fileList.length; i++) {
-			const path = fileList[i];
-			const content = await contentTool._call(path);
-			filesAndContents.push({ path, content });
-		}
-		return filesAndContents;
-	}
-
-	// Example: AI suggestion function (replace with your actual LLM call)
-	async function getAISuggestions(filesAndContents: { path: string; content: string }[]): Promise<Array<{ displayName: string; fileName: string; description?: string }>> {
-		// Use LLM to suggest missing documentation files
-		const { createChat } = require('./langchain-backend/llm');
-		const chat = createChat({ maxHistoryMessages: 10 });
-		// Prepare a summary of files for the LLM
-		const fileList = filesAndContents.map(f => f.path.split(/[/\\]/).pop()).filter(Boolean).join(', ');
-		const prompt = `You are an expert technical writer and project analyst. Given the following files in a project workspace: ${fileList}
-
-				For each file, you may also be given its content. Your task is to suggest a list of important documentation files (with .md extension) that are missing from this project but would be valuable for maintainability, onboarding, or API reference. For each suggestion, provide:
-				- displayName: A human-friendly name (e.g., "API Reference")
-				- fileName: The recommended filename (e.g., "API_REFERENCE.md")
-				- description: A short description of what this document should contain.
-
-				You need to make sure that for the suggestion files you suggested, you have enough information to generate the documents as well.
-				Respond with a JSON array of objects with keys displayName, fileName, and description. Only suggest files that are not already present in the workspace. Do not include explanations or extra text.`;
-		// Optionally, pass some file contents for more context (limit to a few files)
-		const contextFiles = filesAndContents.slice(0, 3).map(f => `File: ${f.path}\n${f.content.substring(0, 1000)}`).join('\n\n');
-		let llmResponse = '';
-		try {
-			llmResponse = await chat.chat(`${prompt}\n\nHere are some file contents for context:\n${contextFiles}`);
-			// Try to parse the LLM's response as JSON
-			const match = llmResponse.match(/\[.*\]/s);
-			if (match) {
-				const suggestions = JSON.parse(match[0]);
-				// Validate and filter suggestions
-				return Array.isArray(suggestions)
-					? suggestions.filter(s => s.displayName && s.fileName && s.fileName.endsWith('.md'))
-					: [];
-			}
-		} catch (e) {
-			// Fallback to static suggestions if LLM fails
-			console.warn('LLM suggestion failed:', e, llmResponse);
-		}
-		// Fallback: static suggestions
-		return [
-			{ displayName: 'README', fileName: 'README.md', description: 'Project overview and usage.' },
-			{ displayName: 'API Reference', fileName: 'API_REFERENCE.md', description: 'Document your API endpoints.' },
-			{ displayName: 'Getting Started', fileName: 'GETTING_STARTED.md', description: 'How to get started with the project.' }
-		];
-	}
-
-	// Filtering and sending to webview
-
-	async function sendAISuggestedDocs(
-		aiSuggestions: Array<{ displayName: string; fileName: string; description?: string }>,
-		filesAndContents: Array<{ path: string; content: string }>,
-		provider: ChatViewProvider
-	) {
-		// Pass all AI suggestions to modal, but filter after AI generates
-		provider.postMessage({ type: 'aiSuggestedDocs', suggestions: aiSuggestions, existingFiles: filesAndContents.map(f => f.path.split(/[/\\]/).pop()?.toLowerCase()) });
-	}
-	// Use RetrieveWorkspaceFilenamesTool for scanning workspace files
-	const scanDocs = async () => {
-		// Get all filenames and contents
-		const { RetrieveWorkspaceFilenamesTool } = require('./langchain-backend/features');
-		const filenamesTool = new RetrieveWorkspaceFilenamesTool();
-		const fileListStr = await filenamesTool._call();
-		const fileList = fileListStr.split('\n').filter((line: string) => line && !line.startsWith('Files in the workspace:'));
-		// ...removed debug logging...
-		const filesAndContents = await getWorkspaceFilesAndContents();
-		// Get AI suggestions
-		const aiSuggestions = await getAISuggestions(filesAndContents);
-		// Filter and send to webview
-		await sendAISuggestedDocs(aiSuggestions, filesAndContents, provider);
-	};
+	// Register scanDocs command to call provider.scanDocs()
 	context.subscriptions.push(
-		vscode.commands.registerCommand('naruhodocs.scanDocs', scanDocs)
+		vscode.commands.registerCommand('naruhodocs.scanDocs', async () => {
+			await provider.scanDocs();
+		})
 	);
 
 	// Thread management: map document URI to thread info
