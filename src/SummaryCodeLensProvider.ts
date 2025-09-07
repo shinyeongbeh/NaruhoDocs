@@ -11,12 +11,12 @@ export class SummaryCodeLensProvider implements vscode.CodeLensProvider {
             arguments: [document.uri]
         }));
 
-        // Add Visualization button
-        codeLenses.push(new vscode.CodeLens(range, {
-            command: 'naruhodocs.showVisualizationMenu',
-            title: '📊 Visualize',
-            arguments: [document.uri]
-        }));
+        // // Add Visualization button
+        // codeLenses.push(new vscode.CodeLens(range, {
+        //     command: 'naruhodocs.showVisualizationMenu',
+        //     title: '📊 Visualize',
+        //     arguments: [document.uri]
+        // }));
 
         // Switch Mode button
         codeLenses.push(new vscode.CodeLens(range, {
