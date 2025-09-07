@@ -1,6 +1,6 @@
 import { ChatViewProvider } from './ChatViewProvider';
 import * as vscode from 'vscode';
-import { SummaryCodeLensProvider } from './SummaryCodeLensProvider.js';
+import { SummaryCodeLensProvider } from './DocCodeLensProvider.js';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 import { SystemMessages } from './SystemMessages';
