@@ -11,6 +11,12 @@ export class SummaryCodeLensProvider implements vscode.CodeLensProvider {
             arguments: [document.uri]
         }));
 
+        codeLenses.push(new vscode.CodeLens(range, {
+            command: 'naruhodocs.visualizeDocument',
+            title: '🖼️ Visualize Document',
+            arguments: [document.uri]
+        }));
+
         // Switch Mode button
         codeLenses.push(new vscode.CodeLens(range, {
             command: 'naruhodocs.translateDocument',
