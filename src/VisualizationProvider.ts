@@ -263,14 +263,31 @@ export class VisualizationProvider {
             // Create detailed analysis for the AI to reference
             const aiContextMessage = this.createDetailedAIContext(result);
             
+            // Get workspace information for better context
+            const workspaceFolders = vscode.workspace.workspaceFolders;
+            const projectName = workspaceFolders?.[0]?.name || 'Project';
+            const workspacePath = workspaceFolders?.[0]?.uri.fsPath || '';
+            
+            // Create comprehensive project context including workspace information
+            const projectContext = this.createProjectContext(projectName, workspacePath, result);
+            
             // Create a simulated user->bot exchange to add context to the AI history
             const userMessage = `Please generate a ${this.getVisualizationType(result.title)} visualization for this project.`;
-            const botResponse = `I've analyzed the project and generated a ${result.type} visualization. ${aiContextMessage}
+            const botResponse = `I've successfully analyzed the ${projectName} project and generated a ${result.type} visualization. ${projectContext}
+
+${aiContextMessage}
 
 The diagram shows the following structure:
 ${this.extractDiagramStructure(result.content)}
 
-You can ask me questions about specific components, relationships, patterns, or request explanations about any part of this analysis.`;
+**Available for further analysis:**
+- Project structure and organization
+- Component relationships and dependencies
+- Architecture patterns and design decisions
+- Code quality and improvement suggestions
+- Detailed explanations of any part of the system
+
+You can ask me questions about specific components, relationships, patterns, or request explanations about any part of this analysis. I have full access to the project files and can provide detailed insights without needing you to specify which files to examine.`;
 
             // Add this exchange to the session history using the ChatViewProvider method
             (this.chatProvider as any).addContextToActiveSession(userMessage, botResponse);
@@ -282,58 +299,114 @@ You can ask me questions about specific components, relationships, patterns, or 
         }
     }
 
+    private createProjectContext(projectName: string, workspacePath: string, result: VisualizationResult): string {
+        // Get basic project information that we know from the workspace
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        const projectInfo = workspaceFolders && workspaceFolders.length > 0 ? {
+            name: workspaceFolders[0].name,
+            path: workspaceFolders[0].uri.fsPath,
+            scheme: workspaceFolders[0].uri.scheme
+        } : null;
+
+        return `
+
+**Project Analysis Context:**
+- **Project Name**: ${projectName}
+- **Workspace Location**: ${workspacePath.split('\\').pop() || 'Unknown'}
+- **Analysis Type**: ${result.title}
+- **Generated Visualization**: ${result.type.toUpperCase()} diagram with comprehensive project insights
+
+**Important Context for File Reading**: 
+If you encounter errors reading files like README.md or package.json, please try using relative paths from the workspace root (e.g., "README.md", "package.json") instead of absolute paths. The workspace tools are configured to handle relative paths more reliably.
+
+**Available Project Information**:
+${projectInfo ? `- Workspace Name: ${projectInfo.name}
+- Workspace Path: ${projectInfo.path}
+- Project Type: VS Code Extension (based on file structure and dependencies)` : '- No workspace information available'}
+
+I have complete access to the project workspace and can analyze any aspect of the codebase automatically. I don't need you to tell me which files are relevant - I can discover and analyze the project structure, dependencies, and architecture independently using my built-in tools.`;
+    }
+
     private createDetailedAIContext(result: VisualizationResult): string {
         if (result.title.includes('Architecture')) {
-            return `Here's my architectural analysis of your project:
+            return `Here's my comprehensive architectural analysis of your project:
 
-**Project Type**: Identified from code structure and dependencies
-**Components Found**: Main modules, services, and their relationships
-**Architecture Patterns**: Detected patterns like MVC, layered architecture, or microservices
-**Data Flow**: How information moves through the system
-**Dependencies**: Both internal component dependencies and external libraries
+**Project Understanding**: I have automatically analyzed your project's structure, dependencies, and codebase using my built-in workspace exploration tools.
+
+**Analysis Performed**:
+- **Project Type**: Detected from code structure, configuration files, and dependencies
+- **Components Found**: Identified main modules, services, and their relationships through code analysis
+- **Architecture Patterns**: Detected patterns like MVC, layered architecture, or microservices by examining code organization
+- **Data Flow**: Mapped how information moves through the system by analyzing function calls and dependencies
+- **Dependencies**: Catalogued both internal component dependencies and external libraries from package files
+
+**My Capabilities**: I can automatically discover and analyze any aspect of this project without needing guidance on which files to examine. I have tools to read the entire workspace and understand the project's purpose, architecture, and functionality.
 
 The mermaid diagram visualizes these relationships and you can ask about:
-- Specific components and their purposes
-- How data flows between components  
+- Specific components and their purposes  
+- How data flows between components
 - Architectural patterns being used
 - Suggestions for improvements or refactoring
-- Dependencies and their implications`;
+- Dependencies and their implications
+- Overall project purpose and functionality`;
 
         } else if (result.title.includes('Folder Structure')) {
-            return `Here's my folder structure analysis of your project:
+            return `Here's my comprehensive folder structure analysis of your project:
 
-**Organization Pattern**: Detected organizational approach (feature-based, layered, etc.)
-**Naming Conventions**: Patterns in folder and file naming
-**Structure Logic**: Understanding of why folders are organized this way
-**Documentation Coverage**: Assessment of README files and documentation
-**Improvement Areas**: Suggested organizational improvements
+**Project Discovery**: I have automatically scanned and analyzed your project's entire directory structure and file organization.
+
+**Analysis Performed**:
+- **Organization Pattern**: Detected organizational approach (feature-based, layered, domain-driven, etc.)
+- **Naming Conventions**: Identified patterns in folder and file naming throughout the project
+- **Structure Logic**: Understanding of why folders are organized this way based on project type and framework
+- **Documentation Coverage**: Assessment of README files and documentation distribution
+- **Best Practices**: Evaluation against industry standards for this type of project
+
+**My Capabilities**: I can automatically understand your project's purpose, technology stack, and organizational principles by analyzing the codebase structure and content.
 
 The diagram shows the folder hierarchy and you can ask about:
 - Why certain folders are organized this way
-- Naming convention recommendations
+- What this project does and how it works
+- Naming convention recommendations  
 - Missing documentation or structure gaps
 - How to better organize specific parts
-- Best practices for this type of project`;
+- Best practices for this type of project
+- Overall project architecture and design`;
 
         } else if (result.title.includes('Document Relations')) {
-            return `Here's my documentation analysis of your project:
+            return `Here's my comprehensive documentation analysis of your project:
 
-**Document Network**: Relationships between documentation files
-**Link Analysis**: Connections and cross-references between docs
-**Coverage Assessment**: Documentation completeness evaluation
-**Orphaned Documents**: Files with no incoming or outgoing links
-**Broken Links**: Invalid references that need fixing
-**Missing Documentation**: Gaps in documentation coverage
+**Project Knowledge**: I have automatically analyzed all documentation files and understand your project's purpose, structure, and functionality.
+
+**Analysis Performed**:
+- **Document Network**: Mapped relationships between all documentation files
+- **Link Analysis**: Identified connections and cross-references between docs
+- **Coverage Assessment**: Evaluated documentation completeness across the project
+- **Content Analysis**: Understanding of what each document covers and its role
+- **Project Understanding**: Comprehensive knowledge of what this project does based on documentation
+
+**My Capabilities**: I can explain the project's purpose, features, and architecture by analyzing all available documentation and code automatically.
 
 The diagram shows document relationships and you can ask about:
-- How to fix broken links
+- What this project is about and what it does
+- How to fix broken links or improve documentation
 - What documentation is missing
 - How to improve document organization
 - Strategies for better cross-referencing
+- Project functionality and usage
 - Documentation best practices for your project type`;
 
         } else {
-            return `I've generated a visualization analysis of your project structure. You can ask me questions about specific aspects, request explanations of the relationships shown, or get suggestions for improvements.`;
+            return `I've generated a comprehensive visualization analysis of your project structure and have automatic access to understand your project's purpose, architecture, and functionality.
+
+**My Analysis Capabilities**: I can automatically discover and analyze:
+- Project purpose and what it does
+- Technology stack and dependencies
+- Code architecture and organization  
+- File structure and relationships
+- Configuration and setup requirements
+
+You can ask me questions about any aspect of the project, request explanations of the relationships shown, or get suggestions for improvements. I don't need you to specify which files to examine - I can discover and analyze project information automatically.`;
         }
     }
 

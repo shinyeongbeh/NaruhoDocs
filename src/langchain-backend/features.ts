@@ -12,10 +12,28 @@ export class RetrieveWorkspaceFilenamesTool extends Tool {
       return 'No workspace folder is currently open.';
     }
 
-    const files = await vscode.workspace.findFiles('**/*', '**/node_modules/**');
-    const fileList = files.map(file => file.fsPath).join('\n');
-    console.log('Called TOOL retrieve_workspace_filenames');
-    return `Files in the workspace:\n${fileList}`;
+    try {
+      const files = await vscode.workspace.findFiles('**/*', '**/node_modules/**');
+      const workspaceRoot = workspaceFolders[0].uri.fsPath;
+      
+      // Provide both absolute and relative paths for better compatibility
+      const fileList = files.map(file => {
+        const absolutePath = file.fsPath;
+        const relativePath = vscode.workspace.asRelativePath(file);
+        return `${relativePath} (${absolutePath})`;
+      }).join('\n');
+      
+      console.log(`Called TOOL retrieve_workspace_filenames - found ${files.length} files`);
+      
+      if (files.length === 0) {
+        return 'No files found in the workspace (excluding node_modules).';
+      }
+      
+      return `Files in the workspace (${files.length} total):\n${fileList}`;
+    } catch (error: any) {
+      console.error('Error retrieving workspace filenames:', error);
+      return `Error retrieving workspace files: ${error.message || 'Unknown error'}`;
+    }
   }
 }
 
@@ -26,12 +44,47 @@ export class RetrieveFileContentTool extends Tool {
 
   async _call(filePath: string): Promise<string> {
     try {
-      const fileUri = vscode.Uri.file(filePath);
+      // Handle both absolute and relative paths
+      let fileUri: vscode.Uri;
+      
+      if (filePath.startsWith('/') || filePath.includes(':')) {
+        // Absolute path
+        fileUri = vscode.Uri.file(filePath);
+      } else {
+        // Relative path - resolve against workspace
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (!workspaceFolders || workspaceFolders.length === 0) {
+          return `Error: No workspace folder is open to resolve relative path: ${filePath}`;
+        }
+        fileUri = vscode.Uri.joinPath(workspaceFolders[0].uri, filePath);
+      }
+      
+      console.log(`Called TOOL retrieve_file_content for ${filePath} -> ${fileUri.fsPath}`);
+      
       const content = await vscode.workspace.fs.readFile(fileUri);
-      console.log(`Called TOOL retrieve_file_content for ${filePath}`);
-      return `Content of ${filePath}:\n${content.toString()}`;
+      const text = content.toString();
+      
+      // Verify content was read successfully
+      if (text.length === 0) {
+        return `Content of ${filePath}: [File exists but is empty]`;
+      }
+      
+      return `Content of ${filePath}:\n${text}`;
     } catch (error: any) {
-      return `Error reading file ${filePath}: ${error.message}`;
+      console.error(`Error reading file ${filePath}:`, error);
+      
+      // Provide more detailed error information
+      let errorMessage = `Error reading file ${filePath}: `;
+      
+      if (error.code === 'FileNotFound' || error.message?.includes('not exist')) {
+        errorMessage += 'File not found. Please check the file path.';
+      } else if (error.code === 'NoPermissions') {
+        errorMessage += 'Permission denied. Cannot read this file.';
+      } else {
+        errorMessage += error.message || 'Unknown error occurred.';
+      }
+      
+      return errorMessage;
     }
   }
 }
