@@ -509,6 +509,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 				}
 				case 'sendMessage': {
 					const userMessage = data.value as string;
+					
+					// Log initial message processing
+					console.log('=== MESSAGE PROCESSING START ===\n' +
+						`Raw User Message: ${userMessage}\n` +
+						`Session Available: ${!!session}\n` +
+						`Active Thread ID: ${this.activeThreadId}\n` +
+						'================================');
+					
 					try {
 						if (!session) { throw new Error('No active thread'); }
 						// If the user message is a template request, scan files and generate a template with full context
@@ -569,6 +577,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 								const sys2 = `You are an impeccable and meticulous technical documentation specialist. Your purpose is to produce clear, accurate, and professional documentation templates based on the given content.\n\nPrimary Goal: Generate a high-quality documentation template for ${templateType} that is comprehensive, logically structured, and easy for the intended audience to use.\n\nInstructions:\nYou will be given the template type to create, along with the relevant files and their contents from the user's project workspace.\nYour task is to analyze these files and generate a well-organized documentation template that thoroughly covers the subject matter implied by the template type.\nYou may use tools (retrieve_workspace_filenames, retrieve_file_content) to retrieve additional file contents if needed without user prompted.\n\nMandatory Rules:\n- Do not include private or sensitive information from the provided files. For example, API keys.\n- Clarity and Simplicity: Prioritize clarity and conciseness above all else. Use plain language, active voice, and short sentences. Avoid jargon, buzzwords, and redundant phrases unless they are essential for technical accuracy.\n- Structured Content: All templates must follow a clear, hierarchical structure using Markdown.\n- Formatting: The final output must be in markdown format. Do not include code fences, explanations, or conversational text.\n- Never return empty or placeholder content. If you determine that this project truly does not need this template, respond with a clear explanation such as: 'This project does not require a [${templateType}] template because ...' and do not generate a file.`;
 								const chat2 = createChat({ apiKey: this.apiKey, maxHistoryMessages: 10, systemMessage: sys2 });
 								const filesAndContentsString = filesAndContents.map(f => `File: ${f.path}\n${f.content}`).join('\n\n');
+								
+								// Log template generation context
+								console.log('=== TEMPLATE GENERATION REQUEST ===\n' +
+									`Template Type: ${templateType}\n` +
+									`System Message Length: ${sys2.length} chars\n` +
+									`Relevant Files Count: ${relevantFiles.length}\n` +
+									`Relevant Files: ${relevantFiles.join(', ')}\n` +
+									`Total Content Length: ${filesAndContentsString.length} chars\n` +
+									`Files and Contents Preview (first 500 chars): ${filesAndContentsString.substring(0, 500)}...\n` +
+									'====================================');
+								
 								templateContent = await chat2.chat(`Generate a documentation template for ${templateType} based on this project. Here are the relevant workspace files and contents:\n${filesAndContentsString}`);
 								templateContent = templateContent.replace(/^```markdown\s*/i, '').replace(/^\*\*\*markdown\s*/i, '').replace(/```$/g, '').trim();
 							} catch (err) {
@@ -592,6 +611,25 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 							});
 						} else {
 							// Default: just chat as before
+							
+							// Log the current context that will be sent to the LLM
+							const currentHistory = session.getHistory();
+							const sessionSystemMessage = (session as any).systemMessage || 'No system message';
+							const historyPreview = currentHistory.map((msg, index) => {
+								const msgType = (msg as any).type || 'unknown';
+								const msgContent = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+								const truncatedContent = msgContent.length > 200 ? msgContent.substring(0, 200) + '...' : msgContent;
+								return `  [${index}] ${msgType}: ${truncatedContent}`;
+							}).join('\n');
+							
+							console.log('=== USER MESSAGE SENT ===\n' +
+								`User Message: ${userMessage}\n` +
+								`Active Thread ID: ${this.activeThreadId}\n` +
+								`Current Conversation History (${currentHistory.length} messages):\n${historyPreview}\n` +
+								`System Message: ${sessionSystemMessage}\n` +
+								`About to send to LLM - Total context messages: ${currentHistory.length + 1}\n` +
+								'========================');
+							
 							const botResponse = await session.chat(userMessage);
 							this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: botResponse });
 							// Save history after message
@@ -606,12 +644,25 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 					break;
 				}
 				case 'resetSession': {
-					if (session) { session.reset(); }
-					this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: 'Conversation reset.' });
+					const historyBeforeReset = session ? session.getHistory() : [];
+					
+					console.log('=== CHAT RESET REQUESTED ===\n' +
+						`Active Thread ID: ${this.activeThreadId}\n` +
+						`Session Available: ${!!session}\n` +
+						`Messages in history before reset: ${historyBeforeReset.length}\n` +
+						'===========================');
+					
+					if (session) { 
+						session.reset(); 
+					}
+					
+					this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: '🔄 Conversation reset. Chat history cleared.' });
+					
 					// Clear history in storage
 					if (this.activeThreadId) {
 						await this.context.workspaceState.update(`thread-history-${this.activeThreadId}`, []);
 					}
+					
 					break;
 				}
 				case 'switchThread': {
@@ -917,6 +968,38 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		}
 	}
 
+	// Reset current active chat session
+	public async resetActiveChat() {
+		if (!this.activeThreadId) {
+			vscode.window.showWarningMessage('No active chat session to reset.');
+			return;
+		}
+
+		const session = this.sessions.get(this.activeThreadId);
+		if (session) {
+			const historyBeforeReset = session.getHistory();
+			
+			console.log('=== CHAT RESET (Command Palette) ===\n' +
+				`Active Thread ID: ${this.activeThreadId}\n` +
+				`Session Available: ${!!session}\n` +
+				`Messages in history before reset: ${historyBeforeReset.length}\n` +
+				'=======================================');
+			
+			session.reset();
+			
+			// Clear history in storage
+			await this.context.workspaceState.update(`thread-history-${this.activeThreadId}`, []);
+			
+			// Notify webview
+			this.postMessage({ type: 'addMessage', sender: 'System', message: '🔄 Conversation reset. Chat history cleared.' });
+			
+			// Show success message
+			vscode.window.showInformationMessage('Chat conversation has been reset.');
+		} else {
+			vscode.window.showWarningMessage('No active chat session found.');
+		}
+	}
+
 	private _postThreadList() {
 		if (this._view) {
 			const threads = Array.from(this.threadTitles.entries()).map(([id, title]) => ({ id, title }));
@@ -957,19 +1040,27 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 				<link href="${styleMainUri}" rel="stylesheet">
 				<link href="${styleMarkdownUri}" rel="stylesheet">
 				
+				<style>
+				/* Removed reset chat icon styles */
+				</style>
+				
 				<title>NaruhoDocs Chat</title>
 			</head>
 			<body>
 				<div class="chat-container">
-					<div class="chat-header" style="margin-bottom:12px; position:relative;">
-						<span id="hamburger-menu" style="cursor:pointer; background:#f3f3f3; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.04);">
-							<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-								<line x1="4" y1="7" x2="20" y2="7"></line>
-								<line x1="4" y1="12" x2="20" y2="12"></line>
-								<line x1="4" y1="17" x2="20" y2="17"></line>
-							</svg>
-						</span>
-						<span id="current-doc-name"></span>
+					<div class="chat-header" style="margin-bottom:12px; position:relative; display:flex; align-items:center; padding:0 8px;">
+						<div style="flex:0 0 auto;">
+							<span id="hamburger-menu" style="cursor:pointer; background:#f3f3f3; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.04); display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px;">
+								<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+									<line x1="4" y1="7" x2="20" y2="7"></line>
+									<line x1="4" y1="12" x2="20" y2="12"></line>
+									<line x1="4" y1="17" x2="20" y2="17"></line>
+								</svg>
+							</span>
+						</div>
+						<div style="flex:1 1 auto; text-align:center;">
+							<span id="current-doc-name"></span>
+						</div>
 						<div id="dropdown-container" style="display:none; position:absolute; left:0; top:40px; z-index:10;">
 							<div id="thread-list-menu"></div>
 						</div>
@@ -1323,7 +1414,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 	 */
 	public addContextToActiveSession(userMessage: string, botResponse: string): void {
 		try {
-			console.log('Adding context to active session:', { userMessage: userMessage.substring(0, 100), botResponse: botResponse.substring(0, 100) });
+			console.log('=== ADDING CONTEXT TO ACTIVE SESSION ===\n' +
+				`User Message: ${userMessage.substring(0, 100)}...\n` +
+				`Bot Response: ${botResponse.substring(0, 100)}...\n` +
+				`Active Thread ID: ${this.activeThreadId}\n` +
+				'========================================');
 			
 			if (!this.activeThreadId) {
 				console.warn('No active thread available to add context');

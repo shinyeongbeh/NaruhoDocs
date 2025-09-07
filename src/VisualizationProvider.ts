@@ -250,7 +250,10 @@ export class VisualizationProvider {
 
     private addVisualizationToAIHistory(result: VisualizationResult): void {
         try {
-            console.log('Adding visualization to AI history:', result.title);
+            console.log('=== ADDING VISUALIZATION TO AI HISTORY ===\n' +
+                `Visualization Title: ${result.title}\n` +
+                `Chart Provider Available: ${!!this.chatProvider}\n` +
+                '==========================================');
             
             // Get the chat provider to add context
             if (!this.chatProvider) {

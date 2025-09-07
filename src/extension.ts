@@ -298,6 +298,13 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 		})
 	);
 
+	// Add reset chat command
+	context.subscriptions.push(
+		vscode.commands.registerCommand('naruhodocs.resetChat', async () => {
+			await provider.resetActiveChat();
+		})
+	);
+
 	const grammarDiagnostics = vscode.languages.createDiagnosticCollection('naruhodocs-grammar');
 	context.subscriptions.push(grammarDiagnostics);
 

@@ -64,6 +64,11 @@
         "command": "naruhodocs.showVisualizationMenu",
         "title": "📊 Show Visualization Menu",
         "category": "NaruhoDocs"
+      },
+      {
+        "command": "naruhodocs.resetChat",
+        "title": "🔄 Reset Chat Conversation",
+        "category": "NaruhoDocs"
       }
     ],
     "configuration": {

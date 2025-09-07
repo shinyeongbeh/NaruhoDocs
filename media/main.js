@@ -63,11 +63,22 @@
         sendIcon.addEventListener('click', sendMessage);
     }
 
+    // Reset chat icon removed from UI - reset functionality available via command palette
+
     if (chatInput) {
         chatInput.addEventListener('keydown', (event) => {
             if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault();
                 sendMessage();
+            }
+            // Add keyboard shortcut for reset: Ctrl+Shift+R
+            if (event.key === 'R' && event.ctrlKey && event.shiftKey) {
+                event.preventDefault();
+                const confirmed = confirm('Are you sure you want to reset the current conversation? This will clear all chat history.\n\nKeyboard shortcut: Ctrl+Shift+R');
+                if (confirmed) {
+                    vscode.postMessage({ type: 'resetSession' });
+                    console.log('[NaruhoDocs][UI] Reset chat via keyboard shortcut (Ctrl+Shift+R)');
+                }
             }
         });
     }
