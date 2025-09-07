@@ -921,36 +921,23 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 			// Try to load history from workspaceState
 			const savedHistory = this.context.workspaceState.get<any[]>(`thread-history-${sessionId}`);
 			
-			// Use the LLM manager instead of direct createChat
-			if (this.llmManager) {
-				this.llmManager.createChatSession(sysMessage).then(session => {
-					if (savedHistory && Array.isArray(savedHistory)) {
-						session.setHistory(savedHistory);
-					}
-					this.sessions.set(sessionId, session);
-					this.threadTitles.set(sessionId, title);
-					this._postThreadList();
-				}).catch(error => {
-					console.error('Failed to create chat session:', error);
-					// Fallback to existing method for backward compatibility
-					const session = createChat({ apiKey: this.apiKey, maxHistoryMessages: 40, systemMessage: sysMessage });
-					if (savedHistory && Array.isArray(savedHistory)) {
-						session.setHistory(savedHistory);
-					}
-					this.sessions.set(sessionId, session);
-					this.threadTitles.set(sessionId, title);
-					this._postThreadList();
-				});
-			} else {
-				// Fallback to existing method for backward compatibility
-				const session = createChat({ apiKey: this.apiKey, maxHistoryMessages: 40, systemMessage: sysMessage });
-				if (savedHistory && Array.isArray(savedHistory)) {
-					session.setHistory(savedHistory);
-				}
-				this.sessions.set(sessionId, session);
-				this.threadTitles.set(sessionId, title);
-				this._postThreadList();
-			}
+			   // Always use the LLM manager (BYOK or Local). Do not fallback to OOTB or direct createChat.
+			   if (this.llmManager) {
+				   this.llmManager.createChatSession(sysMessage).then(session => {
+					   if (savedHistory && Array.isArray(savedHistory)) {
+						   session.setHistory(savedHistory);
+					   }
+					   this.sessions.set(sessionId, session);
+					   this.threadTitles.set(sessionId, title);
+					   this._postThreadList();
+				   }).catch(error => {
+					   console.error('Failed to create chat session:', error);
+					   // Show error to user and do not create a session
+					   vscode.window.showErrorMessage('Failed to create chat session: ' + (error?.message || error));
+				   });
+			   } else {
+				   vscode.window.showErrorMessage('No LLM provider available. Please configure BYOK or Local LLM.');
+			   }
 		}
 	}
 
