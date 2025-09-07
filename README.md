@@ -84,7 +84,7 @@ You can configure the extension by going to **File > Preferences > Settings** an
 2.  Install dependencies:
     ```bash
     cd naruhodocs
-    npm install
+    npm install --legacy-peer-deps
     ```
 
 ### Environment Variables
