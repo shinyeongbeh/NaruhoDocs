@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { LLMProvider, LLMProviderError } from './base';
-import { OOTBProvider } from './ootb';
+// import { OOTBProvider } from './ootb'; // Temporarily disabled
 import { BYOKProvider } from './byok';
 import { LocalProvider } from './local';
 import { ChatSession } from '../langchain-backend/llm';
@@ -10,14 +10,27 @@ export class LLMProviderManager {
     private readonly providers: Map<string, LLMProvider> = new Map();
 
     constructor() {
-        this.providers.set('ootb', new OOTBProvider());
+        // this.providers.set('ootb', new OOTBProvider()); // Temporarily disabled
         this.providers.set('byok', new BYOKProvider());
         this.providers.set('local', new LocalProvider());
     }
 
     async initializeFromConfig(): Promise<void> {
         const config = vscode.workspace.getConfiguration('naruhodocs');
-        const providerType = config.get<string>('llm.provider', 'ootb');
+        let providerType = config.get<string>('llm.provider', 'byok'); // Changed default to 'byok'
+        
+        // If OOTB is configured, fallback to BYOK
+        if (providerType === 'ootb') {
+            vscode.window.showWarningMessage(
+                'OOTB provider is temporarily disabled. Switching to BYOK mode. Please configure your API key.',
+                'Configure BYOK'
+            ).then(selection => {
+                if (selection === 'Configure BYOK') {
+                    vscode.commands.executeCommand('naruhodocs.configureLLM');
+                }
+            });
+            providerType = 'byok';
+        }
         
         const provider = this.providers.get(providerType);
         if (!provider) {

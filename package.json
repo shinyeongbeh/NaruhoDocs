@@ -10,7 +10,6 @@
     "Other"
   ],
   "activationEvents": [
-    "onView:naruhodocs.chatView",
     "onLanguage:markdown",
     "onLanguage:plaintext"
   ],
@@ -77,16 +76,14 @@
         "naruhodocs.llm.provider": {
           "type": "string",
           "enum": [
-            "ootb",
             "byok",
             "local"
           ],
           "enumDescriptions": [
-            "Out-of-the-box: Use built-in Gemini with daily limits",
             "Bring Your Own Key: Use your own API key for unlimited access",
             "Local LLM: Use local models via Ollama or similar"
           ],
-          "default": "ootb",
+          "default": "byok",
           "description": "LLM provider option to use"
         },
         "naruhodocs.llm.apiKey": {
@@ -168,7 +165,8 @@
         {
           "id": "naruhodocs.chatView",
           "type": "webview",
-          "name": "NaruhoDocs Chat"
+          "name": "NaruhoDocs Chat",
+          "icon": "media/icon.svg"
         }
       ]
     }
