@@ -33,6 +33,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		const filesAndContents = await this.getWorkspaceFilesAndContents();
 		// Get AI suggestions
 		const aiSuggestions = await this.getAISuggestions(filesAndContents);
+		console.log('AI suggestions: ',aiSuggestions);
 		// Pass all AI suggestions to modal, but filter after AI generates
 		this.postMessage({
 			type: 'aiSuggestedDocs',
@@ -58,6 +59,29 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	async getAISuggestions(filesAndContents: { path: string; content: string }[]): Promise<Array<{ displayName: string; fileName: string; description?: string }>> {
+		// If there's already an ongoing call, wait for it and return its result
+		if (this.ongoingSuggestionPromise) {
+			console.log('Waiting for ongoing suggestion call...');
+			return await this.ongoingSuggestionPromise;
+		}
+
+		// Increment call ID to track this specific call
+		const currentCallId = ++this.suggestionCallId;
+		console.log('Starting new suggestion call ID:', currentCallId);
+		
+		// Create and store the promise for this call
+		this.ongoingSuggestionPromise = this.performAISuggestion(filesAndContents, currentCallId);
+		
+		try {
+			const result = await this.ongoingSuggestionPromise;
+			return result;
+		} finally {
+			// Clear the ongoing promise when done
+			this.ongoingSuggestionPromise = null;
+		}
+	}
+
+	private async performAISuggestion(filesAndContents: { path: string; content: string }[], currentCallId: number): Promise<Array<{ displayName: string; fileName: string; description?: string }>> {
 		// const fileList = filesAndContents.map(f => f.path.split(/[/\\]/).pop()).filter(Boolean).join(', ');
 		const prompt = `You are an expert technical writer and project analyst.
 
@@ -76,11 +100,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 			// llmResponse = await this.docGeneratorAI.chat(`${prompt}\n\nHere are some file contents for context:\n${contextFiles}`);
 			const match = llmResponse.match(/\[.*\]/s);
 			if (match) {
-				console.log('JSON	found: ',match[0]);
+				console.log('JSON	found: ',match);
 				const suggestions = JSON.parse(match[0]);
-				return Array.isArray(suggestions)
+				const filteredSuggestions = Array.isArray(suggestions)
 					? suggestions.filter(s => s.displayName && s.fileName && s.fileName.endsWith('.md'))
 					: [];
+				
+				// Always update with the latest successful suggestions
+				if (filteredSuggestions.length > 0) {
+					this.lastNonEmptySuggestions = filteredSuggestions;
+					console.log('Updated lastNonEmptySuggestions:', filteredSuggestions.length, 'items');
+				}
+				
+				// Return the current suggestions or last known good ones
+				return filteredSuggestions.length > 0 ? filteredSuggestions : this.lastNonEmptySuggestions;
 			} else {
 				console.log('No JSON array found in LLM response');
 			}
@@ -88,7 +121,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 			console.warn('LLM suggestion failed:', e, llmResponse, this.apiKey);
 		}
 
-		return [
+		// Return last known good suggestions or fallback
+		return this.lastNonEmptySuggestions.length > 0 ? this.lastNonEmptySuggestions : [
 			{ displayName: 'README', fileName: 'README.md', description: 'Project overview and usage.' },
 			{ displayName: 'API Reference', fileName: 'API_REFERENCE.md', description: 'Document your API endpoints.' },
 			{ displayName: 'Getting Started', fileName: 'GETTING_STARTED.md', description: 'How to get started with the project.' }
@@ -98,6 +132,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 	private existingDocFiles: string[] = [];
 	private didDevCleanupOnce: boolean = false;
 	private fileWatcher?: vscode.FileSystemWatcher;
+	private lastNonEmptySuggestions: Array<{ displayName: string; fileName: string; description?: string }> = [];
+	private suggestionCallId = 0;
+	private ongoingSuggestionPromise: Promise<Array<{ displayName: string; fileName: string; description?: string }>> | null = null;
 	/**
 	 * Switch the system message for a document-based thread to beginner mode.
 	 */
