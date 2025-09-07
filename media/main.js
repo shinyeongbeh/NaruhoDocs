@@ -4,6 +4,9 @@
 // It cannot access the main VS Code APIs directly.
 
 (function () {
+    // Global declarations for libraries loaded via script tags
+    // @ts-ignore: mermaid is loaded as a global script
+    const mermaidLib = window.mermaid;
     // @ts-ignore: acquireVsCodeApi is provided by VS Code webview
     const vscode = acquireVsCodeApi();
 
@@ -219,7 +222,9 @@
             generateDocBtn.addEventListener('click', () => {
                 // Remove any previous modal and listeners
                 let oldModal = document.getElementById('doc-type-modal');
-                if (oldModal) oldModal.remove();
+                if (oldModal) {
+                    oldModal.remove();
+                }
                 // Always trigger a fresh scan before showing modal
                 vscode.postMessage({ type: 'scanDocs' });
                 console.log('[NaruhoDocs][UI] Generate Doc button clicked, scanDocs posted');
@@ -233,7 +238,9 @@
         function showDocTypeModal() {
             // Remove existing modal if present
             let oldModal = document.getElementById('doc-type-modal');
-            if (oldModal) oldModal.remove();
+            if (oldModal) {
+                oldModal.remove();
+            }
 
             const modal = document.createElement('div');
             modal.id = 'doc-type-modal';
@@ -329,7 +336,9 @@
                 if (input.value.trim()) {
                     addMessage('System', 'Generating documentation...');
                     vscode.postMessage({ type: 'generateDoc', docType: input.value.trim() });
-                    if (modal) modal.remove();
+                    if (modal) {
+                        modal.remove();
+                    }
                 }
             });
             promptBox.appendChild(submitBtn);
@@ -341,10 +350,21 @@
             suggestTemplateBtn.addEventListener('click', () => {
                 // Remove any previous modal and listeners
                 let oldModal = document.getElementById('doc-type-modal');
-                if (oldModal) oldModal.remove();
+                if (oldModal) {
+                    oldModal.remove();
+                }
                 // Always trigger a fresh scan before showing modal
                 vscode.postMessage({ type: 'scanDocs' });
                 showTemplateSelectionModal();
+            });
+        }
+
+        // Add event listener for visualize button
+        const visualizeBtn = document.getElementById('visualize-btn');
+        if (visualizeBtn) {
+            visualizeBtn.addEventListener('click', () => {
+                // Send message to extension to show visualization menu
+                vscode.postMessage({ type: 'showVisualizationMenu' });
             });
         }
 
@@ -562,6 +582,312 @@
         linkify: true // Automatically link URLs
     });
 
+    // Initialize Mermaid if available
+    if (typeof mermaidLib !== 'undefined') {
+        mermaidLib.initialize({ 
+            startOnLoad: false,
+            theme: 'dark',
+            themeVariables: {
+                darkMode: true,
+                primaryColor: '#007acc',
+                primaryTextColor: '#ffffff',
+                primaryBorderColor: '#007acc',
+                lineColor: '#cccccc',
+                secondaryColor: '#1e1e1e',
+                tertiaryColor: '#252526'
+            }
+        });
+    }
+
+    // Function to open diagram in enlarged modal - request VS Code to open full window
+    function openDiagramModal(mermaidCode, diagramId) {
+        // Send message to VS Code extension to open full window modal
+        if (typeof vscode !== 'undefined') {
+            vscode.postMessage({
+                type: 'openFullWindowDiagram',
+                mermaidCode: mermaidCode,
+                diagramId: diagramId,
+                title: 'Enlarged Diagram View'
+            });
+        } else {
+            // Fallback to regular modal if VS Code API not available
+            openFallbackModal(mermaidCode, diagramId);
+        }
+    }
+
+    // Fallback modal for when VS Code API is not available
+    function openFallbackModal(mermaidCode, diagramId) {
+        // Remove any existing modal
+        const existingModal = document.getElementById('diagram-modal');
+        if (existingModal) {
+            existingModal.remove();
+        }
+
+        // Create modal overlay - full VS Code window
+        const modal = document.createElement('div');
+        modal.id = 'diagram-modal';
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.95);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 999999;
+            backdrop-filter: blur(8px);
+        `;
+
+        // Create modal content - larger size for full window
+        const modalContent = document.createElement('div');
+        modalContent.style.cssText = `
+            background: var(--vscode-editor-background);
+            border-radius: 12px;
+            padding: 30px;
+            max-width: 95vw;
+            max-height: 95vh;
+            overflow: auto;
+            position: relative;
+            border: 2px solid var(--vscode-panel-border);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            min-width: 80vw;
+            min-height: 70vh;
+        `;
+
+        // Create modal header with controls
+        const modalHeader = document.createElement('div');
+        modalHeader.style.cssText = `
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--vscode-panel-border);
+        `;
+
+        const modalTitle = document.createElement('h3');
+        modalTitle.textContent = 'Diagram View';
+        modalTitle.style.cssText = `
+            margin: 0;
+            color: var(--vscode-foreground);
+            font-size: 16px;
+        `;
+
+        const modalControls = document.createElement('div');
+        modalControls.style.cssText = `
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        `;
+
+        // Zoom controls
+        const zoomOutBtn = createModalButton('🔍-', 'Zoom out');
+        const zoomResetBtn = createModalButton('100%', 'Reset zoom');
+        const zoomInBtn = createModalButton('🔍+', 'Zoom in');
+        const fullscreenBtn = createModalButton('⛶', 'Fullscreen');
+        const exportBtn = createModalButton('💾', 'Export');
+        const closeBtn = createModalButton('✖', 'Close');
+
+        modalControls.appendChild(zoomOutBtn);
+        modalControls.appendChild(zoomResetBtn);
+        modalControls.appendChild(zoomInBtn);
+        modalControls.appendChild(fullscreenBtn);
+        modalControls.appendChild(exportBtn);
+        modalControls.appendChild(closeBtn);
+
+        modalHeader.appendChild(modalTitle);
+        modalHeader.appendChild(modalControls);
+
+        // Create diagram container
+        const diagramContainer = document.createElement('div');
+        diagramContainer.id = 'modal-diagram-container';
+        diagramContainer.style.cssText = `
+            text-align: center;
+            overflow: auto;
+            max-height: calc(90vh - 100px);
+            position: relative;
+        `;
+
+        modalContent.appendChild(modalHeader);
+        modalContent.appendChild(diagramContainer);
+        modal.appendChild(modalContent);
+        document.body.appendChild(modal);
+
+        // Render the enlarged diagram
+        if (typeof mermaidLib !== 'undefined') {
+            mermaidLib.render(`${diagramId}-modal`, mermaidCode)
+                .then(({ svg }) => {
+                    diagramContainer.innerHTML = svg;
+                    const svgElement = diagramContainer.querySelector('svg');
+                    if (svgElement) {
+                        svgElement.style.cssText = `
+                            max-width: 100%;
+                            height: auto;
+                            transform-origin: center;
+                            transition: transform 0.3s ease;
+                        `;
+                        
+                        // Set up zoom functionality
+                        let currentZoom = 1;
+                        const zoomStep = 0.2;
+                        
+                        function updateZoom(newZoom) {
+                            currentZoom = Math.max(0.5, Math.min(3, newZoom));
+                            if (svgElement) {
+                                svgElement.style.transform = `scale(${currentZoom})`;
+                            }
+                            zoomResetBtn.textContent = `${Math.round(currentZoom * 100)}%`;
+                        }
+                        
+                        zoomInBtn.onclick = () => updateZoom(currentZoom + zoomStep);
+                        zoomOutBtn.onclick = () => updateZoom(currentZoom - zoomStep);
+                        zoomResetBtn.onclick = () => updateZoom(1);
+                        
+                        // Export functionality
+                        exportBtn.onclick = () => exportDiagram(svgElement, diagramId);
+                        
+                        // Fullscreen functionality
+                        fullscreenBtn.onclick = () => {
+                            if (document.fullscreenElement) {
+                                document.exitFullscreen();
+                            } else {
+                                modal.requestFullscreen().catch(err => {
+                                    console.log('Fullscreen failed:', err);
+                                });
+                            }
+                        };
+                    }
+                })
+                .catch(error => {
+                    diagramContainer.innerHTML = `<p style="color: var(--vscode-errorForeground); padding: 20px;">Failed to render diagram: ${error.message}</p>`;
+                });
+        }
+
+        // Close modal functionality
+        function closeModal() {
+            modal.remove();
+        }
+
+        closeBtn.onclick = closeModal;
+        modal.onclick = (e) => {
+            if (e.target === modal) {
+                closeModal();
+            }
+        };
+
+        // Keyboard shortcuts
+        function handleKeyDown(e) {
+            if (e.key === 'Escape') {
+                closeModal();
+            } else if (e.key === '+' || e.key === '=') {
+                e.preventDefault();
+                zoomInBtn.click();
+            } else if (e.key === '-') {
+                e.preventDefault();
+                zoomOutBtn.click();
+            } else if (e.key === '0') {
+                e.preventDefault();
+                zoomResetBtn.click();
+            }
+        }
+
+        document.addEventListener('keydown', handleKeyDown);
+        modal.addEventListener('remove', () => {
+            document.removeEventListener('keydown', handleKeyDown);
+        });
+    }
+
+    // Function to create modal buttons
+    function createModalButton(text, title) {
+        const button = document.createElement('button');
+        button.textContent = text;
+        button.title = title;
+        button.style.cssText = `
+            background: var(--vscode-button-background);
+            color: var(--vscode-button-foreground);
+            border: none;
+            border-radius: 4px;
+            padding: 6px 10px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: background 0.2s;
+            min-width: 30px;
+        `;
+        button.onmouseenter = () => {
+            button.style.background = 'var(--vscode-button-hoverBackground)';
+        };
+        button.onmouseleave = () => {
+            button.style.background = 'var(--vscode-button-background)';
+        };
+        return button;
+    }
+
+    // Function to export diagram as SVG or PNG
+    function exportDiagram(svgElement, diagramId) {
+        try {
+            // Clone the SVG to avoid modifying the original
+            const clonedSvg = svgElement.cloneNode(true);
+            
+            // Get SVG source
+            const svgData = new XMLSerializer().serializeToString(clonedSvg);
+            const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+            
+            // Create download link
+            const downloadLink = document.createElement('a');
+            downloadLink.href = URL.createObjectURL(svgBlob);
+            const fileName = `${diagramId || 'diagram'}.svg`;
+            downloadLink.download = fileName;
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+            document.body.removeChild(downloadLink);
+            URL.revokeObjectURL(downloadLink.href);
+            
+            // Show success message with location info
+            showToast(`Diagram exported as ${fileName} to your Downloads folder`, 'success');
+            
+            // Also send message to VS Code to show notification
+            if (typeof vscode !== 'undefined') {
+                vscode.postMessage({
+                    type: 'showNotification',
+                    message: `Diagram exported as ${fileName} to your Downloads folder`,
+                    messageType: 'info'
+                });
+            }
+        } catch (error) {
+            console.error('Export failed:', error);
+            showToast('Failed to export diagram', 'error');
+        }
+    }
+
+    // Function to show toast notifications
+    function showToast(message, type = 'info') {
+        const toast = document.createElement('div');
+        toast.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 12px 16px;
+            border-radius: 6px;
+            color: white;
+            font-size: 14px;
+            z-index: 10001;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            transition: opacity 0.3s ease;
+            background: ${type === 'success' ? '#4caf50' : type === 'error' ? '#f44336' : '#2196f3'};
+        `;
+        toast.textContent = message;
+        document.body.appendChild(toast);
+        
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            setTimeout(() => {
+                document.body.removeChild(toast);
+            }, 300);
+        }, 3000);
+    }
+
     // --- remove the first duplicate window.addEventListener(...) block above ---
 
     function addMessage(sender, message) {
@@ -576,6 +902,137 @@
 
             const parsedMessage = md.render(message);
             messageElement.innerHTML = parsedMessage;
+
+            // Process Mermaid diagrams
+            if (typeof mermaidLib !== 'undefined') {
+                const mermaidBlocks = messageElement.querySelectorAll('code.language-mermaid');
+                mermaidBlocks.forEach(async (block, index) => {
+                    try {
+                        const mermaidCode = block.textContent;
+                        const diagramId = `mermaid-${Date.now()}-${index}`;
+                        
+                        // Create a container for the Mermaid diagram
+                        const diagramContainer = document.createElement('div');
+                        diagramContainer.className = 'mermaid-diagram-container';
+                        diagramContainer.style.textAlign = 'center';
+                        diagramContainer.style.margin = '10px 0';
+                        diagramContainer.style.padding = '10px';
+                        diagramContainer.style.border = '1px solid var(--vscode-panel-border)';
+                        diagramContainer.style.borderRadius = '4px';
+                        diagramContainer.style.backgroundColor = 'var(--vscode-editor-background)';
+                        diagramContainer.style.position = 'relative';
+                        
+                        // Create diagram controls
+                        const controlsContainer = document.createElement('div');
+                        controlsContainer.className = 'diagram-controls';
+                        controlsContainer.style.position = 'absolute';
+                        controlsContainer.style.top = '5px';
+                        controlsContainer.style.right = '5px';
+                        controlsContainer.style.display = 'flex';
+                        controlsContainer.style.gap = '5px';
+                        controlsContainer.style.opacity = '0.7';
+                        controlsContainer.style.transition = 'opacity 0.2s';
+                        
+                        // Enlarge button
+                        const enlargeBtn = document.createElement('button');
+                        enlargeBtn.className = 'diagram-control-btn';
+                        enlargeBtn.innerHTML = 'Enlarge';
+                        enlargeBtn.title = 'Enlarge diagram';
+                        enlargeBtn.style.cssText = `
+                            background: var(--vscode-button-background);
+                            color: var(--vscode-button-foreground);
+                            border: 1px solid var(--vscode-button-border, transparent);
+                            border-radius: 4px;
+                            padding: 4px 8px;
+                            cursor: pointer;
+                            font-size: 11px;
+                            font-weight: 500;
+                            transition: all 0.2s ease;
+                        `;
+                        
+                        // Export button
+                        const exportBtn = document.createElement('button');
+                        exportBtn.className = 'diagram-control-btn';
+                        exportBtn.innerHTML = 'Export';
+                        exportBtn.title = 'Export diagram';
+                        exportBtn.style.cssText = enlargeBtn.style.cssText;
+                        
+                        controlsContainer.appendChild(enlargeBtn);
+                        controlsContainer.appendChild(exportBtn);
+                        diagramContainer.appendChild(controlsContainer);
+                        
+                        // Add hover effects to buttons
+                        [enlargeBtn, exportBtn].forEach(btn => {
+                            btn.addEventListener('mouseenter', () => {
+                                btn.style.background = 'var(--vscode-button-hoverBackground)';
+                                btn.style.transform = 'translateY(-1px)';
+                            });
+                            btn.addEventListener('mouseleave', () => {
+                                btn.style.background = 'var(--vscode-button-background)';
+                                btn.style.transform = 'translateY(0)';
+                            });
+                        });
+                        
+                        // Show controls on hover
+                        diagramContainer.addEventListener('mouseenter', () => {
+                            controlsContainer.style.opacity = '1';
+                        });
+                        diagramContainer.addEventListener('mouseleave', () => {
+                            controlsContainer.style.opacity = '0.7';
+                        });
+                        
+                        // Replace the code block with the diagram container
+                        const preElement = block.parentElement;
+                        if (preElement && preElement.tagName === 'PRE' && preElement.parentElement) {
+                            preElement.parentElement.replaceChild(diagramContainer, preElement);
+                        }
+                        
+                        // Render the Mermaid diagram
+                        if (typeof mermaidLib !== 'undefined') {
+                            const { svg } = await mermaidLib.render(diagramId, mermaidCode);
+                            
+                            // Create diagram content container
+                            const diagramContent = document.createElement('div');
+                            diagramContent.className = 'diagram-content';
+                            diagramContent.innerHTML = svg;
+                            diagramContainer.appendChild(diagramContent);
+                            
+                            // Add click handlers for interactivity
+                            const svgElement = diagramContent.querySelector('svg');
+                            if (svgElement) {
+                                svgElement.style.cursor = 'pointer';
+                                svgElement.style.maxWidth = '100%';
+                                svgElement.style.height = 'auto';
+                                
+                                // Click to enlarge
+                                svgElement.addEventListener('click', () => {
+                                    openDiagramModal(mermaidCode, diagramId);
+                                });
+                                
+                                // Enlarge button handler
+                                enlargeBtn.addEventListener('click', (e) => {
+                                    e.stopPropagation();
+                                    openDiagramModal(mermaidCode, diagramId);
+                                });
+                                
+                                // Export button handler
+                                exportBtn.addEventListener('click', (e) => {
+                                    e.stopPropagation();
+                                    exportDiagram(svgElement, diagramId);
+                                });
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Error rendering Mermaid diagram:', error);
+                        // Fallback: show the code block with error styling
+                        if (block instanceof HTMLElement) {
+                            block.style.backgroundColor = 'var(--vscode-inputValidation-errorBackground)';
+                            block.style.color = 'var(--vscode-inputValidation-errorForeground)';
+                            block.textContent = 'Error rendering diagram: ' + error.message;
+                        }
+                    }
+                });
+            }
 
             chatMessages.appendChild(messageElement);
             chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -628,7 +1085,9 @@
             case 'showSaveTranslationButtons':
                 if (chatMessages) {
                     const prev = document.getElementById('save-translation-btn-container');
-                    if (prev) prev.remove();
+                    if (prev) {
+                        prev.remove();
+                    }
 
                     const btnContainer = document.createElement('div');
                     btnContainer.id = 'save-translation-btn-container';
@@ -666,7 +1125,9 @@
                         break;
                     }
                     const prev = document.getElementById('save-template-btn-container');
-                    if (prev) prev.remove();
+                    if (prev) {
+                        prev.remove();
+                    }
 
                     const btnContainer = document.createElement('div');
                     btnContainer.id = 'save-template-btn-container';

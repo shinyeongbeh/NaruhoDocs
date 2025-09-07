@@ -8,6 +8,7 @@ import { checkGrammar } from './LanguageTool-integration';
 import { lintMarkdownDocument } from './markdownLinter';
 import { LLMProviderManager } from './llm-providers/manager';
 import { LocalProvider } from './llm-providers/local';
+import { VisualizationProvider } from './VisualizationProvider';
 
 // Load env once
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
@@ -28,6 +29,9 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// Initialize LLM Provider Manager
 	const llmManager = new LLMProviderManager();
+	
+	// Initialize Visualization Provider
+	const visualizationProvider = new VisualizationProvider(context, llmManager);
 	
 	// Initialize provider from configuration
 	llmManager.initializeFromConfig().catch(error => {
@@ -98,6 +102,8 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(
 		vscode.window.registerWebviewViewProvider(ChatViewProvider.viewType, provider));
 
+	// Connect visualization provider to chat provider
+	visualizationProvider.setChatProvider(provider);
 
 	// Listen for document open events to create threads
 	context.subscriptions.push(
@@ -264,6 +270,31 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 			} else {
 				vscode.window.showWarningMessage('No LLM provider configured. Run "Configure LLM Provider" command.');
 			}
+		})
+	);
+
+	// Add visualization commands
+	context.subscriptions.push(
+		vscode.commands.registerCommand('naruhodocs.showVisualizationMenu', async (documentUri?: vscode.Uri) => {
+			await visualizationProvider.showVisualizationMenu(documentUri);
+		})
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand('naruhodocs.visualizeArchitecture', async () => {
+			await visualizationProvider.visualizeArchitecture();
+		})
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand('naruhodocs.visualizeFolderStructure', async () => {
+			await visualizationProvider.visualizeFolderStructure();
+		})
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand('naruhodocs.visualizeDocRelations', async () => {
+			await visualizationProvider.visualizeDocRelations();
 		})
 	);
 

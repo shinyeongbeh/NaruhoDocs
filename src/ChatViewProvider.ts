@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import { createChat, ChatSession } from './langchain-backend/llm.js';
 import { SystemMessages } from './SystemMessages';
 import { LLMProviderManager } from './llm-providers/manager';
+import { HumanMessage, AIMessage } from '@langchain/core/messages';
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
 	// sysTemp = `
@@ -581,6 +582,35 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 					this.setActiveThread(sessionId);
 					break;
 				}
+				case 'showVisualizationMenu': {
+					// Trigger the visualization menu via command
+					await vscode.commands.executeCommand('naruhodocs.showVisualizationMenu');
+					break;
+				}
+				case 'showNotification': {
+					// Show VS Code notification with the provided message
+					const message = data.message || 'Notification';
+					const messageType = data.messageType || 'info';
+					
+					switch (messageType) {
+						case 'error':
+							vscode.window.showErrorMessage(message);
+							break;
+						case 'warning':
+							vscode.window.showWarningMessage(message);
+							break;
+						case 'info':
+						default:
+							vscode.window.showInformationMessage(message);
+							break;
+					}
+					break;
+				}
+				case 'openFullWindowDiagram': {
+					// Create a new webview panel that covers the entire VS Code window
+					this.openDiagramInFullWindow(data.mermaidCode, data.diagramId, data.title);
+					break;
+				}
 				case 'createFile': {
 					// Create a default file in the workspace root
 					const wsFolders = vscode.workspace.workspaceFolders;
@@ -864,6 +894,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 	private _getHtmlForWebview(webview: vscode.Webview) {
 		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.js'));
 		const markdownItUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'node_modules', 'markdown-it', 'dist', 'markdown-it.min.js'));
+		const mermaidUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'node_modules', 'mermaid', 'dist', 'mermaid.min.js'));
 		const styleResetUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'reset.css'));
 		const styleVSCodeUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'vscode.css'));
 		const styleMainUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.css'));
@@ -910,7 +941,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 					   <!-- General buttons moved below chat messages, above chat input -->
 					   <div id="general-buttons" style="display:none; margin-top:18px; justify-content:center; margin-bottom:8px;">
 						   <button id="generate-doc-btn" style="margin-right:8px;">Generate Document</button>
-						   <button id="suggest-template-btn">Suggest Template</button>
+						   <button id="suggest-template-btn" style="margin-right:8px;">Suggest Template</button>
+						   <button id="visualize-btn">Visualize</button>
 					   </div>
 					<div id="thread-tabs" style="display:flex; gap:4px; margin-bottom:8px;"></div>
 					   <div id="chat-messages" class="chat-messages"></div>
@@ -931,6 +963,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 				</div>
 
 				<script nonce="${nonce}" src="${markdownItUri}"></script>
+				<script nonce="${nonce}" src="${mermaidUri}"></script>
 				<script nonce="${nonce}" src="${scriptUri}"></script>
 			</body>
 			</html>`;
@@ -954,6 +987,342 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 			}
 		}
 		this._postThreadList();
+	}
+
+	private openDiagramInFullWindow(mermaidCode: string, diagramId: string, title: string): void {
+		// Create a new webview panel that covers the entire VS Code window
+		const panel = vscode.window.createWebviewPanel(
+			'naruhodocsDiagram',
+			title || 'Diagram View',
+			vscode.ViewColumn.One,
+			{
+				enableScripts: true,
+				retainContextWhenHidden: true
+			}
+		);
+
+		// Get CSS resources
+		const styleResetUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'reset.css'));
+		const styleVSCodeUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'vscode.css'));
+		const styleMainUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.css'));
+
+		// Create the HTML content for the full window diagram
+		panel.webview.html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<link href="${styleResetUri}" rel="stylesheet">
+	<link href="${styleVSCodeUri}" rel="stylesheet">
+	<link href="${styleMainUri}" rel="stylesheet">
+	<title>${title}</title>
+	<script src="https://unpkg.com/mermaid@10/dist/mermaid.min.js"></script>
+	<style>
+		body {
+			padding: 20px;
+			background: var(--vscode-editor-background);
+			color: var(--vscode-foreground);
+			font-family: var(--vscode-font-family);
+			height: 100vh;
+			margin: 0;
+			display: flex;
+			flex-direction: column;
+		}
+		.diagram-header {
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			margin-bottom: 20px;
+			padding-bottom: 10px;
+			border-bottom: 1px solid var(--vscode-panel-border);
+		}
+		.diagram-title {
+			font-size: 18px;
+			font-weight: bold;
+			margin: 0;
+		}
+		.diagram-controls {
+			display: flex;
+			gap: 8px;
+		}
+		.control-btn {
+			background: var(--vscode-button-background);
+			color: var(--vscode-button-foreground);
+			border: 1px solid var(--vscode-button-border, transparent);
+			border-radius: 6px;
+			padding: 8px 16px;
+			cursor: pointer;
+			font-size: 13px;
+			font-weight: 500;
+			transition: all 0.2s ease;
+			user-select: none;
+		}
+		.control-btn:hover {
+			background: var(--vscode-button-hoverBackground);
+			transform: translateY(-1px);
+			box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+		}
+		.control-btn:active {
+			transform: translateY(0);
+		}
+		.diagram-container {
+			flex: 1;
+			display: flex;
+			justify-content: center;
+			align-items: center;
+			overflow: hidden;
+			background: var(--vscode-editor-background);
+			border: 1px solid var(--vscode-panel-border);
+			border-radius: 6px;
+			padding: 20px;
+			position: relative;
+			cursor: grab;
+		}
+		.diagram-container:active {
+			cursor: grabbing;
+		}
+		.diagram-content {
+			max-width: 100%;
+			max-height: 100%;
+			text-align: center;
+			transition: transform 0.1s ease;
+		}
+		.diagram-content svg {
+			max-width: none;
+			height: auto;
+			transform-origin: center;
+			transition: transform 0.3s ease;
+		}
+	</style>
+</head>
+<body>
+	<div class="diagram-header">
+		<h1 class="diagram-title">${title}</h1>
+		<div class="diagram-controls">
+			<button class="control-btn" id="zoom-out">Zoom Out</button>
+			<button class="control-btn" id="zoom-reset">100%</button>
+			<button class="control-btn" id="zoom-in">Zoom In</button>
+			<button class="control-btn" id="export-btn">Export</button>
+			<button class="control-btn" id="close-btn">Close</button>
+		</div>
+	</div>
+	<div class="diagram-container">
+		<div class="diagram-content" id="diagram-content">
+			<div id="mermaid-diagram"></div>
+		</div>
+	</div>
+
+	<script>
+		const vscode = acquireVsCodeApi();
+		
+		// Initialize Mermaid
+		mermaid.initialize({ 
+			startOnLoad: false,
+			theme: 'dark',
+			themeVariables: {
+				darkMode: true,
+				primaryColor: '#007acc',
+				primaryTextColor: '#ffffff',
+				primaryBorderColor: '#007acc',
+				lineColor: '#cccccc',
+				secondaryColor: '#1e1e1e',
+				tertiaryColor: '#252526'
+			}
+		});
+
+		// Render the diagram
+		const mermaidCode = \`${mermaidCode.replace(/`/g, '\\`')}\`;
+		const diagramElement = document.getElementById('mermaid-diagram');
+		
+		mermaid.render('diagram-${diagramId}', mermaidCode)
+			.then(({ svg }) => {
+				diagramElement.innerHTML = svg;
+				
+				// Set up zoom and drag functionality
+				const svgElement = diagramElement.querySelector('svg');
+				const container = document.querySelector('.diagram-container');
+				const content = document.querySelector('.diagram-content');
+				let currentZoom = 1;
+				const zoomStep = 0.2;
+				
+				// Dragging state
+				let isDragging = false;
+				let dragStart = { x: 0, y: 0 };
+				let translateX = 0;
+				let translateY = 0;
+				
+				function updateTransform() {
+					if (content) {
+						content.style.transform = \`translate(\${translateX}px, \${translateY}px)\`;
+					}
+					if (svgElement) {
+						svgElement.style.transform = \`scale(\${currentZoom})\`;
+					}
+				}
+				
+				function updateZoom(newZoom) {
+					currentZoom = Math.max(0.3, Math.min(5, newZoom));
+					updateTransform();
+					document.getElementById('zoom-reset').textContent = \`\${Math.round(currentZoom * 100)}%\`;
+				}
+				
+				// Mouse drag functionality
+				if (container && content) {
+					container.addEventListener('mousedown', (e) => {
+						isDragging = true;
+						dragStart.x = e.clientX - translateX;
+						dragStart.y = e.clientY - translateY;
+						container.style.cursor = 'grabbing';
+						e.preventDefault();
+					});
+					
+					document.addEventListener('mousemove', (e) => {
+						if (isDragging) {
+							translateX = e.clientX - dragStart.x;
+							translateY = e.clientY - dragStart.y;
+							updateTransform();
+						}
+					});
+					
+					document.addEventListener('mouseup', () => {
+						if (isDragging) {
+							isDragging = false;
+							container.style.cursor = 'grab';
+						}
+					});
+					
+					// Reset position on double-click
+					container.addEventListener('dblclick', () => {
+						translateX = 0;
+						translateY = 0;
+						updateTransform();
+					});
+				}
+				
+				document.getElementById('zoom-in').onclick = () => updateZoom(currentZoom + zoomStep);
+				document.getElementById('zoom-out').onclick = () => updateZoom(currentZoom - zoomStep);
+				document.getElementById('zoom-reset').onclick = () => {
+					updateZoom(1);
+					translateX = 0;
+					translateY = 0;
+					updateTransform();
+				};
+				
+				// Export functionality
+				document.getElementById('export-btn').onclick = () => {
+					if (svgElement) {
+						const svgData = new XMLSerializer().serializeToString(svgElement);
+						const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+						const downloadLink = document.createElement('a');
+						downloadLink.href = URL.createObjectURL(svgBlob);
+						downloadLink.download = '${diagramId || 'diagram'}.svg';
+						document.body.appendChild(downloadLink);
+						downloadLink.click();
+						document.body.removeChild(downloadLink);
+						URL.revokeObjectURL(downloadLink.href);
+						
+						// Notify user of export location
+						vscode.postMessage({
+							type: 'showNotification',
+							message: 'Diagram exported as ${diagramId || 'diagram'}.svg to your Downloads folder',
+							messageType: 'info'
+						});
+					}
+				};
+			})
+			.catch(error => {
+				diagramElement.innerHTML = \`<p style="color: var(--vscode-errorForeground);">Failed to render diagram: \${error.message}</p>\`;
+			});
+
+		// Close button functionality
+		document.getElementById('close-btn').onclick = () => {
+			vscode.postMessage({ type: 'closeDiagramPanel' });
+		};
+
+		// Keyboard shortcuts
+		document.addEventListener('keydown', (e) => {
+			if (e.key === 'Escape') {
+				document.getElementById('close-btn').click();
+			} else if (e.key === '+' || e.key === '=') {
+				e.preventDefault();
+				document.getElementById('zoom-in').click();
+			} else if (e.key === '-') {
+				e.preventDefault();
+				document.getElementById('zoom-out').click();
+			} else if (e.key === '0') {
+				e.preventDefault();
+				document.getElementById('zoom-reset').click();
+			}
+		});
+	</script>
+</body>
+</html>`;
+
+		// Handle messages from the diagram panel
+		panel.webview.onDidReceiveMessage(message => {
+			if (message.type === 'closeDiagramPanel') {
+				panel.dispose();
+			} else if (message.type === 'showNotification') {
+				// Forward notification to VS Code
+				switch (message.messageType) {
+					case 'error':
+						vscode.window.showErrorMessage(message.message);
+						break;
+					case 'warning':
+						vscode.window.showWarningMessage(message.message);
+						break;
+					case 'info':
+					default:
+						vscode.window.showInformationMessage(message.message);
+						break;
+				}
+			}
+		});
+	}
+
+	/**
+	 * Add context to the active AI session
+	 * This allows other components to add relevant context to the chat history
+	 */
+	public addContextToActiveSession(userMessage: string, botResponse: string): void {
+		try {
+			console.log('Adding context to active session:', { userMessage: userMessage.substring(0, 100), botResponse: botResponse.substring(0, 100) });
+			
+			if (!this.activeThreadId) {
+				console.warn('No active thread available to add context');
+				return;
+			}
+
+			const session = this.sessions.get(this.activeThreadId);
+			if (!session) {
+				console.warn('No active session found to add context');
+				return;
+			}
+
+			// Get current history
+			const currentHistory = session.getHistory();
+			
+			// Add the simulated conversation exchange directly using the session's internal structure
+			// Add user message
+			const userMsg = new HumanMessage(userMessage);
+			currentHistory.push(userMsg);
+			
+			// Add bot response
+			const botMsg = new AIMessage(botResponse);
+			currentHistory.push(botMsg);
+			
+			// Update the workspace state with the serialized history
+			const serializedHistory = currentHistory.map(msg => ({
+				type: msg instanceof HumanMessage ? 'human' : 'ai',
+				text: msg.content as string
+			}));
+			this.context.workspaceState.update(`thread-history-${this.activeThreadId}`, serializedHistory);
+			
+			console.log('Successfully added context to AI session history');
+			
+		} catch (error) {
+			console.error('Error adding context to active session:', error);
+		}
 	}
 }
 

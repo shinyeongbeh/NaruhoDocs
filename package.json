@@ -44,6 +44,26 @@
         "command": "naruhodocs.showProviderStatus",
         "title": "Show Provider Status",
         "category": "NaruhoDocs"
+      },
+      {
+        "command": "naruhodocs.visualizeArchitecture",
+        "title": "🏗️ Visualize Architecture",
+        "category": "NaruhoDocs"
+      },
+      {
+        "command": "naruhodocs.visualizeFolderStructure",
+        "title": "📁 Visualize Folder Structure",
+        "category": "NaruhoDocs"
+      },
+      {
+        "command": "naruhodocs.visualizeDocRelations",
+        "title": "🔗 Visualize Document Relations",
+        "category": "NaruhoDocs"
+      },
+      {
+        "command": "naruhodocs.showVisualizationMenu",
+        "title": "📊 Show Visualization Menu",
+        "category": "NaruhoDocs"
       }
     ],
     "configuration": {
@@ -101,6 +121,31 @@
           "default": "http://localhost:11434",
           "description": "Local LLM server URL",
           "when": "config.naruhodocs.llm.provider == 'local'"
+        },
+        "naruhodocs.visualization.defaultLibrary": {
+          "type": "string",
+          "enum": [
+            "mermaid",
+            "d3",
+            "vis"
+          ],
+          "enumDescriptions": [
+            "Mermaid.js - Simple text-to-diagram conversion",
+            "D3.js - Interactive and customizable visualizations",
+            "Vis.js - Network diagrams and timelines"
+          ],
+          "default": "mermaid",
+          "description": "Default visualization library to use"
+        },
+        "naruhodocs.visualization.enableInteractive": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable interactive visualization features"
+        },
+        "naruhodocs.visualization.maxFileAnalysis": {
+          "type": "number",
+          "default": 1000,
+          "description": "Maximum number of files to analyze for large projects"
         }
       }
     },
@@ -164,6 +209,7 @@
     "dotenv": "^17.2.1",
     "langchain": "^0.3.31",
     "markdown-it": "^14.1.0",
+    "mermaid": "^11.11.0",
     "node-fetch": "^3.3.2",
     "watch": "^1.0.2"
   }

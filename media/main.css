@@ -508,3 +508,244 @@ html {
 	box-sizing: border-box;
 	line-height: 1.8;
 }
+
+/* Mermaid diagram styles */
+.mermaid-diagram-container {
+	margin: 15px 0;
+	padding: 15px;
+	border: 1px solid var(--vscode-panel-border);
+	border-radius: 8px;
+	background-color: var(--vscode-editor-background);
+	text-align: center;
+	max-width: 100%;
+	overflow-x: auto;
+	position: relative;
+}
+
+.mermaid-diagram-container svg {
+	max-width: 100%;
+	height: auto;
+	cursor: pointer;
+	transition: transform 0.2s ease;
+}
+
+.mermaid-diagram-container svg:hover {
+	transform: scale(1.02);
+}
+
+.mermaid-diagram-container .mermaid {
+	display: inline-block;
+}
+
+/* Diagram controls styling */
+.diagram-controls {
+	position: absolute;
+	top: 5px;
+	right: 5px;
+	display: flex;
+	gap: 5px;
+	opacity: 0.7;
+	transition: opacity 0.2s;
+	z-index: 10;
+}
+
+.diagram-controls:hover {
+	opacity: 1;
+}
+
+.diagram-control-btn {
+	background: var(--vscode-button-background);
+	color: var(--vscode-button-foreground);
+	border: none;
+	border-radius: 3px;
+	padding: 4px 6px;
+	cursor: pointer;
+	font-size: 12px;
+	transition: background 0.2s;
+	min-width: 24px;
+	height: 24px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.diagram-control-btn:hover {
+	background: var(--vscode-button-hoverBackground);
+}
+
+/* Modal styling for enlarged diagrams */
+#diagram-modal {
+	position: fixed;
+	top: 0;
+	left: 0;
+	width: 100vw;
+	height: 100vh;
+	background: rgba(0, 0, 0, 0.8);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 10000;
+	backdrop-filter: blur(5px);
+}
+
+#diagram-modal .modal-content {
+	background: var(--vscode-editor-background);
+	border-radius: 8px;
+	padding: 20px;
+	max-width: 90vw;
+	max-height: 90vh;
+	overflow: auto;
+	position: relative;
+	border: 1px solid var(--vscode-panel-border);
+	box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+#diagram-modal .modal-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 15px;
+	padding-bottom: 10px;
+	border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+#diagram-modal .modal-title {
+	margin: 0;
+	color: var(--vscode-foreground);
+	font-size: 16px;
+}
+
+#diagram-modal .modal-controls {
+	display: flex;
+	gap: 10px;
+	align-items: center;
+}
+
+#diagram-modal .modal-controls button {
+	background: var(--vscode-button-background);
+	color: var(--vscode-button-foreground);
+	border: none;
+	border-radius: 4px;
+	padding: 6px 10px;
+	cursor: pointer;
+	font-size: 12px;
+	transition: background 0.2s;
+	min-width: 30px;
+}
+
+#diagram-modal .modal-controls button:hover {
+	background: var(--vscode-button-hoverBackground);
+}
+
+#modal-diagram-container {
+	text-align: center;
+	overflow: auto;
+	max-height: calc(90vh - 100px);
+	position: relative;
+}
+
+#modal-diagram-container svg {
+	max-width: 100%;
+	height: auto;
+	transform-origin: center;
+	transition: transform 0.3s ease;
+}
+
+/* Toast notification styling */
+.diagram-toast {
+	position: fixed;
+	top: 20px;
+	right: 20px;
+	padding: 12px 16px;
+	border-radius: 6px;
+	color: white;
+	font-size: 14px;
+	z-index: 10001;
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+	transition: opacity 0.3s ease;
+}
+
+.diagram-toast.success {
+	background: #4caf50;
+}
+
+.diagram-toast.error {
+	background: #f44336;
+}
+
+.diagram-toast.info {
+	background: #2196f3;
+}
+
+/* Override Mermaid's default styles to match VS Code theme */
+.mermaid-diagram-container .node rect,
+.mermaid-diagram-container .node circle,
+.mermaid-diagram-container .node ellipse,
+.mermaid-diagram-container .node polygon {
+	fill: var(--vscode-button-background) !important;
+	stroke: var(--vscode-button-border) !important;
+}
+
+.mermaid-diagram-container .node .label {
+	color: var(--vscode-button-foreground) !important;
+	fill: var(--vscode-button-foreground) !important;
+}
+
+.mermaid-diagram-container .edgePath .path {
+	stroke: var(--vscode-foreground) !important;
+}
+
+.mermaid-diagram-container .arrowheadPath {
+	fill: var(--vscode-foreground) !important;
+}
+
+/* Error state for failed Mermaid diagrams */
+.mermaid-error {
+	background-color: var(--vscode-inputValidation-errorBackground);
+	color: var(--vscode-inputValidation-errorForeground);
+	border: 1px solid var(--vscode-inputValidation-errorBorder);
+	padding: 10px;
+	border-radius: 4px;
+	font-family: var(--vscode-editor-font-family);
+	font-size: var(--vscode-editor-font-size);
+}
+
+/* Responsive design for mobile devices */
+@media (max-width: 768px) {
+	.diagram-controls {
+		position: static;
+		justify-content: center;
+		margin-bottom: 10px;
+		opacity: 1;
+	}
+	
+	#diagram-modal .modal-content {
+		max-width: 95vw;
+		max-height: 95vh;
+		padding: 15px;
+	}
+	
+	#diagram-modal .modal-header {
+		flex-direction: column;
+		gap: 10px;
+		align-items: stretch;
+	}
+	
+	#diagram-modal .modal-controls {
+		justify-content: center;
+		flex-wrap: wrap;
+		gap: 5px;
+	}
+}
+
+/* Fullscreen mode adjustments */
+#diagram-modal:fullscreen {
+	background: var(--vscode-editor-background);
+}
+
+#diagram-modal:fullscreen .modal-content {
+	max-width: 100vw;
+	max-height: 100vh;
+	border-radius: 0;
+	border: none;
+}
