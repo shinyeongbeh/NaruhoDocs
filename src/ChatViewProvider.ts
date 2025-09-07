@@ -1431,24 +1431,34 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 				return;
 			}
 
-			// Get current history
+			// Get current history and build new history including the context
 			const currentHistory = session.getHistory();
+			console.log(`Current history length before adding context: ${currentHistory.length}`);
 			
-			// Add the simulated conversation exchange directly using the session's internal structure
-			// Add user message
-			const userMsg = new HumanMessage(userMessage);
-			currentHistory.push(userMsg);
-			
-			// Add bot response
-			const botMsg = new AIMessage(botResponse);
-			currentHistory.push(botMsg);
-			
-			// Update the workspace state with the serialized history
-			const serializedHistory = currentHistory.map(msg => ({
+			// Build the new history array with the added context
+			// Convert existing history to the format expected by setHistory
+			const existingHistoryFormatted = currentHistory.map(msg => ({
 				type: msg instanceof HumanMessage ? 'human' : 'ai',
 				text: msg.content as string
 			}));
-			this.context.workspaceState.update(`thread-history-${this.activeThreadId}`, serializedHistory);
+			
+			// Add new context messages
+			const newContextMessages = [
+				{ type: 'human', text: userMessage },
+				{ type: 'ai', text: botResponse }
+			];
+			
+			const completeHistory = [...existingHistoryFormatted, ...newContextMessages];
+			
+			// Update the session history using the proper method
+			session.setHistory(completeHistory as any);
+			
+			// Verify the update worked
+			const updatedHistory = session.getHistory();
+			console.log(`Updated history length after adding context: ${updatedHistory.length}`);
+			
+			// Update the workspace state with the serialized history
+			this.context.workspaceState.update(`thread-history-${this.activeThreadId}`, completeHistory);
 			
 			console.log('Successfully added context to AI session history');
 			
