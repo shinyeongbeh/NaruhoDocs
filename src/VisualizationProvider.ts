@@ -233,15 +233,14 @@ export class VisualizationProvider {
         // Focus the chat view
         vscode.commands.executeCommand('naruhodocs.chatView.focus');
 
-        // Create a formatted message with the visualization and context
+        // Create a formatted message with the visualization
         const visualizationMessage = this.formatVisualizationForChat(result);
-        const contextMessage = this.createVisualizationContext(result);
         
-        // Send the visualization message with context to the webview for display
+        // Send the visualization message to the webview for display
         this.chatProvider.postMessage({
             type: 'addMessage',
             sender: 'Bot',
-            message: `${visualizationMessage}\n\n*${contextMessage}*`
+            message: visualizationMessage
         });
 
         // IMPORTANT: Also add detailed analysis to the AI's conversation history
@@ -675,7 +674,7 @@ The diagram shows document relationships and you can ask about:
                 const result: VisualizationResult = {
                     type: 'mermaid' as const,
                     content: this.optimizeMermaidContent(aiAnalysis.mermaidDiagram),
-                    title: `${projectName} Folder Structure (AI-Generated - ${aiAnalysis.insights.organizationPattern})`
+                    title: `${projectName} Folder Structure (${aiAnalysis.insights.organizationPattern})`
                 };
                 
                 // Add to AI history for future reference
@@ -753,7 +752,7 @@ The diagram shows document relationships and you can ask about:
                 const result: VisualizationResult = {
                     type: 'mermaid' as const,
                     content: this.optimizeMermaidContent(aiAnalysis.mermaidDiagram),
-                    title: `${projectName} Document Relations (AI-Generated)${subtitle}`
+                    title: `${projectName} Document Relations ${subtitle}`
                 };
                 
                 // Add to AI history for future reference
