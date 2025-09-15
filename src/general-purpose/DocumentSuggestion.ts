@@ -1,5 +1,5 @@
-import { RetrieveWorkspaceFilenamesTool, RetrieveFileContentTool } from './langchain-backend/features';
-import { createChat } from './langchain-backend/llm.js';
+import { RetrieveWorkspaceFilenamesTool, RetrieveFileContentTool } from '../langchain-backend/features';
+import { createChat } from '../langchain-backend/llm.js';
 
 // Suggest the documents that are not existing yet
 export class DocumentSuggestion {
