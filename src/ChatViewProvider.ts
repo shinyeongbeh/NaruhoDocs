@@ -5,15 +5,18 @@ import { LLMProviderManager } from './llm-providers/manager';
 import { HumanMessage, AIMessage } from '@langchain/core/messages';
 import { DocumentSuggestion } from './general-purpose/DocumentSuggestion';
 import { GenerateDocument } from './general-purpose/GenerateDocument';
+import { BeginnerDevMode } from './document-based/BeginnerDevMode';
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
 	private documentSuggestion = new DocumentSuggestion();
 	private docGenerate = new GenerateDocument();
+	private setBeginnerDevMode = new BeginnerDevMode();
 
 	private existingDocFiles: string[] = [];
 	private didDevCleanupOnce: boolean = false;
 	private fileWatcher?: vscode.FileSystemWatcher;
 
+	// Scan documents in workspace and get document suggestions from AI 
 	async scanDocs() {
 		// Get all filenames and contents
 		const filesAndContents = await this.documentSuggestion.getWorkspaceFilesAndContents();
@@ -28,55 +31,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		});
 	}
 
-	/**
-	 * Switch the system message for a document-based thread to beginner mode.
-	 */
-	public async setThreadBeginnerMode(sessionId: string) {
-		if (sessionId === 'naruhodocs-general-thread') {
-			return;
-		}
-		console.log('ChatViewProvider: setThreadBeginnerMode called', sessionId);
-		const session = this.sessions.get(sessionId);
-		const title = this.threadTitles.get(sessionId) || '';
-		let initialContext = '';
-		// Use sessionId as file path for document threads
-		try {
-			const uri = vscode.Uri.parse(sessionId);
-			const doc = await vscode.workspace.openTextDocument(uri);
-			initialContext = doc.getText();
-		} catch (e) {
-			initialContext = '';
-		}
-		if (session) {
-			const sysMessage = SystemMessages.DOCUMENT_SPECIFIC_BEGINNER(title, initialContext);
-			session.setCustomSystemMessage(sysMessage);
-		}
-	}
-
-	/**
-	 * Switch the system message for a document-based thread to developer mode.
-	 */
-	public async setThreadDeveloperMode(sessionId: string) {
-		if (sessionId === 'naruhodocs-general-thread') {
-			return;
-		}
-		console.log('ChatViewProvider: setThreadDeveloperMode called');
-		const session = this.sessions.get(sessionId);
-		const title = this.threadTitles.get(sessionId) || '';
-		let initialContext = '';
-		// Use sessionId as file path for document threads
-		try {
-			const uri = vscode.Uri.parse(sessionId);
-			const doc = await vscode.workspace.openTextDocument(uri);
-			initialContext = doc.getText();
-		} catch (e) {
-			initialContext = '';
-		}
-		if (session) {
-			const sysMessage = SystemMessages.DOCUMENT_SPECIFIC_DEVELOPER(title, initialContext);
-			session.setCustomSystemMessage(sysMessage);
-		}
-	}
 	/**
 	 * Send a message to a specific thread and display the bot response.
 	 */
@@ -258,23 +212,23 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 			}
 			const session = this.activeThreadId ? this.sessions.get(this.activeThreadId) : undefined;
 			switch (data.type) {
-				case 'suggestTemplate': {
-					// Generate template using AI and show save modal
-					let templateContent = '';
-					try {
-						if (!session) { throw new Error('No active thread'); }
-						templateContent = await session.chat(`Generate a documentation template for ${data.templateType || 'this project'}.`);
-					} catch (err) {
-						templateContent = 'Unable to generate template.';
-					}
-					this._view?.webview.postMessage({
-						type: 'showSaveTemplateButtons',
-						template: templateContent,
-						sessionId: this.activeThreadId,
-						templateType: data.templateType || 'README'
-					});
-					break;
-				}
+				// case 'suggestTemplate': {
+				// 	// Generate template using AI and show save modal
+				// 	let templateContent = '';
+				// 	try {
+				// 		if (!session) { throw new Error('No active thread'); }
+				// 		templateContent = await session.chat(`Generate a documentation template for ${data.templateType || 'this project'}.`);
+				// 	} catch (err) {
+				// 		templateContent = 'Unable to generate template.';
+				// 	}
+				// 	this._view?.webview.postMessage({
+				// 		type: 'showSaveTemplateButtons',
+				// 		template: templateContent,
+				// 		sessionId: this.activeThreadId,
+				// 		templateType: data.templateType || 'README'
+				// 	});
+				// 	break;
+				// }
 				case 'generateDoc': {
 					console.log('[NaruhoDocs] generateDoc triggered (doc-generate thread):', data.docType, data.fileName);
 
@@ -285,11 +239,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 					break;				
 				}
 				case 'setThreadBeginnerMode': {
-					await this.setThreadBeginnerMode(data.sessionId);
+					await this.setBeginnerDevMode.setThreadBeginnerMode(data.sessionId, this.sessions, this.threadTitles);
 					break;
 				}
 				case 'setThreadDeveloperMode': {
-					await this.setThreadDeveloperMode(data.sessionId);
+					await this.setBeginnerDevMode.setThreadDeveloperMode(data.sessionId, this.sessions, this.threadTitles);
 					break;
 				}
 				case 'sendMessage': {
