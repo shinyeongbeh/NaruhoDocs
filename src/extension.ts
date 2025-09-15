@@ -84,7 +84,10 @@ export function activate(context: vscode.ExtensionContext) {
 	);
 
 	// Multi-thread chat provider
-	const provider = new ChatViewProvider(context.extensionUri, undefined, context, llmManager);
+	// const provider = new ChatViewProvider(context.extensionUri, undefined, context, llmManager);
+	const apiKey = vscode.workspace.getConfiguration('naruhodocs').get<string>('geminiApiKey') || process.env.GOOGLE_API_KEY || '';
+	const provider = new ChatViewProvider(context.extensionUri, apiKey, context, llmManager);
+
 	const openDocs = vscode.workspace.textDocuments;
 	for (const document of openDocs) {
 		const fileName = document.fileName.toLowerCase();
