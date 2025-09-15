@@ -4,14 +4,13 @@ import { SystemMessages } from './SystemMessages';
 import { LLMProviderManager } from './llm-providers/manager';
 import { HumanMessage, AIMessage } from '@langchain/core/messages';
 import { DocumentSuggestion } from './general-purpose/DocumentSuggestion';
-import { GenerateDocument } from './general-purpose/GenerateDocument';
+import { generateDocument } from './general-purpose/GenerateDocument';
 import { BeginnerDevMode } from './document-based/BeginnerDevMode';
 import { getNonce } from './utils/utils';
 import { ThreadManager } from './managers/ThreadManager';
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
 	private documentSuggestion = new DocumentSuggestion();
-	private docGenerate = new GenerateDocument();
 	private setBeginnerDevMode = new BeginnerDevMode();
 
 	private existingDocFiles: string[] = [];
@@ -194,7 +193,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 				case 'generateDoc': {
 					console.log('[NaruhoDocs] generateDoc triggered (doc-generate thread):', data.docType, data.fileName);
 
-					const response = await this.docGenerate.generate(data);	
+					const response = await generateDocument(data);	
 					console.log('Response from docGenerate.generate:', response);
 					this._view?.webview.postMessage({ type: response.type, sender: response.sender, message: response.message });
 
