@@ -1058,6 +1058,9 @@
             case 'addMessage':
                 addMessage(message.sender, message.message);
                 break;
+            case 'clearMessages':
+                clearMessages();
+                break;
             case 'docCreated':
                 addMessage('System', `Documentation file created: <code>${message.filePath}</code>`);
                 break;
