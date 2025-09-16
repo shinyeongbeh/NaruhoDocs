@@ -44,6 +44,7 @@ export class LLMProviderManager {
             vscode.window.showInformationMessage(
                 `NaruhoDocs: ${provider.name} provider initialized successfully`
             );
+            console.log(`LLMProviderManager: Initialized ${provider.name}`);
         } catch (error) {
             if (error instanceof LLMProviderError) {
                 this.handleProviderError(error, providerType);

@@ -17,6 +17,7 @@ export class ThreadManager {
 
     // Initialize the general-purpose thread
     public async initializeGeneralThread(): Promise<void> {
+        await this.llmManager?.initializeFromConfig();
         const generalThreadId = 'naruhodocs-general-thread';
         const generalThreadTitle = 'General Purpose';
         const sysMessage = SystemMessages.GENERAL_PURPOSE;
@@ -28,15 +29,17 @@ export class ThreadManager {
                 this.sessions.set(generalThreadId, session);
                 this.threadTitles.set(generalThreadId, generalThreadTitle);
                 this.activeThreadId = generalThreadId;
+                console.log('General thread initialized with LLM manager');
             } catch (error) {
                 console.error('Failed to create general chat session:', error);
-                // Fallback to direct method
+                // Fallback to direct method (using .env Gemini api, not following llmManager)
                 const session = createChat({ apiKey: this.apiKey, maxHistoryMessages: 40, systemMessage: sysMessage });
                 this.sessions.set(generalThreadId, session);
                 this.threadTitles.set(generalThreadId, generalThreadTitle);
                 this.activeThreadId = generalThreadId;
             }
         } else {
+            // Fallback to direct method (using .env Gemini api, not following llmManager)
             const session = createChat({ apiKey: this.apiKey, maxHistoryMessages: 40, systemMessage: sysMessage });
             this.sessions.set(generalThreadId, session);
             this.threadTitles.set(generalThreadId, generalThreadTitle);
@@ -62,7 +65,7 @@ export class ThreadManager {
                     this.onThreadListChange?.();
                 }).catch(error => {
                     console.error('Failed to create chat session:', error);
-                    // Fallback to existing method for backward compatibility
+                    // Fallback to existing method for backward compatibility (using .env Gemini api, not following llmManager)
                     const session = createChat({ apiKey: this.apiKey, maxHistoryMessages: 40, systemMessage: sysMessage });
                     if (savedHistory && Array.isArray(savedHistory)) {
                         session.setHistory(savedHistory);
@@ -72,7 +75,7 @@ export class ThreadManager {
                     this.onThreadListChange?.();
                 });
             } else {
-                // Fallback to existing method for backward compatibility
+                // Fallback to existing method for backward compatibility (using .env Gemini api, not following llmManager)
                 const session = createChat({ apiKey: this.apiKey, maxHistoryMessages: 40, systemMessage: sysMessage });
                 if (savedHistory && Array.isArray(savedHistory)) {
                     session.setHistory(savedHistory);
@@ -97,14 +100,31 @@ export class ThreadManager {
         return this.activeThreadId;
     }
 
+    // Add a new session
+    public setSession(sessionId: string, session: ChatSession): void {
+        if (!this.sessions.has(sessionId)) {
+            this.sessions.set(sessionId, session);
+        }
+    }
+
     // Get a specific session
     public getSession(sessionId: string): ChatSession | undefined {
         return this.sessions.get(sessionId);
     }
 
+    // Check if a session exists
+    public hasSession(sessionId: string): boolean {
+        return this.sessions.has(sessionId);
+    }
+
     // Get the active session
     public getActiveSession(): ChatSession | undefined {
         return this.activeThreadId ? this.sessions.get(this.activeThreadId) : undefined;
+    }
+
+    // Set thread title
+    public setThreadTitle(sessionId: string, title: string): void {
+        this.threadTitles.set(sessionId, title);
     }
 
     // Get all thread titles
@@ -175,30 +195,7 @@ export class ThreadManager {
     }
 
     // Update LLM manager and recreate general thread
-    public async updateLLMManager(newLLMManager: LLMProviderManager): Promise<void> {
-        this.llmManager = newLLMManager;
-        
-        // Recreate the general purpose session with the new provider
-        const generalThreadId = 'naruhodocs-general-thread';
-        if (this.sessions.has(generalThreadId)) {
-            const generalThreadTitle = 'General Purpose';
-            const sysMessage = SystemMessages.GENERAL_PURPOSE;
-            
-            if (this.llmManager) {
-                try {
-                    const session = await this.llmManager.createChatSession(sysMessage);
-                    this.sessions.set(generalThreadId, session);
-                    this.threadTitles.set(generalThreadId, generalThreadTitle);
-                    if (this.activeThreadId === generalThreadId) {
-                        this.onThreadListChange?.();
-                    }
-                } catch (error) {
-                    console.error('Failed to update general chat session:', error);
-                    throw error; // Let the caller handle the error
-                }
-            }
-        }
-    }
+    // public async updateLLMManager(newLLMManager: LLMProviderManager): Promise<void> {}
 
     // Save thread history to workspace state
     public async saveThreadHistory(sessionId: string): Promise<void> {

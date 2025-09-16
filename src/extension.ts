@@ -29,20 +29,52 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// Initialize LLM Provider Manager
 	const llmManager = new LLMProviderManager();
+
+	const provider = new ChatViewProvider(context.extensionUri, undefined, context, llmManager);
 	
 	// Initialize Visualization Provider
 	const visualizationProvider = new VisualizationProvider(context, llmManager);
 	
-	// Initialize provider from configuration
-	llmManager.initializeFromConfig().catch(error => {
-		console.error('Failed to initialize LLM provider:', error);
-		// Fallback to legacy API key method for backward compatibility
-		const settingsKey = vscode.workspace.getConfiguration('naruhodocs').get<string>('geminiApiKey');
-		const apiKey = settingsKey || process.env.GOOGLE_API_KEY || '';
-		if (!apiKey) {
-			vscode.window.showWarningMessage('NaruhoDocs: No LLM provider configured. Please run "Configure LLM Provider" command.');
+	// Initialize the LLM provider and initialize threads
+	(async () => {
+		try {
+			await llmManager.initializeFromConfig();
+
+			// Initialize the general-purpose thread after LLM is ready
+			const generalThreadId = 'naruhodocs-general-thread';
+			const generalThreadTitle = 'General Purpose';
+			if (!threadMap.has(generalThreadId)) {
+				threadMap.set(generalThreadId, { document: undefined as any, sessionId: generalThreadId });
+				llmManager.createChatSession(SystemMessages.GENERAL_PURPOSE);
+				activeThreadId = generalThreadId;
+				provider.setActiveThread(generalThreadId);
+			}
+
+			//Make sure on open document when activated is using llm manager
+			const openDocs = vscode.workspace.textDocuments;
+			for (const document of openDocs) {
+				const fileName = document.fileName.toLowerCase();
+				if (fileName.endsWith('.md') || fileName.endsWith('.txt')) {
+					const uriStr = document.uri.toString();
+					if (!threadMap.has(uriStr)) {
+						const sessionId = uriStr;
+						threadMap.set(uriStr, { document, sessionId });
+						provider.createThread(sessionId, document.getText(), document.fileName);
+						activeThreadId = sessionId;
+						provider.setActiveThread(sessionId);
+					}
+				}
+			}
+		} catch (error) {
+			console.error('Failed to initialize LLM provider:', error);
+			// Fallback to legacy API key method for backward compatibility
+			const settingsKey = vscode.workspace.getConfiguration('naruhodocs').get<string>('geminiApiKey');
+			const apiKey = settingsKey || process.env.GOOGLE_API_KEY || '';
+			if (!apiKey) {
+				vscode.window.showWarningMessage('NaruhoDocs: No LLM provider configured. Please run "Configure LLM Provider" command.');
+			}
 		}
-	});
+	})();
 
 	// Listen for configuration changes and automatically update LLM provider
 	let configChangeTimeout: NodeJS.Timeout | undefined;
@@ -83,25 +115,6 @@ export function activate(context: vscode.ExtensionContext) {
 		})
 	);
 
-	// Multi-thread chat provider
-	// const provider = new ChatViewProvider(context.extensionUri, undefined, context, llmManager);
-	const apiKey = vscode.workspace.getConfiguration('naruhodocs').get<string>('geminiApiKey') || process.env.GOOGLE_API_KEY || '';
-	const provider = new ChatViewProvider(context.extensionUri, apiKey, context, llmManager);
-
-	const openDocs = vscode.workspace.textDocuments;
-	for (const document of openDocs) {
-		const fileName = document.fileName.toLowerCase();
-		if (fileName.endsWith('.md') || fileName.endsWith('.txt')) {
-			const uriStr = document.uri.toString();
-			if (!threadMap.has(uriStr)) {
-				const sessionId = uriStr;
-				threadMap.set(uriStr, { document, sessionId });
-				provider.createThread(sessionId, document.getText(), document.fileName);
-				activeThreadId = sessionId;
-				provider.setActiveThread(sessionId);
-			}
-		}
-	}
 	context.subscriptions.push(
 		vscode.window.registerWebviewViewProvider(ChatViewProvider.viewType, provider));
 

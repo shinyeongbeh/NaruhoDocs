@@ -617,18 +617,32 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 				message: providerInfo 
 			});
 		}
-		
-		// Update the thread manager with the new LLM manager
-		this.threadManager.updateLLMManager(newLLMManager).catch(error => {
-			console.error('Failed to update thread manager LLM provider:', error);
-			if (this._view) {
-				this._view.webview.postMessage({ 
-					type: 'addMessage', 
-					sender: 'System', 
-					message: `❌ Failed to update LLM provider: ${error.message}` 
+
+    // Recreate the general purpose session with the new provider
+		const generalThreadId = 'naruhodocs-general-thread';
+		if (this.threadManager.hasSession(generalThreadId)) {
+			const generalThreadTitle = 'General Purpose';
+			const sysMessage = SystemMessages.GENERAL_PURPOSE;
+			
+			if (this.llmManager) {
+				this.llmManager.createChatSession(sysMessage).then(session => {
+					this.threadManager.setSession(generalThreadId, session);
+					this.threadManager.setThreadTitle(generalThreadId, generalThreadTitle);
+					if (this.threadManager.getActiveThreadId() === generalThreadId) {
+						this._postThreadList();
+					}
+				}).catch(error => {
+					console.error('Failed to update general chat session:', error);
+					if (this._view) {
+						this._view.webview.postMessage({ 
+							type: 'addMessage', 
+							sender: 'System', 
+							message: `❌ Failed to update LLM provider: ${error.message}` 
+						});
+					}
 				});
 			}
-		});
+		}
 	}
 
 	// Create a new thread/session for a document
