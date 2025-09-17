@@ -31,10 +31,10 @@ export function activate(context: vscode.ExtensionContext) {
 	const llmManager = new LLMProviderManager();
 
 	const provider = new ChatViewProvider(context.extensionUri, undefined, context, llmManager);
-	
+
 	// Initialize Visualization Provider
 	const visualizationProvider = new VisualizationProvider(context, llmManager);
-	
+
 	// Initialize the LLM provider and initialize threads
 	(async () => {
 		try {
@@ -86,24 +86,24 @@ export function activate(context: vscode.ExtensionContext) {
 				event.affectsConfiguration('naruhodocs.llm.localBackend') ||
 				event.affectsConfiguration('naruhodocs.llm.localModel') ||
 				event.affectsConfiguration('naruhodocs.llm.localUrl')) {
-				
+
 				// Debounce configuration changes to avoid multiple rapid updates
 				if (configChangeTimeout) {
 					clearTimeout(configChangeTimeout);
 				}
-				
+
 				configChangeTimeout = setTimeout(async () => {
 					try {
 						// Reinitialize LLM provider with new configuration
 						await llmManager.initializeFromConfig();
-						
+
 						// Update the ChatViewProvider with the new manager
 						provider.updateLLMManager(llmManager);
-						
+
 						// Get the current provider name for user feedback
 						const currentProvider = llmManager.getCurrentProvider();
 						const providerName = currentProvider?.name || 'LLM provider';
-						
+
 						// Show a subtle notification that the provider was updated
 						vscode.window.setStatusBarMessage(`✅ ${providerName} updated`, 3000);
 					} catch (error) {
@@ -484,6 +484,82 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 		lintStatusBar.tooltip = `Markdownlint: ${issues.length} issue${issues.length > 1 ? 's' : ''}`;
 		lintStatusBar.show();
 	}
+
+	const gitHeadWatcher = vscode.workspace.createFileSystemWatcher('**/.git/logs/HEAD');
+	context.subscriptions.push(gitHeadWatcher);
+
+	gitHeadWatcher.onDidChange(async (uri) => {
+		try {
+			const content = await vscode.workspace.fs.readFile(uri);
+			const lines = Buffer.from(content).toString('utf8').trim().split('\n');
+			const lastLine = lines[lines.length - 1];
+			const parts = lastLine.split(' ');
+			const newCommitHash = parts[1];
+
+			const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+			if (!workspaceFolder) {
+				return;
+			}
+
+			const { exec } = require('child_process');
+			exec(`git diff-tree --no-commit-id --name-only -r ${newCommitHash}`, { cwd: workspaceFolder }, async (err: any, stdout: string) => {
+				if (err) {
+					return;
+				}
+				const changedFiles = stdout.trim().split('\n').filter(f => !!f);
+
+				const codeChanged = changedFiles.length > 0;
+				const docChanged = changedFiles.some(f => f.endsWith('.md') || f.endsWith('.txt'));
+
+				// 1. Auto-open documentation for editing if code changed but docs did not
+				if (codeChanged && !docChanged) {
+					// Try to find related docs (same basename, .md/.txt)
+					for (const file of changedFiles) {
+						const base = file.replace(/\.[^/.]+$/, '');
+						const docCandidates = [
+							`${base}.md`,
+							`${base}.txt`
+						];
+						for (const docFile of docCandidates) {
+							const docPath = require('path').join(workspaceFolder, docFile);
+							const exists = await vscode.workspace.fs.stat(vscode.Uri.file(docPath)).then(() => true, () => false);
+							if (exists) {
+								await vscode.workspace.openTextDocument(docPath).then(doc => vscode.window.showTextDocument(doc));
+							}
+						}
+					}
+					vscode.window.showWarningMessage('Code changed without documentation update. Docs may be stale! Related docs opened for editing.');
+				}
+
+				// 2. Integrate with doc threads: post a message to the thread if code changes
+				if (codeChanged) {
+					for (const file of changedFiles) {
+						const uriStr = vscode.Uri.file(require('path').join(workspaceFolder, file)).toString();
+						if (threadMap.has(uriStr)) {
+							provider.sendMessageToThread(uriStr, `Heads up: ${file} was just changed in commit ${newCommitHash}. Please review documentation for drift.`);
+						}
+					}
+				}
+
+				// 3. Notify about dependent components (simple example: check for imports)
+				for (const file of changedFiles) {
+					if (file.endsWith('.js') || file.endsWith('.ts')) {
+						const filePath = require('path').join(workspaceFolder, file);
+						const fileContent = await vscode.workspace.fs.readFile(vscode.Uri.file(filePath)).then(buf => buf.toString(), () => '');
+						const importMatches = fileContent.match(/import\s+.*?from\s+['"](.*?)['"]/g) || [];
+						for (const match of importMatches) {
+							const dep = match.match(/['"](.*?)['"]/);
+							if (dep && dep[1]) {
+								vscode.window.showInformationMessage(`Dependency "${dep[1]}" in ${file} may be affected by recent changes.`);
+							}
+						}
+					}
+				}
+			});
+		} catch (e: any) {
+			console.error('Doc drift detection failed:', e.message);
+		}
+	});
 }
 
 async function showLLMConfigurationQuickPick(llmManager: LLMProviderManager, provider: ChatViewProvider) {
@@ -527,10 +603,10 @@ async function showLLMConfigurationQuickPick(llmManager: LLMProviderManager, pro
 
 		// Reinitialize with new settings
 		await llmManager.initializeFromConfig();
-		
+
 		// Update the existing ChatViewProvider with the new manager
 		provider.updateLLMManager(llmManager);
-		
+
 		vscode.window.showInformationMessage(`LLM provider updated to: ${selected.label}`);
 	}
 }
@@ -580,7 +656,7 @@ async function configureLocalLLM(config: vscode.WorkspaceConfiguration) {
 
 	if (selectedBackend) {
 		await config.update('llm.localBackend', selectedBackend.value, vscode.ConfigurationTarget.Global);
-		
+
 		// Ask for custom URL if needed
 		const customUrl = await vscode.window.showInputBox({
 			prompt: `Enter the URL for ${selectedBackend.label}`,
@@ -650,7 +726,7 @@ For custom setup:
 	};
 
 	const instruction = instructions[backend] || instructions.custom;
-	
+
 	vscode.window.showInformationMessage(
 		`${backend.charAt(0).toUpperCase() + backend.slice(1)} Setup Instructions`,
 		'Show Details'
