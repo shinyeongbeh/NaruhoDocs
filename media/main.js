@@ -706,61 +706,19 @@
         // Create modal overlay - full VS Code window
         const modal = document.createElement('div');
         modal.id = 'diagram-modal';
-        modal.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            background: rgba(0, 0, 0, 0.95);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 999999;
-            backdrop-filter: blur(8px);
-        `;
+        modal.className = 'diagram-modal'; // Use class instead of inline style
 
-        // Create modal content - larger size for full window
         const modalContent = document.createElement('div');
-        modalContent.style.cssText = `
-            background: var(--vscode-editor-background);
-            border-radius: 12px;
-            padding: 30px;
-            max-width: 95vw;
-            max-height: 95vh;
-            overflow: auto;
-            position: relative;
-            border: 2px solid var(--vscode-panel-border);
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-            min-width: 80vw;
-            min-height: 70vh;
-        `;
+        modalContent.className = 'diagram-modal-content';
 
-        // Create modal header with controls
         const modalHeader = document.createElement('div');
-        modalHeader.style.cssText = `
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-            padding-bottom: 10px;
-            border-bottom: 1px solid var(--vscode-panel-border);
-        `;
+        modalHeader.className = 'diagram-modal-header';
 
         const modalTitle = document.createElement('h3');
-        modalTitle.textContent = 'Diagram View';
-        modalTitle.style.cssText = `
-            margin: 0;
-            color: var(--vscode-foreground);
-            font-size: 16px;
-        `;
+        modalTitle.className = 'diagram-modal-title';
 
         const modalControls = document.createElement('div');
-        modalControls.style.cssText = `
-            display: flex;
-            gap: 10px;
-            align-items: center;
-        `;
+        modalControls.className = 'diagram-modal-controls';
 
         // Zoom controls
         const zoomOutBtn = createModalButton('🔍-', 'Zoom out');
@@ -945,26 +903,16 @@
         }
     }
 
-    // Function to show toast notifications
-    /** @param {string} message @param {'info'|'error'|'success'} [type='info'] */
+    // For toast notifications:
+    /**
+     * @param {string} message
+     * @param {'info'|'success'|'error'} [type]
+     */
     function showToast(message, type = 'info') {
         const toast = document.createElement('div');
-        toast.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            padding: 12px 16px;
-            border-radius: 6px;
-            color: white;
-            font-size: 14px;
-            z-index: 10001;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-            transition: opacity 0.3s ease;
-            background: ${type === 'success' ? '#4caf50' : type === 'error' ? '#f44336' : '#2196f3'};
-        `;
+        toast.className = `toast-notification toast-${type}`;
         toast.textContent = message;
         document.body.appendChild(toast);
-
         setTimeout(() => {
             toast.style.opacity = '0';
             setTimeout(() => {

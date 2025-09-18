@@ -582,12 +582,13 @@ html {
 .diagram-control-btn {
 	background: var(--vscode-button-background);
 	color: var(--vscode-button-foreground);
-	border: none;
-	border-radius: 3px;
-	padding: 4px 6px;
+	border: 1px solid var(--vscode-button-border, transparent);
+	border-radius: 4px;
+	padding: 4px 8px;
 	cursor: pointer;
-	font-size: 12px;
-	transition: background 0.2s;
+	font-size: 11px;
+	font-weight: 500;
+	transition: all 0.2s ease;
 	min-width: 24px;
 	height: 24px;
 	display: flex;
@@ -597,6 +598,7 @@ html {
 
 .diagram-control-btn:hover {
 	background: var(--vscode-button-hoverBackground);
+	transform: translateY(-1px);
 }
 
 /* Modal styling for enlarged diagrams */
@@ -791,4 +793,55 @@ html {
 }
 .clearHistory-btn.cancel:hover {
     background: #333 !important;
+}
+
+/* Modal overlay for clear history and diagram */
+.clear-history-modal{
+    position: fixed;
+    top: 0; left: 0;
+    width: 100vw; height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0.5);
+    z-index: 9999;
+}
+
+.clear-history-box{
+    background: #222;
+    color: #fff;
+    padding: 32px 24px;
+    border-radius: 10px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    text-align: center;
+    min-width: 300px;
+}
+
+.toast-notification {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    padding: 12px 16px;
+    border-radius: 6px;
+    color: white;
+    font-size: 14px;
+    z-index: 10001;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    transition: opacity 0.3s ease;
+    background: #2196f3; /* fallback for info */
+    min-width: 180px;
+    text-align: center;
+}
+
+.toast-success {
+    background: #4caf50;
+}
+
+.toast-error {
+    background: #f44336;
+}
+
+.toast-info {
+    background: #2196f3;
 }
