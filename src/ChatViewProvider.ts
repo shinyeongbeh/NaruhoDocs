@@ -62,8 +62,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		// Get all filenames and contents
 		const filesAndContents = await this.documentSuggestion.getWorkspaceFilesAndContents();
 		// Get AI suggestions
-		const aiSuggestions = await this.documentSuggestion.getAISuggestions(filesAndContents);
-		console.log('AI suggestions: ', aiSuggestions);
+		const aiSuggestions = await this.documentSuggestion.getAISuggestions(this.llmService, filesAndContents);
+		// AI suggestions retrieved
 		// Pass all AI suggestions to modal, but filter after AI generates
 		this.postMessage({
 			type: 'aiSuggestedDocs',
@@ -193,8 +193,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 				case 'generateDoc': {
 					console.log('[NaruhoDocs] generateDoc triggered (doc-generate thread):', data.docType, data.fileName);
 
-					const response = await generateDocument(data);	
-					console.log('Response from docGenerate.generate:', response);
+					const response = await generateDocument(this.llmService, data);
+					// Response from docGenerate.generate captured
 					this._view?.webview.postMessage({ type: response.type, sender: response.sender, message: response.message });
 
 					break;				
