@@ -7,6 +7,8 @@ import { SystemMessages } from './SystemMessages';
 import { checkGrammar } from './external-tools/LanguageTool-integration';
 import { lintMarkdownDocument } from './external-tools/markdownLinter';
 import { LLMProviderManager } from './llm-providers/manager';
+import { ModelConfigManager } from './managers/ModelConfigManager.js';
+import { LLMService } from './managers/LLMService';
 import { LocalProvider } from './llm-providers/local';
 import { VisualizationProvider } from './VisualizationProvider';
 
@@ -29,28 +31,101 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// Initialize LLM Provider Manager
 	const llmManager = new LLMProviderManager();
+	const llmService = LLMService.getOrCreate(llmManager);
+	llmService.initializePersistence(context);
+	// Create dedicated output channel for verbose LLM logging
+	const llmOutput = vscode.window.createOutputChannel('NaruhoDocs LLM');
+	llmService.setOutputChannel(llmOutput);
+	llmService.refreshConfig();
+
+	// Status bar: Provider & Model
+	const providerModelStatus = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+	providerModelStatus.command = 'naruhodocs.changeProvider';
+	context.subscriptions.push(providerModelStatus);
+
+	function updateProviderModelStatus(sessionId: string = 'naruhodocs-general-thread') {
+		try {
+			const provider = llmManager.getCurrentProvider();
+			const providerType = vscode.workspace.getConfiguration('naruhodocs').get<string>('llm.provider','ootb');
+			const svcAny = llmService as any;
+			let model: string | undefined = svcAny.sessionModelHints?.get(sessionId) || svcAny.sessionModelHints?.get('general');
+			let trace: string[] = [];
+			if (!model) {
+				if (modelConfigManager.isActive()) {
+					const resolved = modelConfigManager.resolveModel(providerType, 'chat', undefined, providerType === 'local' ? 'gemma3:1b' : 'gemini-2.0-flash');
+					model = resolved.model;
+					trace = ['file-active', ...resolved.trace];
+				} else {
+					model = providerType === 'local' ? 'gemma3:1b' : 'gemini-2.0-flash';
+					trace = ['default-fallback'];
+				}
+			} else {
+				trace = ['session-hint'];
+			}
+			const icon = providerType === 'local' ? 'server-environment' : (providerType === 'byok' ? 'key' : 'robot');
+			providerModelStatus.text = `$(${icon}) NaruhoDocs: ${model}`;
+			providerModelStatus.tooltip = `Provider: ${provider?.name || providerType}\nModel: ${model}\nTrace: ${trace.join(' > ')}`;
+			providerModelStatus.show();
+		} catch {
+			providerModelStatus.text = '$(robot) NaruhoDocs: unknown';
+			providerModelStatus.show();
+		}
+	}
 
 	const provider = new ChatViewProvider(context.extensionUri, undefined, context, llmManager);
+
+	// Model config manager (per-repo JSON) - instantiate now, load inside activation async block
+	const modelConfigManager = new ModelConfigManager(context);
+	llmService.setModelConfigManager(modelConfigManager);
+
+	// Provider profile memory removed (deprecated). Models now fully governed by .naruhodocs/models.json and runtime hints.
+	let currentProviderType = vscode.workspace.getConfiguration('naruhodocs').get<string>('llm.provider','ootb');
 	
 	// Initialize Visualization Provider
 	const visualizationProvider = new VisualizationProvider(context, llmManager);
 	
-	// Initialize the LLM provider and initialize threads
+	// Initialize the LLM provider and then create initial threads only after provider is ready
 	(async () => {
+		// Load model config file early
+		await modelConfigManager.load();
+		llmService.logEvent(modelConfigManager.isActive() ? 'model_config_loaded' : 'model_config_missing');
+		// Watch for config file changes once workspace ready
+		const ws = vscode.workspace.workspaceFolders?.[0];
+		if (ws) {
+			const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(ws, '.naruhodocs/models.json'));
+			context.subscriptions.push(watcher);
+			const reload = async () => {
+				await modelConfigManager.load();
+				llmService.setModelConfigManager(modelConfigManager);
+				llmService.clearAllSessions();
+				llmService.logEvent('model_config_reloaded');
+				updateProviderModelStatus(activeThreadId);
+			};
+			watcher.onDidChange(reload, undefined, context.subscriptions);
+			watcher.onDidCreate(reload, undefined, context.subscriptions);
+			watcher.onDidDelete(async () => { await modelConfigManager.load(); llmService.setModelConfigManager(modelConfigManager); llmService.clearAllSessions(); llmService.logEvent('model_config_deleted'); updateProviderModelStatus(activeThreadId); });
+		}
 		try {
 			await llmManager.initializeFromConfig();
+			llmService.logEvent('provider_init', { provider: llmManager.getCurrentProvider()?.name });
+			// Clear any pre-existing sessions created via fallback before provider ready
+			llmService.clearAllSessions();
+			await llmService.restoreState();
 
-			// Initialize the general-purpose thread after LLM is ready
+			// Initialize the general-purpose thread AFTER provider is confirmed
 			const generalThreadId = 'naruhodocs-general-thread';
 			const generalThreadTitle = 'General Purpose';
 			if (!threadMap.has(generalThreadId)) {
 				threadMap.set(generalThreadId, { document: undefined as any, sessionId: generalThreadId });
-				llmManager.createChatSession(SystemMessages.GENERAL_PURPOSE);
+				// Ensure backing LLM session is created through LLMService so logging + provider attribution work
+				await llmService.getSession(generalThreadId, SystemMessages.GENERAL_PURPOSE, { taskType: 'chat', forceNew: true });
+				provider.createThread(generalThreadId, SystemMessages.GENERAL_PURPOSE, generalThreadTitle);
 				activeThreadId = generalThreadId;
 				provider.setActiveThread(generalThreadId);
 			}
+			updateProviderModelStatus(generalThreadId);
 
-			//Make sure on open document when activated is using llm manager
+			// For already-open documents, create threads now that provider is ready
 			const openDocs = vscode.workspace.textDocuments;
 			for (const document of openDocs) {
 				const fileName = document.fileName.toLowerCase();
@@ -59,19 +134,20 @@ export function activate(context: vscode.ExtensionContext) {
 					if (!threadMap.has(uriStr)) {
 						const sessionId = uriStr;
 						threadMap.set(uriStr, { document, sessionId });
+						await llmService.getSession(sessionId, SystemMessages.GENERAL_PURPOSE, { taskType: 'chat', forceNew: true });
 						provider.createThread(sessionId, document.getText(), document.fileName);
 						activeThreadId = sessionId;
 						provider.setActiveThread(sessionId);
+						updateProviderModelStatus(sessionId);
 					}
 				}
 			}
 		} catch (error) {
 			console.error('Failed to initialize LLM provider:', error);
-			// Fallback to legacy API key method for backward compatibility
 			const settingsKey = vscode.workspace.getConfiguration('naruhodocs').get<string>('geminiApiKey');
 			const apiKey = settingsKey || process.env.GOOGLE_API_KEY || '';
 			if (!apiKey) {
-				vscode.window.showWarningMessage('NaruhoDocs: No LLM provider configured. Please run "Configure LLM Provider" command.');
+				vscode.window.showWarningMessage('NaruhoDocs: No LLM provider configured. Set provider in settings (naruhodocs.llm.provider) or edit .naruhodocs/models.json.');
 			}
 		}
 	})();
@@ -83,9 +159,7 @@ export function activate(context: vscode.ExtensionContext) {
 			// Check if any of our LLM settings changed
 			if (event.affectsConfiguration('naruhodocs.llm.provider') ||
 				event.affectsConfiguration('naruhodocs.llm.apiKey') ||
-				event.affectsConfiguration('naruhodocs.llm.localBackend') ||
-				event.affectsConfiguration('naruhodocs.llm.localModel') ||
-				event.affectsConfiguration('naruhodocs.llm.localUrl')) {
+				event.affectsConfiguration('naruhodocs.logging.verbose')) {
 				
 				// Debounce configuration changes to avoid multiple rapid updates
 				if (configChangeTimeout) {
@@ -94,18 +168,23 @@ export function activate(context: vscode.ExtensionContext) {
 				
 				configChangeTimeout = setTimeout(async () => {
 					try {
-						// Reinitialize LLM provider with new configuration
-						await llmManager.initializeFromConfig();
-						
-						// Update the ChatViewProvider with the new manager
+						const config = vscode.workspace.getConfiguration('naruhodocs');
+						const newProviderType = config.get<string>('llm.provider','ootb');
+						const providerChanged = newProviderType !== currentProviderType;
+						if (providerChanged || event.affectsConfiguration('naruhodocs.llm.apiKey')) {
+							await llmManager.initializeFromConfig();
+							llmService.clearAllSessions();
+							llmService.logEvent('provider_reload', { provider: llmManager.getCurrentProvider()?.name, changed: providerChanged });
+							currentProviderType = newProviderType;
+							if (providerChanged) {
+								// Post system message to chat view (if loaded) instead of a user-level chat message
+								const provName = llmManager.getCurrentProvider()?.name || newProviderType;
+								try { (provider as any)?.addSystemMessage?.(`Provider changed to ${provName}`); } catch { /* ignore */ }
+							}
+						}
+						llmService.refreshConfig();
 						provider.updateLLMManager(llmManager);
-						
-						// Get the current provider name for user feedback
-						const currentProvider = llmManager.getCurrentProvider();
-						const providerName = currentProvider?.name || 'LLM provider';
-						
-						// Show a subtle notification that the provider was updated
-						vscode.window.setStatusBarMessage(`✅ ${providerName} updated`, 3000);
+						updateProviderModelStatus(activeThreadId);
 					} catch (error) {
 						console.error('Failed to update LLM provider from configuration change:', error);
 						vscode.window.showErrorMessage(`Failed to update LLM provider: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -163,54 +242,83 @@ export function activate(context: vscode.ExtensionContext) {
 		)
 	);
 
+	// New summarize command using centralized LLMService
 	context.subscriptions.push(
 		vscode.commands.registerCommand('naruhodocs.summarizeDocument', async (documentUri: vscode.Uri) => {
-			await vscode.commands.executeCommand('naruhodocs.chatView.focus');
-			vscode.workspace.openTextDocument(documentUri).then(document => {
-				const sessionId = documentUri.toString();
-				const prompt = `Summarize this document.`;
-
-				// Ensure the thread exists and is active
-				if (!threadMap.has(sessionId)) {
-					threadMap.set(sessionId, { document, sessionId });
-					provider.createThread(sessionId, document.getText(), document.fileName);
-				}
-				provider.setActiveThread(sessionId);
-
-				// Send the prompt to the webview so main.js's sendMessage() handles it
-				provider.sendMessageToThread(sessionId, prompt);
+			const doc = await vscode.workspace.openTextDocument(documentUri);
+			const resp = await llmService.request({
+				type: 'summarize',
+				content: doc.getText(),
+				targetId: documentUri.toString(),
+				systemMessage: 'You produce concise technical summaries with key points and clarity.'
 			});
+			// Show summary in a new ephemeral document
+			const summaryDoc = await vscode.workspace.openTextDocument({
+				content: `# Summary of ${path.basename(doc.fileName)}\n\n${resp.content}`,
+				language: 'markdown'
+			});
+			await vscode.window.showTextDocument(summaryDoc, { preview: true });
 		})
 	);
 
+	// New translate command using LLMService
 	context.subscriptions.push(
 		vscode.commands.registerCommand('naruhodocs.translateDocument', async (documentUri: vscode.Uri) => {
+			const doc = await vscode.workspace.openTextDocument(documentUri);
 			const languages = [
-				{ label: 'Malay', value: 'ms' },
-				{ label: 'English', value: 'en' },
-				{ label: 'Chinese', value: 'zh' },
-				{ label: 'Japanese', value: 'ja' },
-				{ label: 'Korean', value: 'ko' },
-				{ label: 'Spanish', value: 'es' },
-				{ label: 'French', value: 'fr' },
-				{ label: 'German', value: 'de' },
-				{ label: 'Russian', value: 'ru' },
-				{ label: 'Arabic', value: 'ar' },
-				{ label: 'Hindi', value: 'hi' }
+				{ label: 'Malay', value: 'Malay' },
+				{ label: 'English', value: 'English' },
+				{ label: 'Chinese', value: 'Chinese' },
+				{ label: 'Japanese', value: 'Japanese' },
+				{ label: 'Korean', value: 'Korean' },
+				{ label: 'Spanish', value: 'Spanish' },
+				{ label: 'French', value: 'French' },
+				{ label: 'German', value: 'German' },
+				{ label: 'Russian', value: 'Russian' },
+				{ label: 'Arabic', value: 'Arabic' },
+				{ label: 'Hindi', value: 'Hindi' }
 			];
-			const picked = await vscode.window.showQuickPick(languages.map(l => l.label), {
-				placeHolder: 'Select a language to translate the document'
+			const picked = await vscode.window.showQuickPick(languages.map(l => l.label), { placeHolder: 'Select target language' });
+			if (!picked) { return; }
+			const resp = await llmService.request({
+				type: 'translate',
+				content: doc.getText(),
+				targetLanguage: picked,
+				systemMessage: 'You are a professional technical translator. Preserve code blocks and formatting.'
 			});
-			if (picked) {
-				const selected = languages.find(l => l.label === picked);
-				const response = await provider.sendMessageToThread(documentUri.toString(), `Translate this document to ${selected?.label}`);
-				// Show Yes/No buttons in the sidebar via webview message
-				provider.postMessage({
-					type: 'showSaveTranslationButtons',
-					translation: response,
-					sessionId: documentUri.toString()
-				});
+	// Show LLM stats command
+	context.subscriptions.push(
+		vscode.commands.registerCommand('naruhodocs.showLLMStats', async () => {
+			const stats = llmService.getStats();
+			const lines = [
+				`Day: ${stats.day}`,
+				`Requests: ${stats.requests}`,
+				`Estimated Tokens (in/out): ${stats.estimatedInputTokens}/${stats.estimatedOutputTokens}`,
+				'Per Task:'
+			];
+			for (const k of Object.keys(stats.perTask)) {
+				lines.push(`  - ${k}: ${stats.perTask[k as keyof typeof stats.perTask]}`);
 			}
+			vscode.window.showInformationMessage(lines.join('\n'), { modal: false });
+		})
+	);
+			// Open translation in a side-by-side editor
+			const translationDoc = await vscode.workspace.openTextDocument({
+				content: `# Translation (${picked}) of ${path.basename(doc.fileName)}\n\n${resp.content}`,
+				language: 'markdown'
+			});
+			await vscode.window.showTextDocument(translationDoc, { preview: true, viewColumn: vscode.ViewColumn.Beside });
+			// Provide save option via notification
+			vscode.window.showInformationMessage('Translation ready. Save as new file?', 'Save').then(async sel => {
+				if (sel === 'Save') {
+					const ws = vscode.workspace.workspaceFolders?.[0];
+					if (ws) {
+						const targetUri = vscode.Uri.joinPath(ws.uri, `${path.basename(doc.fileName).replace(/\.[^.]+$/, '')}.${picked.toLowerCase()}.md`);
+						await vscode.workspace.fs.writeFile(targetUri, Buffer.from(resp.content, 'utf8'));
+						vscode.window.showInformationMessage(`Saved translation to ${targetUri.fsPath}`);
+					}
+				}
+			});
 		})
 	);
 
@@ -218,6 +326,46 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('naruhodocs.start', () => {
 			vscode.window.showInformationMessage('NaruhoDocs started!');
 		}));
+
+	// Command to open / scaffold model config file
+	context.subscriptions.push(
+		vscode.commands.registerCommand('naruhodocs.openModelConfig', async () => {
+			try {
+				await modelConfigManager.scaffoldIfMissing();
+				const ws2 = vscode.workspace.workspaceFolders?.[0];
+				if (!ws2) { return; }
+				const file = vscode.Uri.joinPath(ws2.uri, '.naruhodocs', 'models.json');
+				await vscode.window.showTextDocument(file, { preview: false });
+			} catch (e) {
+				vscode.window.showErrorMessage('Failed to open model config: ' + (e instanceof Error ? e.message : String(e)));
+			}
+		})
+	);
+
+	// Command: add per-task override via QuickPick
+	context.subscriptions.push(
+		vscode.commands.registerCommand('naruhodocs.addModelTaskOverride', async () => {
+			try {
+				await modelConfigManager.scaffoldIfMissing();
+				await modelConfigManager.load();
+				const provider = await vscode.window.showQuickPick(['ootb','byok','local'], { placeHolder: 'Select provider' });
+				if (!provider) { return; }
+				const task = await vscode.window.showQuickPick([
+					'chat','summarize','read_files','analyze','translate','generate_doc','visualization_context'
+				], { placeHolder: 'Select task to override' });
+				if (!task) { return; }
+				const model = await vscode.window.showInputBox({ prompt: `Enter model name for ${provider}:${task}` });
+				if (!model) { return; }
+				await modelConfigManager.upsertTaskOverride(provider, task, model.trim());
+				await modelConfigManager.load();
+				llmService.clearAllSessions();
+				llmService.logEvent('model_task_override', { provider, task, model });
+				vscode.window.showInformationMessage(`Set ${provider}:${task} -> ${model}`);
+			} catch (e) {
+				vscode.window.showErrorMessage('Failed to set task override: ' + (e instanceof Error ? e.message : String(e)));
+			}
+		})
+	);
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand('naruhodocs.createFile', async () => {
@@ -229,12 +377,7 @@ export function activate(context: vscode.ExtensionContext) {
 		})
 	);
 
-	// Add new LLM provider commands
-	context.subscriptions.push(
-		vscode.commands.registerCommand('naruhodocs.configureLLM', async () => {
-			await showLLMConfigurationQuickPick(llmManager, provider);
-		})
-	);
+	// Removed configureLLM and selectLocalModel commands; model/provider selection now via settings + models.json.
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand('naruhodocs.testLLMConnection', async () => {
@@ -244,30 +387,6 @@ export function activate(context: vscode.ExtensionContext) {
 				vscode.window.showInformationMessage(`✅ ${provider?.name} connection successful`);
 			} else {
 				vscode.window.showErrorMessage(`❌ ${provider?.name || 'LLM'} connection failed`);
-			}
-		})
-	);
-
-	context.subscriptions.push(
-		vscode.commands.registerCommand('naruhodocs.selectLocalModel', async () => {
-			const currentProvider = llmManager.getCurrentProvider();
-			if (currentProvider instanceof LocalProvider) {
-				const models = await currentProvider.getAvailableModels();
-				if (models.length > 0) {
-					const selected = await vscode.window.showQuickPick(models, {
-						placeHolder: 'Select a model to use'
-					});
-					if (selected) {
-						const config = vscode.workspace.getConfiguration('naruhodocs');
-						await config.update('llm.localModel', selected, vscode.ConfigurationTarget.Global);
-						await llmManager.initializeFromConfig();
-						provider.updateLLMManager(llmManager);
-					}
-				} else {
-					vscode.window.showInformationMessage('No models found. Make sure your local LLM server is running.');
-				}
-			} else {
-				vscode.window.showInformationMessage('This command is only available when using local LLM provider.');
 			}
 		})
 	);
@@ -284,8 +403,66 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 				`.trim();
 				vscode.window.showInformationMessage(statusMessage);
 			} else {
-				vscode.window.showWarningMessage('No LLM provider configured. Run "Configure LLM Provider" command.');
+				vscode.window.showWarningMessage('No LLM provider configured. Set provider in settings or models.json.');
 			}
+		})
+	);
+
+	// Command to change provider (status bar click target)
+	context.subscriptions.push(
+		vscode.commands.registerCommand('naruhodocs.changeProvider', async () => {
+			const runPicker = async (): Promise<void> => {
+				try {
+					const config = vscode.workspace.getConfiguration('naruhodocs');
+					const current = config.get<string>('llm.provider','ootb');
+					const items: Array<{ label: string; value: string; description?: string }> = [
+						{ label: 'Out-of-the-box (Gemini)', value: 'ootb', description: 'Built-in, limited usage' },
+						{ label: 'Bring Your Own Key', value: 'byok', description: 'Use your own API key' },
+						{ label: 'Local (Ollama / compatible)', value: 'local', description: 'Local runtime models' },
+						{ label: '— Open model configuration (models.json)…', value: '__open_models__' }
+					];
+					const pick = await vscode.window.showQuickPick(
+						items.map(i => ({ label: i.label, description: i.description })),
+						{ placeHolder: 'Select LLM provider or open model configuration', ignoreFocusOut: true }
+					);
+					if (!pick) { return; }
+					const chosen = items.find(i => i.label === pick.label);
+					if (!chosen) { return; }
+					if (chosen.value === '__open_models__') {
+						try {
+							await modelConfigManager.scaffoldIfMissing();
+							const ws = vscode.workspace.workspaceFolders?.[0];
+							if (ws) {
+								const file = vscode.Uri.joinPath(ws.uri, '.naruhodocs', 'models.json');
+								await vscode.window.showTextDocument(file, { preview: false });
+							}
+						} catch (err) {
+							vscode.window.showErrorMessage('Failed to open model config: ' + (err instanceof Error ? err.message : String(err)));
+						}
+						// loop back to provider selection
+						setTimeout(() => { runPicker(); }, 50);
+						return;
+					}
+					if (chosen.value === current) {
+						vscode.window.showInformationMessage(`Provider already set to ${pick.label}.`);
+						return;
+					}
+					await config.update('llm.provider', chosen.value, vscode.ConfigurationTarget.Global);
+					if (chosen.value === 'byok') {
+						let key = config.get<string>('llm.apiKey') || '';
+						if (!key) {
+							key = await vscode.window.showInputBox({ prompt: 'Enter API key for BYOK provider', password: true }) || '';
+							if (key) {
+								await config.update('llm.apiKey', key, vscode.ConfigurationTarget.Global);
+							}
+						}
+					}
+					// Config change listener will handle reload & status bar update.
+				} catch (e) {
+					vscode.window.showErrorMessage('Failed to change provider: ' + (e instanceof Error ? e.message : String(e)));
+				}
+			};
+			runPicker();
 		})
 	);
 
@@ -372,17 +549,7 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 		})
 	);
 
-	// Initialize the general-purpose thread
-	const generalThreadId = 'naruhodocs-general-thread';
-	const generalThreadTitle = 'General Purpose';
-	if (!threadMap.has(generalThreadId)) {
-		const sysMessage = SystemMessages.GENERAL_PURPOSE;
-
-		threadMap.set(generalThreadId, { document: undefined as any, sessionId: generalThreadId });
-		provider.createThread(generalThreadId, sysMessage, generalThreadTitle);
-		activeThreadId = generalThreadId;
-		provider.setActiveThread(generalThreadId);
-	}
+    // (Removed early general thread creation; now happens after provider init)
 
 	// Markdownlint diagnostics
 	const markdownDiagnostics = vscode.languages.createDiagnosticCollection('naruhodocs-markdownlint');
@@ -486,180 +653,16 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 	}
 }
 
-async function showLLMConfigurationQuickPick(llmManager: LLMProviderManager, provider: ChatViewProvider) {
-	const items = [
-		{
-			label: '🚀 Out-of-the-Box',
-			description: 'Built-in Gemini with daily limits',
-			value: 'ootb'
-		},
-		{
-			label: '🔑 Bring Your Own Key',
-			description: 'Unlimited access with your API key',
-			value: 'byok'
-		},
-		{
-			label: '🏠 Local LLM',
-			description: 'Use local models (Ollama, LM Studio, etc.)',
-			value: 'local'
-		}
-	];
-
-	const selected = await vscode.window.showQuickPick(items, {
-		placeHolder: 'Choose your LLM provider'
-	});
-
-	if (selected) {
-		const config = vscode.workspace.getConfiguration('naruhodocs');
-		await config.update('llm.provider', selected.value, vscode.ConfigurationTarget.Global);
-
-		if (selected.value === 'byok') {
-			const apiKey = await vscode.window.showInputBox({
-				prompt: 'Enter your Google Gemini API key',
-				password: true
-			});
-			if (apiKey) {
-				await config.update('llm.apiKey', apiKey, vscode.ConfigurationTarget.Global);
-			}
-		} else if (selected.value === 'local') {
-			await configureLocalLLM(config);
-		}
-
-		// Reinitialize with new settings
-		await llmManager.initializeFromConfig();
-		
-		// Update the existing ChatViewProvider with the new manager
-		provider.updateLLMManager(llmManager);
-		
-		vscode.window.showInformationMessage(`LLM provider updated to: ${selected.label}`);
-	}
-}
-
-async function configureLocalLLM(config: vscode.WorkspaceConfiguration) {
-	const backendItems = [
-		{
-			label: '🦙 Ollama',
-			description: 'Easy model management (Recommended)',
-			value: 'ollama',
-			defaultUrl: 'http://localhost:11434',
-			defaultModel: 'llama3.1:8b'
-		},
-		{
-			label: '🎮 LM Studio',
-			description: 'User-friendly GUI interface',
-			value: 'lmstudio',
-			defaultUrl: 'http://localhost:1234',
-			defaultModel: 'local-model'
-		},
-		{
-			label: '⚡ llama.cpp',
-			description: 'Lightweight C++ implementation',
-			value: 'llamacpp',
-			defaultUrl: 'http://localhost:8080',
-			defaultModel: 'model'
-		},
-		{
-			label: '🌐 Text Generation WebUI',
-			description: 'Advanced web interface',
-			value: 'textgen',
-			defaultUrl: 'http://localhost:5000',
-			defaultModel: 'model'
-		},
-		{
-			label: '🔧 Custom',
-			description: 'Custom API endpoint',
-			value: 'custom',
-			defaultUrl: 'http://localhost:8080',
-			defaultModel: 'model'
-		}
-	];
-
-	const selectedBackend = await vscode.window.showQuickPick(backendItems, {
-		placeHolder: 'Choose your local LLM backend'
-	});
-
-	if (selectedBackend) {
-		await config.update('llm.localBackend', selectedBackend.value, vscode.ConfigurationTarget.Global);
-		
-		// Ask for custom URL if needed
-		const customUrl = await vscode.window.showInputBox({
-			prompt: `Enter the URL for ${selectedBackend.label}`,
-			value: selectedBackend.defaultUrl,
-			validateInput: (value) => {
-				try {
-					new URL(value);
-					return null;
-				} catch {
-					return 'Please enter a valid URL';
-				}
-			}
-		});
-
-		if (customUrl) {
-			await config.update('llm.localUrl', customUrl, vscode.ConfigurationTarget.Global);
-		}
-
-		// Ask for model name
-		const modelName = await vscode.window.showInputBox({
-			prompt: `Enter the model name for ${selectedBackend.label}`,
-			value: selectedBackend.defaultModel,
-			placeHolder: 'e.g., llama3.1:8b, codellama:7b'
-		});
-
-		if (modelName) {
-			await config.update('llm.localModel', modelName, vscode.ConfigurationTarget.Global);
-		}
-
-		// Show setup instructions
-		showLocalLLMSetupInstructions(selectedBackend.value);
-	}
-}
-
-function showLocalLLMSetupInstructions(backend: string) {
-	const instructions: Record<string, string> = {
-		ollama: `
-To set up Ollama:
-1. Download from: https://ollama.ai
-2. Install and run: ollama pull llama3.1:8b
-3. The API will be available at http://localhost:11434
-		`,
-		lmstudio: `
-To set up LM Studio:
-1. Download from: https://lmstudio.ai
-2. Download a model in the app
-3. Start the local server (usually on port 1234)
-		`,
-		llamacpp: `
-To set up llama.cpp:
-1. Build from: https://github.com/ggerganov/llama.cpp
-2. Run: ./server -m model.gguf --port 8080
-3. API will be available at http://localhost:8080
-		`,
-		textgen: `
-To set up Text Generation WebUI:
-1. Clone: https://github.com/oobabooga/text-generation-webui
-2. Install and run with --api flag
-3. API will be available at http://localhost:5000
-		`,
-		custom: `
-For custom setup:
-1. Ensure your API is OpenAI-compatible
-2. Use the correct base URL and model name
-3. Test the connection using the "Test LLM Connection" command
-		`
-	};
-
-	const instruction = instructions[backend] || instructions.custom;
-	
-	vscode.window.showInformationMessage(
-		`${backend.charAt(0).toUpperCase() + backend.slice(1)} Setup Instructions`,
-		'Show Details'
-	).then(selection => {
-		if (selection === 'Show Details') {
-			vscode.window.showInformationMessage(instruction.trim());
-		}
-	});
-}
+// Removed legacy interactive configuration helpers (showLLMConfigurationQuickPick, configureLocalLLM, showLocalLLMSetupInstructions).
 
 // This method is called when your extension is deactivated
-export function deactivate() { }
+export async function deactivate() {
+	try {
+		const existing = (LLMService as any).instance as LLMService | undefined;
+		if (existing) {
+			await existing.saveState();
+		}
+	} catch (e) {
+		console.warn('Failed to persist LLMService state on deactivate', e);
+	}
+}

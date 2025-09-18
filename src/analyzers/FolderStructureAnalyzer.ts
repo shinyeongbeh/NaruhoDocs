@@ -1,8 +1,8 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { ChatSession } from '../langchain-backend/llm';
 import { LLMProviderManager } from '../llm-providers/manager';
+import { LLMService } from '../managers/LLMService';
 
 export interface FolderNode {
     name: string;
@@ -29,10 +29,14 @@ export interface FolderStructureAnalysis {
 }
 
 export class FolderStructureAnalyzer {
-    private llmSession?: ChatSession;
+    private llmService: LLMService;
+    private sessionId = 'analyzer:folder-structure';
+    private systemMessageText = '';
     private analysisContext: Map<string, any> = new Map();
     
-    constructor(private llmManager: LLMProviderManager) {}
+    constructor(private llmManager: LLMProviderManager) {
+        this.llmService = LLMService.getOrCreate(llmManager);
+    }
 
     public async analyzeFolderStructure(): Promise<FolderStructureAnalysis | null> {
         try {
@@ -70,7 +74,7 @@ export class FolderStructureAnalyzer {
     }
 
     private async initializeAISession(): Promise<void> {
-        const systemMessage = `You are an expert software architect and project organization specialist. You analyze folder structures to understand project organization patterns, identify best practices, and suggest improvements. Focus on:
+    const systemMessage = `You are an expert software architect and project organization specialist. You analyze folder structures to understand project organization patterns, identify best practices, and suggest improvements. Focus on:
 
 1. **Organization Patterns**: Identify architectural patterns (MVC, layered, feature-based, etc.)
 2. **Naming Conventions**: Analyze folder and file naming patterns
@@ -79,22 +83,8 @@ export class FolderStructureAnalyzer {
 5. **Improvement Suggestions**: Suggest better organization if needed
 
 Provide concise, actionable insights about project structure and organization.`;
-
-        if (this.llmManager.getCurrentProvider) {
-            const provider = this.llmManager.getCurrentProvider();
-            if (provider) {
-                this.llmSession = await provider.createChatSession(systemMessage);
-                return;
-            }
-        }
-        
-        // Fallback - try to create session directly
-        const { createChat } = require('../langchain-backend/llm');
-        this.llmSession = createChat({ 
-            systemMessage,
-            maxHistoryMessages: 30,
-            temperature: 0.1 
-        });
+    this.systemMessageText = systemMessage;
+    await this.llmService.getSession(this.sessionId, systemMessage, { taskType: 'analyze', temperatureOverride: 0.1, forceNew: true });
     }
 
     private async scanFolderStructure(rootPath: string, rootName: string): Promise<FolderNode> {
@@ -169,7 +159,7 @@ Provide concise, actionable insights about project structure and organization.`;
     }
 
     private async analyzeOrganizationPatterns(structure: FolderNode): Promise<FolderStructureAnalysis['insights']> {
-        if (!this.llmSession) {
+        if (!this.systemMessageText) {
             return this.getFallbackInsights();
         }
 
@@ -191,7 +181,7 @@ Please analyze and provide insights in JSON format:
 
 Focus on practical insights about project organization and structure.`;
 
-            const response = await this.llmSession.chat(prompt);
+            const response = await this.llmService.trackedChat({ sessionId: this.sessionId, systemMessage: this.systemMessageText, prompt, task: 'analyze' });
             
             try {
                 // Extract JSON from response
@@ -259,7 +249,7 @@ Focus on practical insights about project organization and structure.`;
     }
 
     private async generateIntelligentMermaidDiagram(structure: FolderNode, insights: FolderStructureAnalysis['insights']): Promise<string> {
-        if (!this.llmSession) {
+        if (!this.systemMessageText) {
             return this.generateBasicMermaidDiagram(structure);
         }
 
@@ -279,7 +269,7 @@ Create a Mermaid flowchart that:
 
 Return only the Mermaid code starting with "graph TD" or "graph LR".`;
 
-            const response = await this.llmSession.chat(prompt);
+            const response = await this.llmService.trackedChat({ sessionId: this.sessionId, systemMessage: this.systemMessageText, prompt, task: 'analyze' });
             
             // Extract mermaid code from response
             const mermaidMatch = response.match(/graph\s+(TD|LR|TB|RL)[\s\S]*?(?=\n\n|\n$|$)/i);

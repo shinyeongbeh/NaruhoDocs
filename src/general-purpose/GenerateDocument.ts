@@ -124,7 +124,7 @@ export async function generateDocument(llmService: LLMService, data: { docType: 
 }
 async function suggestFilename(docType: string, llmService: LLMService): Promise<string> {
   let aiFilename = '';
-  console.log('[NaruhoDocs][DEBUG] Attempting AI filename suggestion for docType:', docType);
+  // Attempting AI filename suggestion for docType: ${docType}
   try {
     aiFilename = await llmService.trackedChat({
       sessionId: 'chatview:filename-suggest',

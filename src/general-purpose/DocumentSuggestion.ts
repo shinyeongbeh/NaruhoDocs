@@ -23,13 +23,13 @@ export class DocumentSuggestion {
   async getAISuggestions(llmService: LLMService, filesAndContents: { path: string; content: string }[]): Promise<Array<{ displayName: string; fileName: string; description?: string }>> {
     // If there's already an ongoing call, wait for it and return its result
     if (this.ongoingSuggestionPromise) {
-      console.log('Waiting for ongoing suggestion call...');
+      // Waiting for ongoing suggestion call
       return await this.ongoingSuggestionPromise;
     }
 
     // Increment call ID to track this specific call
     const currentCallId = ++this.suggestionCallId;
-    console.log('Starting new suggestion call ID:', currentCallId);
+  // Starting new suggestion call ID
 
     // Create and store the promise for this call
     this.ongoingSuggestionPromise = this.performAISuggestion(llmService, filesAndContents, currentCallId);
@@ -68,7 +68,7 @@ export class DocumentSuggestion {
       });
       const match = llmResponse.match(/\[.*\]/s);
       if (match) {
-        console.log('JSON	found: ', match);
+        // JSON array found in response
         const suggestions = JSON.parse(match[0]);
         const filteredSuggestions = Array.isArray(suggestions)
           ? suggestions.filter(s => s.displayName && s.fileName && s.fileName.endsWith('.md'))
@@ -77,13 +77,13 @@ export class DocumentSuggestion {
         // Always update with the latest successful suggestions
         if (filteredSuggestions.length > 0) {
           this.lastNonEmptySuggestions = filteredSuggestions;
-          console.log('Updated lastNonEmptySuggestions:', filteredSuggestions.length, 'items');
+          // Updated lastNonEmptySuggestions
         }
 
         // Return the current suggestions or last known good ones
         return filteredSuggestions.length > 0 ? filteredSuggestions : this.lastNonEmptySuggestions;
       } else {
-        console.log('No JSON array found in LLM response');
+        // No JSON array found in LLM response
       }
     } catch (e) {
       console.warn('LLM suggestion failed:', e, llmResponse);

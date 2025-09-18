@@ -39,12 +39,22 @@ export class LLMProviderManager {
 
             await provider.initialize(options);
 
-            this.currentProvider = provider;
-            
-            vscode.window.showInformationMessage(
-                `NaruhoDocs: ${provider.name} provider initialized successfully`
-            );
-            console.log(`LLMProviderManager: Initialized ${provider.name}`);
+            // Local model availability validation (best-effort)
+            if (providerType === 'local') {
+                try {
+                    const local = provider as any;
+                    if (local.getAvailableModels) {
+                        const models: string[] = await local.getAvailableModels();
+                        const requested = options.model;
+                        if (requested && models.length && !models.includes(requested)) {
+                            vscode.window.showWarningMessage(`Local model '${requested}' not found in available models (${models.slice(0,10).join(', ')}). Pull or adjust models.json.`);
+                        }
+                    }
+                } catch {/* ignore */}
+            }
+
+            this.currentProvider = provider; // Silent success (status bar will reflect provider)
+            // Removed toast notification for provider initialization.
         } catch (error) {
             if (error instanceof LLMProviderError) {
                 this.handleProviderError(error, providerType);
@@ -54,12 +64,11 @@ export class LLMProviderManager {
         }
     }
 
-    async createChatSession(systemMessage: string): Promise<ChatSession> {
+    async createChatSession(systemMessage: string, options?: { temperature?: number; model?: string }): Promise<ChatSession> {
         if (!this.currentProvider) {
             throw new Error('No LLM provider initialized');
         }
-
-        return this.currentProvider.createChatSession(systemMessage);
+        return this.currentProvider.createChatSession(systemMessage, options);
     }
 
     async testConnection(): Promise<boolean> {
@@ -140,7 +149,7 @@ Local LLM Setup Guide:
 
 1. Ollama (Recommended):
    - Download: https://ollama.ai
-   - Run: ollama pull llama3.1:8b
+   - Run: ollama pull gemma3:1b
 
 2. LM Studio:
    - Download: https://lmstudio.ai

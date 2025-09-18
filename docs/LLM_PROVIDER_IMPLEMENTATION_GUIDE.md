@@ -1043,7 +1043,7 @@ public createThread(sessionId: string, initialContext: string, title: string) {
 ### **1. Ollama (Recommended for Beginners)**
 - **Pros**: Easy installation, automatic model management, built-in API
 - **Cons**: Limited advanced configuration options
-- **Setup**: `ollama pull llama3.1:8b` → Ready to use
+- **Setup**: `ollama pull gemma3:1b` → Ready to use
 - **API**: Native Ollama API format
 - **Default Port**: 11434
 

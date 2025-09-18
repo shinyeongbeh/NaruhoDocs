@@ -44,7 +44,7 @@ export function createChat(opts: CreateChatOptions = {}): ChatSession {
   // Define tools using LangGraph.js
   const retrieveFilenames = tool(
     async () => {
-      console.log('Tool used: retrieveFilenames');
+  // Tool used: retrieveFilenames
       const toolInstance = new RetrieveWorkspaceFilenamesTool();
       return await toolInstance._call();
     },
@@ -56,7 +56,7 @@ export function createChat(opts: CreateChatOptions = {}): ChatSession {
 
   const retrieveFileContent = tool(
     async ({ filePath }) => {
-      console.log(`Tool used: retrieveFileContent with filePath=${filePath}`);
+  // Tool used: retrieveFileContent with filePath=${filePath}
       const toolInstance = new RetrieveFileContentTool();
       return await toolInstance._call(filePath);
     },
@@ -101,7 +101,7 @@ export function createChat(opts: CreateChatOptions = {}): ChatSession {
       if (typeof lastMessage.content === 'string') {
         aiText = lastMessage.content;
       } else if (Array.isArray(lastMessage.content)) {
-        aiText = lastMessage.content.map(c =>
+  aiText = lastMessage.content.map((c: any) =>
           typeof c === 'string' ? c : JSON.stringify(c)
         ).join(' ');
       } else {

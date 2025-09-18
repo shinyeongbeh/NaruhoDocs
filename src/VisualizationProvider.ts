@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { LLMProviderManager } from './llm-providers/manager';
+import { LLMService } from './managers/LLMService';
 import { ProjectAnalyzer } from './analyzers/ProjectAnalyzer';
 import { DocumentAnalyzer } from './analyzers/DocumentAnalyzer';
 import { ArchitectureAnalyzer } from './analyzers/ArchitectureAnalyzer';
@@ -48,6 +49,8 @@ export class VisualizationProvider {
         }
     ];
 
+    private llmService: LLMService;
+
     constructor(
         private readonly context: vscode.ExtensionContext,
         private readonly llmManager: LLMProviderManager
@@ -55,6 +58,7 @@ export class VisualizationProvider {
         this.projectAnalyzer = new ProjectAnalyzer();
         this.documentAnalyzer = new DocumentAnalyzer();
         this.d3TreeRenderer = new D3TreeRenderer();
+        this.llmService = LLMService.getOrCreate(this.llmManager);
     }
 
     public setChatProvider(chatProvider: any): void {
@@ -245,14 +249,25 @@ export class VisualizationProvider {
 
         // IMPORTANT: Also add detailed analysis to the AI's conversation history
         this.addVisualizationToAIHistory(result);
+        // Emit a tracked visualization_context log entry (fire & forget)
+        void (async () => {
+            try {
+                const contextSnippet = result.content.slice(0, 2000);
+                await this.llmService.request({
+                    type: 'visualization_context',
+                    sessionId: 'naruhodocs-general-thread',
+                    contextType: result.title,
+                    userPrompt: `Generate visualization: ${result.title}`,
+                    botResponse: contextSnippet,
+                    systemMessage: 'You are a helpful assistant with project visualization context.'
+                });
+            } catch {/* ignore logging failures */}
+        })();
     }
 
     private addVisualizationToAIHistory(result: VisualizationResult): void {
         try {
-            console.log('=== ADDING VISUALIZATION TO AI HISTORY ===\n' +
-                `Visualization Title: ${result.title}\n` +
-                `Chart Provider Available: ${!!this.chatProvider}\n` +
-                '==========================================');
+            // Adding visualization to AI history
             
             // Get the chat provider to add context
             if (!this.chatProvider) {
@@ -292,7 +307,7 @@ You can ask me questions about specific components, relationships, patterns, or 
             // Add this exchange to the session history using the ChatViewProvider method
             (this.chatProvider as any).addContextToActiveSession(userMessage, botResponse);
             
-            console.log('Successfully added visualization context to AI history');
+            // Visualization context added to AI history
             
         } catch (error) {
             console.error('Error adding visualization to AI history:', error);
@@ -624,31 +639,23 @@ You can ask me questions about any aspect of the project, request explanations o
 
             // Fallback to basic file analysis
             const analysis = await this.projectAnalyzer.analyzeProject();
-            
-            // Try to get LLM analysis for user's project
-            try {
-                // Simple fallback approach since LLM integration is complex
-                console.log('Analyzing user project:', projectName);
-            } catch (llmError) {
-                console.log('LLM analysis failed, using fallback:', llmError);
-            }
 
-            // Create architecture based on user's project analysis
             const fileTypeStats = Array.from(analysis.fileTypes.entries())
-                .filter(([ext, count]) => count > 0)
+                .filter(([ , count]) => count > 0)
+                .slice(0, 6)
                 .map(([ext, count]) => `${ext}: ${count}`)
                 .join(', ');
 
             const content = `graph TD
-    User[👤 User] --> Project[� ${projectName}]
+    User[👤 User] --> Project[${projectName}]
     
     Project --> Files[📁 File Structure]
-    Files --> TotalFiles["� ${analysis.totalFiles} Total Files"]
-    Files --> FileTypes["� Types: ${fileTypeStats}"]
+    Files --> TotalFiles["📄 ${analysis.totalFiles} Total Files"]
+    Files --> FileTypes["📊 Types: ${fileTypeStats}"]
     
-    Project --> Analysis[� Analysis Results]
+    Project --> Analysis[🧠 Analysis Results]
     Analysis --> Analyzed["✅ ${analysis.totalFiles} Files Analyzed"]
-    Analysis --> Structure["�️ Project Structure Mapped"]
+    Analysis --> Structure["🗂️ Project Structure Mapped"]
     
     ${this.generateFileTypeNodes(analysis.fileTypes)}
     
