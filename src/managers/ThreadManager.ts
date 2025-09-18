@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { createChat, ChatSession } from '../langchain-backend/llm';
 import { SystemMessages } from '../SystemMessages';
 import { LLMProviderManager } from '../llm-providers/manager';
+import { LLMService } from './LLMService';
 
 export class ThreadManager {
     private sessions: Map<string, ChatSession> = new Map();
@@ -15,6 +16,11 @@ export class ThreadManager {
         private onThreadListChange?: () => void
     ) {}
 
+    private get llmService(): LLMService | undefined {
+        if (!this.llmManager) { return undefined; }
+        return LLMService.getOrCreate(this.llmManager);
+    }
+
     // Initialize the general-purpose thread
     public async initializeGeneralThread(): Promise<void> {
         await this.llmManager?.initializeFromConfig();
@@ -23,28 +29,23 @@ export class ThreadManager {
         const sysMessage = SystemMessages.GENERAL_PURPOSE;
 
         // Use LLM manager if available, fallback to direct createChat
-        if (this.llmManager) {
+        if (this.llmService) {
             try {
-                const session = await this.llmManager.createChatSession(sysMessage);
+                const session = await this.llmService.getSession(generalThreadId, sysMessage, { taskType: 'chat' });
                 this.sessions.set(generalThreadId, session);
                 this.threadTitles.set(generalThreadId, generalThreadTitle);
                 this.activeThreadId = generalThreadId;
-                console.log('General thread initialized with LLM manager');
+                // General thread initialized via LLMService
+                return;
             } catch (error) {
-                console.error('Failed to create general chat session:', error);
-                // Fallback to direct method (using .env Gemini api, not following llmManager)
-                const session = createChat({ apiKey: this.apiKey, maxHistoryMessages: 40, systemMessage: sysMessage });
-                this.sessions.set(generalThreadId, session);
-                this.threadTitles.set(generalThreadId, generalThreadTitle);
-                this.activeThreadId = generalThreadId;
+                console.error('LLMService general thread creation failed, falling back:', error);
             }
-        } else {
-            // Fallback to direct method (using .env Gemini api, not following llmManager)
-            const session = createChat({ apiKey: this.apiKey, maxHistoryMessages: 40, systemMessage: sysMessage });
-            this.sessions.set(generalThreadId, session);
-            this.threadTitles.set(generalThreadId, generalThreadTitle);
-            this.activeThreadId = generalThreadId;
         }
+        // Fallback direct
+        const fallbackSession = createChat({ apiKey: this.apiKey, maxHistoryMessages: 40, systemMessage: sysMessage });
+        this.sessions.set(generalThreadId, fallbackSession);
+        this.threadTitles.set(generalThreadId, generalThreadTitle);
+        this.activeThreadId = generalThreadId;
     }
 
     // Create a new thread/session for a document
@@ -55,17 +56,16 @@ export class ThreadManager {
             const savedHistory = this.context.workspaceState.get<any[]>(`thread-history-${sessionId}`);
             
             // Use the LLM manager instead of direct createChat
-            if (this.llmManager) {
-                this.llmManager.createChatSession(sysMessage).then(session => {
+            if (this.llmService) {
+                this.llmService.getSession(sessionId, sysMessage, { taskType: 'chat' }).then(session => {
                     if (savedHistory && Array.isArray(savedHistory)) {
                         session.setHistory(savedHistory);
                     }
                     this.sessions.set(sessionId, session);
                     this.threadTitles.set(sessionId, title);
                     this.onThreadListChange?.();
-                }).catch(error => {
-                    console.error('Failed to create chat session:', error);
-                    // Fallback to existing method for backward compatibility (using .env Gemini api, not following llmManager)
+                }).catch(err => {
+                    console.error('LLMService session creation failed, fallback:', err);
                     const session = createChat({ apiKey: this.apiKey, maxHistoryMessages: 40, systemMessage: sysMessage });
                     if (savedHistory && Array.isArray(savedHistory)) {
                         session.setHistory(savedHistory);
@@ -75,7 +75,6 @@ export class ThreadManager {
                     this.onThreadListChange?.();
                 });
             } else {
-                // Fallback to existing method for backward compatibility (using .env Gemini api, not following llmManager)
                 const session = createChat({ apiKey: this.apiKey, maxHistoryMessages: 40, systemMessage: sysMessage });
                 if (savedHistory && Array.isArray(savedHistory)) {
                     session.setHistory(savedHistory);

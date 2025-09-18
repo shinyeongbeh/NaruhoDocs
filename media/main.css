@@ -447,11 +447,27 @@ html {
 	justify-content: center;
 	background: none;
 	color: #b0b0b0;
-	font-style: italic;
-	padding: 6px 12px;
-	font-size: 0.9em;
-	margin-bottom: 1px;
+	/* removed italics per updated design */
+	font-style: normal;
+	padding: 4px 0;
+	font-size: 0.85em;
+	margin: 4px 0;
+	position: relative;
+	text-align: center;
 }
+
+/* Horizontal divider effect around system messages (non-intrusive) */
+.message.system::before,
+.message.system::after {
+	content: '';
+	flex: 1 1;
+	height: 1px;
+	background: currentColor; /* solid line matching text color */
+	margin: 0 8px;
+}
+
+/* Ensure long system text wraps nicely */
+.message.system > * { flex: 0 0 auto; }
 
 .chat-input-container {
 	display: flex;

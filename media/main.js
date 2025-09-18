@@ -4,6 +4,12 @@
 // It cannot access the main VS Code APIs directly.
 
 (function () {
+    /** @type {string | undefined} */
+    let activeThreadId = undefined;
+    /** @type {Array<any>} */
+    let threads = [];
+    /** @type {Record<string, 'beginner' | 'developer'>} */
+    let threadModes = {};
     // Global declarations for libraries loaded via script tags
     // @ts-ignore: mermaid is loaded as a global script
     const mermaidLib = window.mermaid;
@@ -18,10 +24,7 @@
     const threadListMenu = document.getElementById('thread-list-menu');
     const currentDocName = document.getElementById('current-doc-name');
 
-    let activeThreadId = undefined;
-    let threads = [];
-    // Store mode for each thread: 'beginner' or 'developer'
-    let threadModes = {};
+    // (Variables moved above with explicit JSDoc typings)
 
     const oldState = vscode.getState() || {};
 
@@ -138,8 +141,8 @@
 
     function renderThreadListMenu() {
         // Sync backend mode on tab switch (if not general thread)
-        if (activeThreadId && activeThreadId !== 'naruhodocs-general-thread') {
-            let mode = threadModes[activeThreadId] || 'developer';
+        if (typeof activeThreadId === 'string' && activeThreadId !== 'naruhodocs-general-thread') {
+            const mode = threadModes[activeThreadId] || 'developer';
             if (mode === 'beginner') {
                 vscode.postMessage({ type: 'setThreadBeginnerMode', sessionId: activeThreadId });
             } else {
@@ -174,7 +177,7 @@
                 chatInputContainer.parentElement.insertBefore(chatModeButtons, chatInputContainer);
             }
         }
-        if (activeThreadId !== 'naruhodocs-general-thread') {
+    if (typeof activeThreadId === 'string' && activeThreadId !== 'naruhodocs-general-thread') {
             chatModeButtons.innerHTML = '';
             // Create custom slide switch for mode selection
             const switchLabel = document.createElement('label');
@@ -184,7 +187,7 @@
             const switchInput = document.createElement('input');
             switchInput.type = 'checkbox';
             switchInput.className = 'switch-checkbox';
-            let mode = threadModes[activeThreadId] || 'developer';
+            const mode = threadModes[activeThreadId] || 'developer';
             switchInput.checked = (mode === 'beginner');
             switchInput.style.display = 'none';
 
@@ -204,7 +207,9 @@
             // Click slider to toggle
             sliderSpan.addEventListener('click', () => {
                 switchInput.checked = !switchInput.checked;
-                threadModes[activeThreadId] = switchInput.checked ? 'beginner' : 'developer';
+                if (typeof activeThreadId === 'string') {
+                    threadModes[activeThreadId] = switchInput.checked ? 'beginner' : 'developer';
+                }
                 persistState();
                 updateSwitchUI();
                 if (switchInput.checked) {
@@ -338,6 +343,7 @@
             vscode.postMessage({ type: 'scanDocs' });
 
             // Listen for aiSuggestedDocs and replace loading with real choices
+            /** @param {MessageEvent} event */
             function handleAISuggestedDocs(event) {
                 const message = event.data;
                 if (message.type === 'aiSuggestedDocs') {
@@ -350,10 +356,10 @@
                     box.appendChild(title);
                     // Filter AI suggestions using existingFiles
                     const existingFiles = Array.isArray(message.existingFiles) ? message.existingFiles : [];
-                    const filteredSuggestions = message.suggestions.filter(s =>
+                    const filteredSuggestions = message.suggestions.filter((/** @type {any} */ s) =>
                         s.fileName && !existingFiles.includes(s.fileName.toLowerCase())
                     );
-                    filteredSuggestions.forEach(suggestion => {
+                    filteredSuggestions.forEach((/** @type {any} */ suggestion) => {
                         const btn = document.createElement('button');
                         btn.textContent = suggestion.displayName;
                         btn.title = suggestion.description || '';
@@ -378,10 +384,11 @@
             window.addEventListener('message', handleAISuggestedDocs);
         }
 
-        function showCustomDocPrompt(modal) {
+    /** @param {HTMLElement} modal */
+    function showCustomDocPrompt(modal) {
             // Remove previous prompt if any
             let oldPrompt = document.getElementById('custom-doc-prompt');
-            if (oldPrompt) oldPrompt.remove();
+            if (oldPrompt) { oldPrompt.remove(); }
 
             const promptBox = document.createElement('div');
             promptBox.id = 'custom-doc-prompt';
@@ -407,7 +414,8 @@
             });
             promptBox.appendChild(submitBtn);
 
-            modal.querySelector('div').appendChild(promptBox);
+            const innerDiv = modal.querySelector('div');
+            if (innerDiv) { innerDiv.appendChild(promptBox); }
         }
         const suggestTemplateBtn = document.getElementById('suggest-template-btn');
         if (suggestTemplateBtn) {
@@ -435,7 +443,7 @@
         // Modal for template selection (uses AI suggestions and filters out existing docs)
         function showTemplateSelectionModal() {
             let oldModal = document.getElementById('doc-type-modal');
-            if (oldModal) oldModal.remove();
+            if (oldModal) { oldModal.remove(); }
 
             const modal = document.createElement('div');
             modal.id = 'doc-type-modal';
@@ -463,6 +471,7 @@
             document.body.appendChild(modal);
 
             // Listen for aiSuggestedDocs and replace loading with real choices
+            /** @param {any} event */
             function handleAISuggestedDocs(event) {
                 const message = event.data;
                 if (message.type === 'aiSuggestedDocs') {
@@ -475,10 +484,10 @@
                     box.appendChild(title);
                     // Filter AI suggestions using existingFiles
                     const existingFiles = Array.isArray(message.existingFiles) ? message.existingFiles : [];
-                    const filteredSuggestions = message.suggestions.filter(s =>
+                    const filteredSuggestions = message.suggestions.filter((/** @type {any} */ s) =>
                         s.fileName && !existingFiles.includes(s.fileName.toLowerCase())
                     );
-                    filteredSuggestions.forEach(suggestion => {
+                    filteredSuggestions.forEach((/** @type {any} */ suggestion) => {
                         const btn = document.createElement('button');
                         btn.textContent = suggestion.displayName;
                         btn.title = suggestion.description || '';
@@ -502,9 +511,10 @@
             window.addEventListener('message', handleAISuggestedDocs);
         }
 
-        function showCustomTemplatePrompt(modal) {
+    /** @param {any} modal */
+    function showCustomTemplatePrompt(modal) {
             let oldPrompt = document.getElementById('custom-doc-prompt');
-            if (oldPrompt) oldPrompt.remove();
+            if (oldPrompt) { oldPrompt.remove(); }
 
             const promptBox = document.createElement('div');
             promptBox.id = 'custom-doc-prompt';
@@ -525,7 +535,7 @@
                     const templateType = input.value.trim();
                     addMessage('You', `Generate a ${templateType} template.`);
                     vscode.postMessage({ type: 'sendMessage', value: `Generate a ${templateType} template.` });
-                    if (modal) modal.remove();
+                    if (modal) { modal.remove(); }
                 }
             });
             promptBox.appendChild(submitBtn);
@@ -577,6 +587,7 @@
         if (chatMessages) { chatMessages.innerHTML = ''; }
     }
 
+    /** @param {any} history */
     function showHistory(history) {
         clearMessages();
         if (Array.isArray(history)) {
@@ -600,6 +611,7 @@
         persistState();
     }
 
+    /** @param {boolean} visible */
     function toggleGeneralTabUI(visible) {
         const generalTabUI = document.getElementById('general-tab-ui');
         if (generalTabUI) {
@@ -664,6 +676,7 @@
     }
 
     // Function to open diagram in enlarged modal - request VS Code to open full window
+    /** @param {any} mermaidCode @param {string} diagramId */
     function openDiagramModal(mermaidCode, diagramId) {
         // Send message to VS Code extension to open full window modal
         if (typeof vscode !== 'undefined') {
@@ -680,6 +693,7 @@
     }
 
     // Fallback modal for when VS Code API is not available
+    /** @param {any} mermaidCode @param {string} diagramId */
     function openFallbackModal(mermaidCode, diagramId) {
         // Remove any existing modal
         const existingModal = document.getElementById('diagram-modal');
@@ -782,7 +796,7 @@
         // Render the enlarged diagram
         if (typeof mermaidLib !== 'undefined') {
             mermaidLib.render(`${diagramId}-modal`, mermaidCode)
-                .then(({ svg }) => {
+                .then((/** @type {{svg: string}} */ { svg }) => {
                     diagramContainer.innerHTML = svg;
                     const svgElement = diagramContainer.querySelector('svg');
                     if (svgElement) {
@@ -796,7 +810,8 @@
                         // Set up zoom functionality
                         let currentZoom = 1;
                         const zoomStep = 0.2;
-
+                        
+                        /** @param {number} newZoom */
                         function updateZoom(newZoom) {
                             currentZoom = Math.max(0.5, Math.min(3, newZoom));
                             if (svgElement) {
@@ -824,7 +839,7 @@
                         };
                     }
                 })
-                .catch(error => {
+                .catch((/** @type {any} */ error) => {
                     diagramContainer.innerHTML = `<p style="color: var(--vscode-errorForeground); padding: 20px;">Failed to render diagram: ${error.message}</p>`;
                 });
         }
@@ -842,7 +857,8 @@
         };
 
         // Keyboard shortcuts
-        function handleKeyDown(e) {
+    /** @param {KeyboardEvent} e */
+    function handleKeyDown(e) {
             if (e.key === 'Escape') {
                 closeModal();
             } else if (e.key === '+' || e.key === '=') {
@@ -864,6 +880,7 @@
     }
 
     // Function to create modal buttons
+    /** @param {string} text @param {string} title */
     function createModalButton(text, title) {
         const button = document.createElement('button');
         button.textContent = text;
@@ -889,6 +906,7 @@
     }
 
     // Function to export diagram as SVG or PNG
+    /** @param {SVGSVGElement} svgElement @param {string} diagramId */
     function exportDiagram(svgElement, diagramId) {
         try {
             // Clone the SVG to avoid modifying the original
@@ -926,6 +944,7 @@
     }
 
     // Function to show toast notifications
+    /** @param {string} message @param {'info'|'error'|'success'} [type='info'] */
     function showToast(message, type = 'info') {
         const toast = document.createElement('div');
         toast.style.cssText = `
@@ -952,18 +971,29 @@
         }, 3000);
     }
 
+    /** @param {string} sender @param {string} message */
     function addMessage(sender, message) {
         if (chatMessages) {
             const messageElement = document.createElement('div');
             messageElement.classList.add('message');
             if (sender === 'You') {
                 messageElement.classList.add('user');
+            } else if (sender === 'System') {
+                messageElement.classList.add('system');
             } else {
                 messageElement.classList.add('bot');
             }
-
-            const parsedMessage = md.render(message);
-            messageElement.innerHTML = parsedMessage;
+            // Special formatting for provider change system messages
+            const isProviderChange = sender === 'System' && /^Provider changed to /i.test(message.trim());
+            if (isProviderChange) {
+                // Plain text, rely on CSS ::before/::after for dividers
+                const span = document.createElement('span');
+                span.textContent = message.trim();
+                messageElement.appendChild(span);
+            } else {
+                const parsedMessage = md.render(message);
+                messageElement.innerHTML = parsedMessage;
+            }
 
             // Process Mermaid diagrams
             if (typeof mermaidLib !== 'undefined') {
@@ -1086,11 +1116,16 @@
                         }
                     } catch (error) {
                         console.error('Error rendering Mermaid diagram:', error);
+                        let msg = 'Unknown error';
+                        if (error && typeof error === 'object' && 'message' in error) {
+                            const m = error.message;
+                            if (typeof m === 'string') { msg = m; }
+                        }
                         // Fallback: show the code block with error styling
                         if (block instanceof HTMLElement) {
                             block.style.backgroundColor = 'var(--vscode-inputValidation-errorBackground)';
                             block.style.color = 'var(--vscode-inputValidation-errorForeground)';
-                            block.textContent = 'Error rendering diagram: ' + error.message;
+                            block.textContent = 'Error rendering diagram: ' + msg;
                         }
                     }
                 });
