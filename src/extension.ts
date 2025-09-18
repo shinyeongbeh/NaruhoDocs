@@ -7,6 +7,7 @@ import { SystemMessages } from './SystemMessages';
 import { checkGrammar } from './external-tools/LanguageTool-integration';
 import { lintMarkdownDocument } from './external-tools/markdownLinter';
 import { LLMProviderManager } from './llm-providers/manager';
+import { LLMService } from './managers/LLMService';
 import { LocalProvider } from './llm-providers/local';
 import { VisualizationProvider } from './VisualizationProvider';
 
@@ -29,6 +30,12 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// Initialize LLM Provider Manager
 	const llmManager = new LLMProviderManager();
+	const llmService = LLMService.getOrCreate(llmManager);
+	llmService.initializePersistence(context);
+	// Create dedicated output channel for verbose LLM logging
+	const llmOutput = vscode.window.createOutputChannel('NaruhoDocs LLM');
+	llmService.setOutputChannel(llmOutput);
+	llmService.refreshConfig();
 
 	const provider = new ChatViewProvider(context.extensionUri, undefined, context, llmManager);
 	
@@ -39,6 +46,7 @@ export function activate(context: vscode.ExtensionContext) {
 	(async () => {
 		try {
 			await llmManager.initializeFromConfig();
+			await llmService.restoreState();
 
 			// Initialize the general-purpose thread after LLM is ready
 			const generalThreadId = 'naruhodocs-general-thread';
@@ -85,7 +93,8 @@ export function activate(context: vscode.ExtensionContext) {
 				event.affectsConfiguration('naruhodocs.llm.apiKey') ||
 				event.affectsConfiguration('naruhodocs.llm.localBackend') ||
 				event.affectsConfiguration('naruhodocs.llm.localModel') ||
-				event.affectsConfiguration('naruhodocs.llm.localUrl')) {
+				event.affectsConfiguration('naruhodocs.llm.localUrl') ||
+				event.affectsConfiguration('naruhodocs.logging.verbose')) {
 				
 				// Debounce configuration changes to avoid multiple rapid updates
 				if (configChangeTimeout) {
@@ -94,16 +103,23 @@ export function activate(context: vscode.ExtensionContext) {
 				
 				configChangeTimeout = setTimeout(async () => {
 					try {
-						// Reinitialize LLM provider with new configuration
-						await llmManager.initializeFromConfig();
-						
+						// Reinitialize LLM provider with new configuration when provider-related settings change
+						if (event.affectsConfiguration('naruhodocs.llm.provider') ||
+							event.affectsConfiguration('naruhodocs.llm.apiKey') ||
+							event.affectsConfiguration('naruhodocs.llm.localBackend') ||
+							event.affectsConfiguration('naruhodocs.llm.localModel') ||
+							event.affectsConfiguration('naruhodocs.llm.localUrl')) {
+							await llmManager.initializeFromConfig();
+							// Clear LLMService sessions so new config/model takes effect
+							llmService.clearAllSessions();
+						}
+						// Always refresh verbose logging setting
+						llmService.refreshConfig();
 						// Update the ChatViewProvider with the new manager
 						provider.updateLLMManager(llmManager);
-						
 						// Get the current provider name for user feedback
 						const currentProvider = llmManager.getCurrentProvider();
 						const providerName = currentProvider?.name || 'LLM provider';
-						
 						// Show a subtle notification that the provider was updated
 						vscode.window.setStatusBarMessage(`✅ ${providerName} updated`, 3000);
 					} catch (error) {
@@ -163,54 +179,83 @@ export function activate(context: vscode.ExtensionContext) {
 		)
 	);
 
+	// New summarize command using centralized LLMService
 	context.subscriptions.push(
 		vscode.commands.registerCommand('naruhodocs.summarizeDocument', async (documentUri: vscode.Uri) => {
-			await vscode.commands.executeCommand('naruhodocs.chatView.focus');
-			vscode.workspace.openTextDocument(documentUri).then(document => {
-				const sessionId = documentUri.toString();
-				const prompt = `Summarize this document.`;
-
-				// Ensure the thread exists and is active
-				if (!threadMap.has(sessionId)) {
-					threadMap.set(sessionId, { document, sessionId });
-					provider.createThread(sessionId, document.getText(), document.fileName);
-				}
-				provider.setActiveThread(sessionId);
-
-				// Send the prompt to the webview so main.js's sendMessage() handles it
-				provider.sendMessageToThread(sessionId, prompt);
+			const doc = await vscode.workspace.openTextDocument(documentUri);
+			const resp = await llmService.request({
+				type: 'summarize',
+				content: doc.getText(),
+				targetId: documentUri.toString(),
+				systemMessage: 'You produce concise technical summaries with key points and clarity.'
 			});
+			// Show summary in a new ephemeral document
+			const summaryDoc = await vscode.workspace.openTextDocument({
+				content: `# Summary of ${path.basename(doc.fileName)}\n\n${resp.content}`,
+				language: 'markdown'
+			});
+			await vscode.window.showTextDocument(summaryDoc, { preview: true });
 		})
 	);
 
+	// New translate command using LLMService
 	context.subscriptions.push(
 		vscode.commands.registerCommand('naruhodocs.translateDocument', async (documentUri: vscode.Uri) => {
+			const doc = await vscode.workspace.openTextDocument(documentUri);
 			const languages = [
-				{ label: 'Malay', value: 'ms' },
-				{ label: 'English', value: 'en' },
-				{ label: 'Chinese', value: 'zh' },
-				{ label: 'Japanese', value: 'ja' },
-				{ label: 'Korean', value: 'ko' },
-				{ label: 'Spanish', value: 'es' },
-				{ label: 'French', value: 'fr' },
-				{ label: 'German', value: 'de' },
-				{ label: 'Russian', value: 'ru' },
-				{ label: 'Arabic', value: 'ar' },
-				{ label: 'Hindi', value: 'hi' }
+				{ label: 'Malay', value: 'Malay' },
+				{ label: 'English', value: 'English' },
+				{ label: 'Chinese', value: 'Chinese' },
+				{ label: 'Japanese', value: 'Japanese' },
+				{ label: 'Korean', value: 'Korean' },
+				{ label: 'Spanish', value: 'Spanish' },
+				{ label: 'French', value: 'French' },
+				{ label: 'German', value: 'German' },
+				{ label: 'Russian', value: 'Russian' },
+				{ label: 'Arabic', value: 'Arabic' },
+				{ label: 'Hindi', value: 'Hindi' }
 			];
-			const picked = await vscode.window.showQuickPick(languages.map(l => l.label), {
-				placeHolder: 'Select a language to translate the document'
+			const picked = await vscode.window.showQuickPick(languages.map(l => l.label), { placeHolder: 'Select target language' });
+			if (!picked) { return; }
+			const resp = await llmService.request({
+				type: 'translate',
+				content: doc.getText(),
+				targetLanguage: picked,
+				systemMessage: 'You are a professional technical translator. Preserve code blocks and formatting.'
 			});
-			if (picked) {
-				const selected = languages.find(l => l.label === picked);
-				const response = await provider.sendMessageToThread(documentUri.toString(), `Translate this document to ${selected?.label}`);
-				// Show Yes/No buttons in the sidebar via webview message
-				provider.postMessage({
-					type: 'showSaveTranslationButtons',
-					translation: response,
-					sessionId: documentUri.toString()
-				});
+	// Show LLM stats command
+	context.subscriptions.push(
+		vscode.commands.registerCommand('naruhodocs.showLLMStats', async () => {
+			const stats = llmService.getStats();
+			const lines = [
+				`Day: ${stats.day}`,
+				`Requests: ${stats.requests}`,
+				`Estimated Tokens (in/out): ${stats.estimatedInputTokens}/${stats.estimatedOutputTokens}`,
+				'Per Task:'
+			];
+			for (const k of Object.keys(stats.perTask)) {
+				lines.push(`  - ${k}: ${stats.perTask[k as keyof typeof stats.perTask]}`);
 			}
+			vscode.window.showInformationMessage(lines.join('\n'), { modal: false });
+		})
+	);
+			// Open translation in a side-by-side editor
+			const translationDoc = await vscode.workspace.openTextDocument({
+				content: `# Translation (${picked}) of ${path.basename(doc.fileName)}\n\n${resp.content}`,
+				language: 'markdown'
+			});
+			await vscode.window.showTextDocument(translationDoc, { preview: true, viewColumn: vscode.ViewColumn.Beside });
+			// Provide save option via notification
+			vscode.window.showInformationMessage('Translation ready. Save as new file?', 'Save').then(async sel => {
+				if (sel === 'Save') {
+					const ws = vscode.workspace.workspaceFolders?.[0];
+					if (ws) {
+						const targetUri = vscode.Uri.joinPath(ws.uri, `${path.basename(doc.fileName).replace(/\.[^.]+$/, '')}.${picked.toLowerCase()}.md`);
+						await vscode.workspace.fs.writeFile(targetUri, Buffer.from(resp.content, 'utf8'));
+						vscode.window.showInformationMessage(`Saved translation to ${targetUri.fsPath}`);
+					}
+				}
+			});
 		})
 	);
 
@@ -662,4 +707,13 @@ For custom setup:
 }
 
 // This method is called when your extension is deactivated
-export function deactivate() { }
+export async function deactivate() {
+	try {
+		const existing = (LLMService as any).instance as LLMService | undefined;
+		if (existing) {
+			await existing.saveState();
+		}
+	} catch (e) {
+		console.warn('Failed to persist LLMService state on deactivate', e);
+	}
+}

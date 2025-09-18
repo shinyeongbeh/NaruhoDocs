@@ -67,6 +67,7 @@ You can configure the extension by going to **File > Preferences > Settings** an
 *   `naruhodocs.visualization.defaultLibrary`: Default visualization library to use (`mermaid`, `d3`, `vis`).
 *   `naruhodocs.visualization.enableInteractive`: Enable interactive visualization features.
 *   `naruhodocs.visualization.maxFileAnalysis`: Maximum number of files to analyze for large projects.
+*   `naruhodocs.logging.verbose`: When `true`, writes structured LLM request/response log lines (with provider, task, timing, token estimates) to the dedicated `NaruhoDocs LLM` Output panel. Default: `false`.
 
 ## Installation
 

@@ -44,7 +44,7 @@ export class LLMProviderManager {
             vscode.window.showInformationMessage(
                 `NaruhoDocs: ${provider.name} provider initialized successfully`
             );
-            console.log(`LLMProviderManager: Initialized ${provider.name}`);
+            // LLMProviderManager: Initialized ${provider.name}
         } catch (error) {
             if (error instanceof LLMProviderError) {
                 this.handleProviderError(error, providerType);
@@ -54,12 +54,11 @@ export class LLMProviderManager {
         }
     }
 
-    async createChatSession(systemMessage: string): Promise<ChatSession> {
+    async createChatSession(systemMessage: string, options?: { temperature?: number; model?: string }): Promise<ChatSession> {
         if (!this.currentProvider) {
             throw new Error('No LLM provider initialized');
         }
-
-        return this.currentProvider.createChatSession(systemMessage);
+        return this.currentProvider.createChatSession(systemMessage, options);
     }
 
     async testConnection(): Promise<boolean> {

@@ -91,7 +91,7 @@ export async function generateDocument(data: { docType: any; fileName?: any }): 
         const filesAndContentsString = filesAndContents.map(f => `File: ${f.path}\n${f.content}`).join('\n\n');
         docGeneratorAI.setCustomSystemMessage(sys2);
         aiContent = await docGeneratorAI.chat(`Generate a starter documentation for ${fileName} based on this project. Refer to the relevant workspace files and contents:\n${filesAndContentsString}. If you are unable to generate the file based on information given, do not make up generic content yourself`) || '';
-        console.log('AI doc generation response:', aiContent);
+  // AI doc generation response captured
         aiContent = aiContent.replace(/^```markdown\s*/i, '').replace(/^\*\*\*markdown\s*/i, '').replace(/```$/g, '').trim();
       } catch (err) {
         aiContent = `# ${data.docType}\n\nDescribe your documentation needs here.`;
@@ -101,7 +101,7 @@ export async function generateDocument(data: { docType: any; fileName?: any }): 
         await vscode.workspace.fs.writeFile(fileUri, Buffer.from(aiContent, 'utf8'));
         // Trigger a fresh scan to update modal choices
         await vscode.commands.executeCommand('naruhodocs.scanDocs');
-        console.log('[NaruhoDocs] scanDocs triggered after doc creation');
+  // scanDocs triggered after doc creation
 
         return { type: 'addMessage', sender: 'System', message: `Document created: ${fileUri.fsPath}` };
 
@@ -116,7 +116,7 @@ export async function generateDocument(data: { docType: any; fileName?: any }): 
 }
 async function suggestFilename(docType: string, docGeneratorAI: ChatSession): Promise<string> {
   let aiFilename = '';
-  console.log('[NaruhoDocs][DEBUG] Attempting AI filename suggestion for docType:', docType);
+  // Attempting AI filename suggestion for docType: ${docType}
   try {
     aiFilename = await docGeneratorAI.chat(`Suggest a professional, concise, and conventional filename (with .md extension) for a documentation file of type: "${docType}". Only return the filename, no explanation.`) || '';
     aiFilename = aiFilename.trim().replace(/\s+/g, '_').toUpperCase();

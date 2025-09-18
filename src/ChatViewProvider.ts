@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
-import { createChat, ChatSession } from './langchain-backend/llm';
+import { ChatSession } from './langchain-backend/llm';
+import { LLMService } from './managers/LLMService';
 import { SystemMessages } from './SystemMessages';
 import { LLMProviderManager } from './llm-providers/manager';
 import { HumanMessage, AIMessage } from '@langchain/core/messages';
@@ -23,6 +24,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
 	// Thread management - delegated to ThreadManager
 	private threadManager: ThreadManager;
+	private llmService!: LLMService;
 
 	private context: vscode.ExtensionContext;
 	constructor(
@@ -31,7 +33,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		context?: vscode.ExtensionContext,
 		private llmManager?: LLMProviderManager
 	) {
-		this.context = context!;
+        this.context = context!;
+        this.llmService = LLMService.getOrCreate(this.llmManager!);
 
 		// Initialize thread manager
 		this.threadManager = new ThreadManager(
@@ -63,7 +66,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		const filesAndContents = await this.documentSuggestion.getWorkspaceFilesAndContents();
 		// Get AI suggestions
 		const aiSuggestions = await this.documentSuggestion.getAISuggestions(filesAndContents);
-		console.log('AI suggestions: ', aiSuggestions);
+		// AI suggestions retrieved
 		// Pass all AI suggestions to modal, but filter after AI generates
 		this.postMessage({
 			type: 'aiSuggestedDocs',
@@ -86,10 +89,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		this._view?.webview.postMessage({ type: 'addMessage', sender: 'You', message: prompt });
 		// Await and return bot response
 		try {
-			const botResponse = await session.chat(prompt);
-			this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: botResponse });
-			await this.threadManager.saveThreadHistory(sessionId);
-			return botResponse;
+			const botResponse = await this.llmService.trackedChat({
+				sessionId,
+				systemMessage: (session as any).systemMessage || SystemMessages.GENERAL_PURPOSE,
+				prompt,
+				task: 'chat'
+			});
+            this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: botResponse });
+            await this.threadManager.saveThreadHistory(sessionId);
+            return botResponse;
 		} catch (error: any) {
 			const errorMsg = `Error: ${error.message || 'Unable to connect to LLM.'}`;
 			this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: errorMsg });
@@ -161,9 +169,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		});
 
 		webviewView.webview.onDidReceiveMessage(async data => {
-			console.log('[NaruhoDocs] Webview received message:', data.type);
+			// Webview received message
 			if (data.type === 'scanDocs') {
-				console.log('[NaruhoDocs] scanDocs triggered from webview');
+				// scanDocs triggered from webview
 				await vscode.commands.executeCommand('naruhodocs.scanDocs');
 				return;
 			}
@@ -191,10 +199,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 				// 	break;
 				// }
 				case 'generateDoc': {
-					console.log('[NaruhoDocs] generateDoc triggered (doc-generate thread):', data.docType, data.fileName);
+					// generateDoc triggered (doc-generate thread)
 
-					const response = await generateDocument(data);	
-					console.log('Response from docGenerate.generate:', response);
+					const response = await generateDocument(data);
+					// Response from docGenerate.generate captured
 					this._view?.webview.postMessage({ type: response.type, sender: response.sender, message: response.message });
 
 					break;				
@@ -212,11 +220,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 					
 					// Log initial message processing
 					const activeThreadId = this.threadManager.getActiveThreadId();
-					console.log('=== MESSAGE PROCESSING START ===\n' +
-						`Raw User Message: ${userMessage}\n` +
-						`Session Available: ${!!session}\n` +
-						`Active Thread ID: ${activeThreadId}\n` +
-						'================================');
+					// Verbose message processing log removed
 					
 					try {
 						if (!session) { throw new Error('No active thread'); }
@@ -240,12 +244,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
 							// Ask AI which files are relevant for documentation
 							const sys = `You are an AI assistant that helps users create project documentation templates based on the project files and contents.\nThe output should be in markdown format. Do not include code fences or explanations, just the template.\nFirst, select ALL the relevant files from this list for generating a ${templateType} template. You need to select as many files as needed but be concise.\nAlways include project metadata and README/config files if available. Return only a JSON array of file paths, no explanation.`;
-							const chat = createChat({ apiKey: this.apiKey, maxHistoryMessages: 10, systemMessage: sys });
-							let relevantFiles: string[] = [];
-							try {
-								const aiResponse = await chat.chat(
-									`Here is the list of files in the workspace:\n${fileList.join('\n')}\n\nWhich files are most relevant for generating a ${templateType} template? Always include project metadata and README/config files if available. Return only a JSON array of file paths.`
-								);
+								let relevantFiles: string[] = [];
+								try {
+									const aiResponse = await this.llmService.trackedChat({
+										sessionId: 'chatview:template-select',
+										systemMessage: sys,
+										prompt: `Here is the list of files in the workspace:\n${fileList.join('\n')}\n\nWhich files are most relevant for generating a ${templateType} template? Always include project metadata and README/config files if available. Return only a JSON array of file paths.`,
+										task: 'analyze',
+										forceNew: true
+									});
 								// Try to parse the AI response as JSON array
 								const matchFiles = aiResponse.match(/\[.*\]/s);
 								if (matchFiles) {
@@ -276,20 +283,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 							let templateContent = '';
 							try {
 								const sys2 = `You are an impeccable and meticulous technical documentation specialist. Your purpose is to produce clear, accurate, and professional documentation templates based on the given content.\n\nPrimary Goal: Generate a high-quality documentation template for ${templateType} that is comprehensive, logically structured, and easy for the intended audience to use.\n\nInstructions:\nYou will be given the template type to create, along with the relevant files and their contents from the user's project workspace.\nYour task is to analyze these files and generate a well-organized documentation template that thoroughly covers the subject matter implied by the template type.\nYou may use tools (retrieve_workspace_filenames, retrieve_file_content) to retrieve additional file contents if needed without user prompted.\n\nMandatory Rules:\n- Do not include private or sensitive information from the provided files. For example, API keys.\n- Clarity and Simplicity: Prioritize clarity and conciseness above all else. Use plain language, active voice, and short sentences. Avoid jargon, buzzwords, and redundant phrases unless they are essential for technical accuracy.\n- Structured Content: All templates must follow a clear, hierarchical structure using Markdown.\n- Formatting: The final output must be in markdown format. Do not include code fences, explanations, or conversational text.\n- Never return empty or placeholder content. If you determine that this project truly does not need this template, respond with a clear explanation such as: 'This project does not require a [${templateType}] template because ...' and do not generate a file.`;
-								const chat2 = createChat({ apiKey: this.apiKey, maxHistoryMessages: 10, systemMessage: sys2 });
-								const filesAndContentsString = filesAndContents.map(f => `File: ${f.path}\n${f.content}`).join('\n\n');
-								
-								// Log template generation context
-								console.log('=== TEMPLATE GENERATION REQUEST ===\n' +
-									`Template Type: ${templateType}\n` +
-									`System Message Length: ${sys2.length} chars\n` +
-									`Relevant Files Count: ${relevantFiles.length}\n` +
-									`Relevant Files: ${relevantFiles.join(', ')}\n` +
-									`Total Content Length: ${filesAndContentsString.length} chars\n` +
-									`Files and Contents Preview (first 500 chars): ${filesAndContentsString.substring(0, 500)}...\n` +
-									'====================================');
-								
-								templateContent = await chat2.chat(`Generate a documentation template for ${templateType} based on this project. Here are the relevant workspace files and contents:\n${filesAndContentsString}`);
+									const filesAndContentsString = filesAndContents.map(f => `File: ${f.path}\n${f.content}`).join('\n\n');
+									templateContent = await this.llmService.trackedChat({
+										sessionId: 'chatview:template-generate',
+										systemMessage: sys2,
+										prompt: `Generate a documentation template for ${templateType} based on this project. Here are the relevant workspace files and contents:\n${filesAndContentsString}`,
+										task: 'generate_doc',
+										forceNew: true,
+										temperatureOverride: 0.2
+									});
 								templateContent = templateContent.replace(/^```markdown\s*/i, '').replace(/^\*\*\*markdown\s*/i, '').replace(/```$/g, '').trim();
 							} catch (err) {
 								templateContent = `This project does not require a [${templateType}] template because no relevant content was found.`;
@@ -324,15 +326,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 								return `  [${index}] ${msgType}: ${truncatedContent}`;
 							}).join('\n');
 							
-							console.log('=== USER MESSAGE SENT ===\n' +
-								`User Message: ${userMessage}\n` +
-								`Active Thread ID: ${activeThreadId}\n` +
-								`Current Conversation History (${currentHistory.length} messages):\n${historyPreview}\n` +
-								`System Message: ${sessionSystemMessage}\n` +
-								`About to send to LLM - Total context messages: ${currentHistory.length + 1}\n` +
-								'========================');
+							// User message sent verbose log removed
 							
-							const botResponse = await session.chat(userMessage);
+							const botResponse = await this.llmService.trackedChat({
+								sessionId: activeThreadId!,
+								systemMessage: (session as any).systemMessage || SystemMessages.GENERAL_PURPOSE,
+								prompt: userMessage,
+								task: 'chat'
+							});
 							this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: botResponse });
 							// Save history after message
 							if (activeThreadId && session) {
@@ -348,11 +349,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 					const activeThreadId = this.threadManager.getActiveThreadId();
 					const historyBeforeReset = session ? session.getHistory() : [];
 					
-					console.log('=== CHAT RESET REQUESTED ===\n' +
-						`Active Thread ID: ${activeThreadId}\n` +
-						`Session Available: ${!!session}\n` +
-						`Messages in history before reset: ${historyBeforeReset.length}\n` +
-						'===========================');
+					// Chat reset requested verbose log removed
 					
 					if (session && activeThreadId) { 
 						await this.threadManager.resetSession(activeThreadId);
@@ -387,16 +384,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 							});
 						}
 						
-						console.log(`=== SWITCHED TO THREAD ===\n` +
-							`Thread ID: ${sessionId}\n` +
-							`Loaded ${history.length} messages\n` +
-							`Thread Title: ${this.threadManager.getThreadTitles().get(sessionId) || 'Unknown'}\n` +
-							'========================');
+						// Switched to existing thread verbose log removed
 					} else {
-						console.log(`=== SWITCHED TO NEW THREAD ===\n` +
-							`Thread ID: ${sessionId}\n` +
-							`No existing history found\n` +
-							'============================');
+						// Switched to new thread verbose log removed
 					}
 					
 					break;
@@ -499,8 +489,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 					let aiTried = false;
 					const templateType = (data.docType || data.templateType || 'generic').toLowerCase();
 					try {
-						const tempChat = createChat({ apiKey: this.apiKey, maxHistoryMessages: 10 });
-						const suggestedName = await tempChat.chat(`Suggest a concise, filesystem-friendly filename (with .md extension) for a ${templateType} documentation file. Do not include the word 'template' in the filename. Respond with only the filename, no explanation.`);
+							const suggestedName = await this.llmService.trackedChat({
+								sessionId: 'chatview:filename-suggest',
+								systemMessage: 'You suggest concise filesystem-friendly markdown filenames.',
+								prompt: `Suggest a concise, filesystem-friendly filename (with .md extension) for a ${templateType} documentation file. Do not include the word 'template' in the filename. Respond with only the filename, no explanation.`,
+								task: 'generate_doc',
+								forceNew: true
+							});
 						aiFilename = (suggestedName || '').trim();
 					} catch (e) {
 						aiFilename = '';
@@ -625,7 +620,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 			const sysMessage = SystemMessages.GENERAL_PURPOSE;
 			
 			if (this.llmManager) {
-				this.llmManager.createChatSession(sysMessage).then(session => {
+				this.llmService = LLMService.getOrCreate(this.llmManager);
+				this.llmService.clearSession(generalThreadId);
+				this.llmService.getSession(generalThreadId, sysMessage, { taskType: 'chat', forceNew: true })
+					.then(session => {
 					this.threadManager.setSession(generalThreadId, session);
 					this.threadManager.setThreadTitle(generalThreadId, generalThreadTitle);
 					if (this.threadManager.getActiveThreadId() === generalThreadId) {
@@ -667,11 +665,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		if (session) {
 			const historyBeforeReset = session.getHistory();
 			
-			console.log('=== CHAT RESET (Command Palette) ===\n' +
-				`Active Thread ID: ${activeThreadId}\n` +
-				`Session Available: ${!!session}\n` +
-				`Messages in history before reset: ${historyBeforeReset.length}\n` +
-				'=======================================');
+			// Chat reset (command palette) verbose log removed
 			
 			await this.threadManager.resetSession(activeThreadId);
 			
@@ -789,11 +783,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 	public addContextToActiveSession(userMessage: string, botResponse: string): void {
 		try {
 			const activeThreadId = this.threadManager.getActiveThreadId();
-			console.log('=== ADDING CONTEXT TO ACTIVE SESSION ===\n' +
-				`User Message: ${userMessage.substring(0, 100)}...\n` +
-				`Bot Response: ${botResponse.substring(0, 100)}...\n` +
-				`Active Thread ID: ${activeThreadId}\n` +
-				'========================================');
+			// Adding context to active session verbose log removed
 			
 			if (!activeThreadId) {
 				console.warn('No active thread available to add context');
@@ -808,7 +798,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
 			// Get current history and build new history including the context
 			const currentHistory = session.getHistory();
-			console.log(`Current history length before adding context: ${currentHistory.length}`);
+			// Current history length before adding context
 			
 			// Build the new history array with the added context
 			// Convert existing history to the format expected by setHistory
@@ -830,12 +820,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 			
 			// Verify the update worked
 			const updatedHistory = session.getHistory();
-			console.log(`Updated history length after adding context: ${updatedHistory.length}`);
+			// Updated history length after adding context
 			
 			// Update the workspace state with the serialized history
 			this.context.workspaceState.update(`thread-history-${activeThreadId}`, completeHistory);
 			
-			console.log('Successfully added context to AI session history');
+			// Successfully added context to AI session history
 			
 		} catch (error) {
 			console.error('Error adding context to active session:', error);
