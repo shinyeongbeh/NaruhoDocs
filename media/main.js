@@ -47,6 +47,59 @@
 
     renderThreadListMenu();
 
+    window.addEventListener('DOMContentLoaded', () => {
+        const clearHistoryBtn = document.getElementById('clear-history');
+        if (clearHistoryBtn) {
+            clearHistoryBtn.onclick = () => {
+                showClearHistoryConfirm();
+            };
+        }
+    });
+
+    function showClearHistoryConfirm() {
+        // Remove any existing modal
+        let oldModal = document.getElementById('clear-history-modal');
+        if (oldModal) oldModal.remove();
+
+        // Create modal
+        const modal = document.createElement('div');
+        modal.id = 'clear-history-modal';
+        modal.style.cssText = `
+        position: fixed;
+        top: 0; left: 0; width: 100vw; height: 100vh;
+        display: flex; align-items: center; justify-content: center;
+        background: rgba(0,0,0,0.5); z-index: 9999;
+    `;
+
+        const box = document.createElement('div');
+        box.style.cssText = `
+        background: #222; color: #fff; padding: 32px 24px; border-radius: 10px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.3); text-align: center; min-width: 300px;
+    `;
+        box.innerHTML = `<div style="font-size:18px; margin-bottom:16px;">Are you sure you want to clear all chat history?</div>`;
+
+        // Use save-btn class for both buttons
+        const confirmBtn = document.createElement('button');
+        confirmBtn.textContent = 'Yes';
+        confirmBtn.className = 'clearHistory-btn';
+        confirmBtn.onclick = () => {
+            vscode.postMessage({ type: 'clearHistory' });
+            modal.remove();
+        };
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.className = 'clearHistory-btn cancel';
+        cancelBtn.onclick = () => {
+            modal.remove();
+        };
+
+        box.appendChild(confirmBtn);
+        box.appendChild(cancelBtn);
+        modal.appendChild(box);
+        document.body.appendChild(modal);
+    }
+
     function sendMessage() {
         if (chatInput && (chatInput instanceof HTMLTextAreaElement) && chatInput.value) {
             console.log('[NaruhoDocs] sendMessage triggered:', chatInput.value);
@@ -595,7 +648,7 @@
 
     // Initialize Mermaid if available
     if (typeof mermaidLib !== 'undefined') {
-        mermaidLib.initialize({ 
+        mermaidLib.initialize({
             startOnLoad: false,
             theme: 'dark',
             themeVariables: {
@@ -739,11 +792,11 @@
                             transform-origin: center;
                             transition: transform 0.3s ease;
                         `;
-                        
+
                         // Set up zoom functionality
                         let currentZoom = 1;
                         const zoomStep = 0.2;
-                        
+
                         function updateZoom(newZoom) {
                             currentZoom = Math.max(0.5, Math.min(3, newZoom));
                             if (svgElement) {
@@ -751,14 +804,14 @@
                             }
                             zoomResetBtn.textContent = `${Math.round(currentZoom * 100)}%`;
                         }
-                        
+
                         zoomInBtn.onclick = () => updateZoom(currentZoom + zoomStep);
                         zoomOutBtn.onclick = () => updateZoom(currentZoom - zoomStep);
                         zoomResetBtn.onclick = () => updateZoom(1);
-                        
+
                         // Export functionality
                         exportBtn.onclick = () => exportDiagram(svgElement, diagramId);
-                        
+
                         // Fullscreen functionality
                         fullscreenBtn.onclick = () => {
                             if (document.fullscreenElement) {
@@ -840,11 +893,11 @@
         try {
             // Clone the SVG to avoid modifying the original
             const clonedSvg = svgElement.cloneNode(true);
-            
+
             // Get SVG source
             const svgData = new XMLSerializer().serializeToString(clonedSvg);
             const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
-            
+
             // Create download link
             const downloadLink = document.createElement('a');
             downloadLink.href = URL.createObjectURL(svgBlob);
@@ -854,10 +907,10 @@
             downloadLink.click();
             document.body.removeChild(downloadLink);
             URL.revokeObjectURL(downloadLink.href);
-            
+
             // Show success message with location info
             showToast(`Diagram exported as ${fileName} to your Downloads folder`, 'success');
-            
+
             // Also send message to VS Code to show notification
             if (typeof vscode !== 'undefined') {
                 vscode.postMessage({
@@ -890,7 +943,7 @@
         `;
         toast.textContent = message;
         document.body.appendChild(toast);
-        
+
         setTimeout(() => {
             toast.style.opacity = '0';
             setTimeout(() => {
@@ -898,8 +951,6 @@
             }, 300);
         }, 3000);
     }
-
-    // --- remove the first duplicate window.addEventListener(...) block above ---
 
     function addMessage(sender, message) {
         if (chatMessages) {
@@ -921,7 +972,7 @@
                     try {
                         const mermaidCode = block.textContent;
                         const diagramId = `mermaid-${Date.now()}-${index}`;
-                        
+
                         // Create a container for the Mermaid diagram
                         const diagramContainer = document.createElement('div');
                         diagramContainer.className = 'mermaid-diagram-container';
@@ -932,7 +983,7 @@
                         diagramContainer.style.borderRadius = '4px';
                         diagramContainer.style.backgroundColor = 'var(--vscode-editor-background)';
                         diagramContainer.style.position = 'relative';
-                        
+
                         // Create diagram controls
                         const controlsContainer = document.createElement('div');
                         controlsContainer.className = 'diagram-controls';
@@ -943,7 +994,7 @@
                         controlsContainer.style.gap = '5px';
                         controlsContainer.style.opacity = '0.7';
                         controlsContainer.style.transition = 'opacity 0.2s';
-                        
+
                         // Enlarge button
                         const enlargeBtn = document.createElement('button');
                         enlargeBtn.className = 'diagram-control-btn';
@@ -960,18 +1011,18 @@
                             font-weight: 500;
                             transition: all 0.2s ease;
                         `;
-                        
+
                         // Export button
                         const exportBtn = document.createElement('button');
                         exportBtn.className = 'diagram-control-btn';
                         exportBtn.innerHTML = 'Export';
                         exportBtn.title = 'Export diagram';
                         exportBtn.style.cssText = enlargeBtn.style.cssText;
-                        
+
                         controlsContainer.appendChild(enlargeBtn);
                         controlsContainer.appendChild(exportBtn);
                         diagramContainer.appendChild(controlsContainer);
-                        
+
                         // Add hover effects to buttons
                         [enlargeBtn, exportBtn].forEach(btn => {
                             btn.addEventListener('mouseenter', () => {
@@ -983,7 +1034,7 @@
                                 btn.style.transform = 'translateY(0)';
                             });
                         });
-                        
+
                         // Show controls on hover
                         diagramContainer.addEventListener('mouseenter', () => {
                             controlsContainer.style.opacity = '1';
@@ -991,41 +1042,41 @@
                         diagramContainer.addEventListener('mouseleave', () => {
                             controlsContainer.style.opacity = '0.7';
                         });
-                        
+
                         // Replace the code block with the diagram container
                         const preElement = block.parentElement;
                         if (preElement && preElement.tagName === 'PRE' && preElement.parentElement) {
                             preElement.parentElement.replaceChild(diagramContainer, preElement);
                         }
-                        
+
                         // Render the Mermaid diagram
                         if (typeof mermaidLib !== 'undefined') {
                             const { svg } = await mermaidLib.render(diagramId, mermaidCode);
-                            
+
                             // Create diagram content container
                             const diagramContent = document.createElement('div');
                             diagramContent.className = 'diagram-content';
                             diagramContent.innerHTML = svg;
                             diagramContainer.appendChild(diagramContent);
-                            
+
                             // Add click handlers for interactivity
                             const svgElement = diagramContent.querySelector('svg');
                             if (svgElement) {
                                 svgElement.style.cursor = 'pointer';
                                 svgElement.style.maxWidth = '100%';
                                 svgElement.style.height = 'auto';
-                                
+
                                 // Click to enlarge
                                 svgElement.addEventListener('click', () => {
                                     openDiagramModal(mermaidCode, diagramId);
                                 });
-                                
+
                                 // Enlarge button handler
                                 enlargeBtn.addEventListener('click', (e) => {
                                     e.stopPropagation();
                                     openDiagramModal(mermaidCode, diagramId);
                                 });
-                                
+
                                 // Export button handler
                                 exportBtn.addEventListener('click', (e) => {
                                     e.stopPropagation();
@@ -1175,6 +1226,11 @@
                     chatMessages.appendChild(btnContainer);
                     chatMessages.scrollTop = chatMessages.scrollHeight;
                 }
+                break;
+            case 'historyCleared':
+                clearMessages();
+                // Optionally show a toast notification
+                showToast('Chat history cleared.', 'success');
                 break;
         }
     });

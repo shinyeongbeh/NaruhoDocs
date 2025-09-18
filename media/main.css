@@ -1,5 +1,5 @@
 /* Flexible button group using CSS Grid */
-
+.clearHistory-btn,
 .button-group {
 	display: grid;
 	grid-template-columns: 2fr 1fr 1fr;
@@ -10,6 +10,7 @@
 	margin-bottom: 0.5rem;
 }
 
+.clearHistory-btn,
 .button-group-label {
 	font-size: 1.08rem;
 	color: #fff;
@@ -20,7 +21,7 @@
 	align-self: center;
 }
 
-
+.clearHistory-btn,
 .button-group button {
 	min-width: 80px;
 	max-width: 100%;
@@ -35,20 +36,24 @@
 	box-shadow: 0 1px 4px rgba(0,0,0,0.08);
 }
 @media (max-width: 480px) {
+	.clearHistory-btn,
 	.button-group {
 		grid-template-columns: 1fr;
 		gap: 0.5rem;
 	}
+	.clearHistory-btn,
 	.button-group-label {
 		margin-bottom: 0.5rem;
 		text-align: left;
 	}
+	.clearHistory-btn,
 	.button-group button {
 		width: 100%;
 		min-width: 0;
 	}
 }
 
+.clearHistory-btn,
 .button-group button:hover {
 	background: #005fa3;
 }
@@ -292,6 +297,8 @@
 	background: #111;
 	color: #fff;
 }
+
+.clearHistory-btn,
 #general-buttons {
 	display: flex;
 	justify-content: center;
@@ -300,6 +307,7 @@
 	margin-bottom: 8px;
 }
 
+.clearHistory-btn,
 #general-buttons button {
 	background: #2196f3;
 	color: #fff;
@@ -312,6 +320,8 @@
 	margin-bottom: 10px;
 	font-weight: 500;
 }
+
+.clearHistory-btn,
 #general-buttons button:hover {
 	background: #1976d2;
 	color: #fff;
@@ -748,4 +758,21 @@ html {
 	max-height: 100vh;
 	border-radius: 0;
 	border: none;
+}
+
+#clear-history {
+    margin-left:auto; 
+	width:auto; 
+	padding-left: 10px;
+	padding-right: 10px;
+	min-width:unset;
+}
+
+.clearHistory-btn.cancel {
+    background: #555 !important;
+    color: #fff !important;
+	border-color: #555 !important;
+}
+.clearHistory-btn.cancel:hover {
+    background: #333 !important;
 }
