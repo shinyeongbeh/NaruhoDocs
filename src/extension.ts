@@ -513,22 +513,34 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 
 				// 1. Auto-open documentation for editing if code changed but docs did not
 				if (codeChanged && !docChanged) {
-					// Try to find related docs (same basename, .md/.txt)
+					// Auto-open related docs (.md/.txt) for each changed file
 					for (const file of changedFiles) {
 						const base = file.replace(/\.[^/.]+$/, '');
-						const docCandidates = [
-							`${base}.md`,
-							`${base}.txt`
-						];
-						for (const docFile of docCandidates) {
-							const docPath = require('path').join(workspaceFolder, docFile);
-							const exists = await vscode.workspace.fs.stat(vscode.Uri.file(docPath)).then(() => true, () => false);
-							if (exists) {
-								await vscode.workspace.openTextDocument(docPath).then(doc => vscode.window.showTextDocument(doc));
+						for (const ext of ['.md', '.txt']) {
+							const docPath = require('path').join(workspaceFolder, base + ext);
+							try {
+								await vscode.workspace.fs.stat(vscode.Uri.file(docPath));
+								const doc = await vscode.workspace.openTextDocument(docPath);
+								await vscode.window.showTextDocument(doc, { preview: false });
+							} catch {
+								// File does not exist, skip
 							}
 						}
 					}
-					vscode.window.showWarningMessage('Code changed without documentation update. Docs may be stale! Related docs opened for editing.');
+
+					// Build a detailed message
+					const changedList = changedFiles.length > 5
+						? changedFiles.slice(0, 5).join('\n  ') + `\n  ...and ${changedFiles.length - 5} more`
+						: changedFiles.join('\n  ');
+
+					const author = parts.slice(2, parts.length - 3).join(' ');
+
+					vscode.window.showWarningMessage(
+						`⚠️ Code changed without documentation update!\n` +
+						`Commit: ${newCommitHash}\n` +
+						`Changed files:\n${changedList}\n` +
+						`Docs may be stale! Related docs opened for editing.`
+					);
 				}
 
 				// 2. Integrate with doc threads: post a message to the thread if code changes
