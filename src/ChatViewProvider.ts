@@ -105,6 +105,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		}
 	}
 
+	/**
+	 * Post a system-level message to the webview (non-user/non-bot semantic).
+	 * Use for lifecycle events like provider changes, resets, or configuration notices.
+	 */
+	public addSystemMessage(message: string) {
+		this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message });
+	}
+
 	public async resolveWebviewView(
 		webviewView: vscode.WebviewView,
 		_context: vscode.WebviewViewResolveContext,
@@ -573,45 +581,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
 	public updateLLMManager(newLLMManager: LLMProviderManager) {
 		this.llmManager = newLLMManager;
-		
-		// Show provider update message with more details
-		const currentProvider = this.llmManager.getCurrentProvider();
-		if (this._view && currentProvider) {
-			let providerInfo = `✅ LLM Provider updated to: ${currentProvider.name}`;
-			
-			// Add provider-specific info
-			if (currentProvider.name === 'Local LLM') {
-				// Try to get backend info for local provider
-				const localProvider = currentProvider as any;
-				if (localProvider.getBackendInfo) {
-					const backendInfo = localProvider.getBackendInfo();
-					if (backendInfo) {
-						providerInfo += ` (${backendInfo.type} - ${backendInfo.defaultModel})`;
-					}
-				}
-			} else if (currentProvider.name.includes('Gemini')) {
-				// Add usage info for Gemini providers
-				this.llmManager.getUsageInfo().then(usage => {
-					if (usage && !usage.isUnlimited) {
-						const remainingInfo = ` (${usage.requestsRemaining} requests remaining today)`;
-						this._view?.webview.postMessage({ 
-							type: 'addMessage', 
-							sender: 'System', 
-							message: providerInfo + remainingInfo 
-						});
-					}
-				}).catch(() => {
-					// Ignore usage info errors
-				});
-				return; // Skip the immediate message since we're doing async
-			}
-			
-			this._view.webview.postMessage({ 
-				type: 'addMessage', 
-				sender: 'System', 
-				message: providerInfo 
-			});
-		}
+
+		// Legacy provider update chat message removed. Provider change is now announced
+		// exclusively via extension.ts calling addSystemMessage("Provider changed to ...").
 
     // Recreate the general purpose session with the new provider
 		const generalThreadId = 'naruhodocs-general-thread';

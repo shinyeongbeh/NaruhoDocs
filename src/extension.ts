@@ -176,6 +176,11 @@ export function activate(context: vscode.ExtensionContext) {
 							llmService.clearAllSessions();
 							llmService.logEvent('provider_reload', { provider: llmManager.getCurrentProvider()?.name, changed: providerChanged });
 							currentProviderType = newProviderType;
+							if (providerChanged) {
+								// Post system message to chat view (if loaded) instead of a user-level chat message
+								const provName = llmManager.getCurrentProvider()?.name || newProviderType;
+								try { (provider as any)?.addSystemMessage?.(`Provider changed to ${provName}`); } catch { /* ignore */ }
+							}
 						}
 						llmService.refreshConfig();
 						provider.updateLLMManager(llmManager);
