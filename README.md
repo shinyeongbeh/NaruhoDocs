@@ -68,6 +68,24 @@ You can configure the extension by going to **File > Preferences > Settings** an
 *   `naruhodocs.visualization.enableInteractive`: Enable interactive visualization features.
 *   `naruhodocs.visualization.maxFileAnalysis`: Maximum number of files to analyze for large projects.
 *   `naruhodocs.logging.verbose`: When `true`, writes structured LLM request/response log lines (with provider, task, timing, token estimates) to the dedicated `NaruhoDocs LLM` Output panel. Default: `false`.
+*   `naruhodocs.llm.defaultModel`: Global default model for OOTB/BYOK providers when no per-task override is set.
+*   Per-task model overrides (blank = fallback to `defaultModel` then provider fallback):
+    * `naruhodocs.llm.models.chat`
+    * `naruhodocs.llm.models.summarize`
+    * `naruhodocs.llm.models.readFiles`
+    * `naruhodocs.llm.models.analyze`
+    * `naruhodocs.llm.models.translate`
+    * `naruhodocs.llm.models.generateDoc`
+    * `naruhodocs.llm.models.visualizationContext`
+
+Model Resolution Order:
+1. Explicit override passed internally (future programmatic usage)
+2. Internal policy hint (hard-coded default for task, if any)
+3. Per-task setting
+4. `naruhodocs.llm.defaultModel`
+5. Provider-specific fallback (`naruhodocs.llm.localModel` for local, `gemini-2.0-flash` otherwise)
+
+Existing sessions retain the model they were created with (session logs stay historically accurate even after you change settings). Reset a chat ("Reset Chat Conversation") to pick up new model overrides.
 
 ## Installation
 

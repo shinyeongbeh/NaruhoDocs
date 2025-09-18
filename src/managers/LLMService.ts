@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { LLMProviderManager } from '../llm-providers/manager';
+import { ModelConfigManager } from './ModelConfigManager.js';
 import { ChatSession, createChat } from '../langchain-backend/llm';
 import { BaseMessage } from '@langchain/core/messages';
 
@@ -14,7 +15,11 @@ export class LLMService {
     private sessionProviders: Map<string, string> = new Map();
     private sessionSystemMessages: Map<string, string> = new Map();
     private sessionModelHints: Map<string, string | undefined> = new Map();
+    // sessionModelHints stores the model name chosen at session creation time so
+    // logs remain historically accurate even if the user later changes model settings.
+    // We intentionally DO NOT retroactively update existing sessions when settings change.
     private outputChannel: vscode.OutputChannel | undefined;
+    private modelConfigManager: ModelConfigManager | undefined;
     private verboseLogging: boolean = false;
     // Usage tracking
     private dayStamp: string = this.currentDayStamp();
@@ -64,6 +69,21 @@ export class LLMService {
         this.outputChannel = ch;
     }
 
+    /** Inject model config manager (per-repo JSON) */
+    public setModelConfigManager(mgr: ModelConfigManager) {
+        this.modelConfigManager = mgr;
+    }
+
+    /** Lightweight structured lifecycle/event logging separate from invokeTracked */
+    public logEvent(event: string, data?: Record<string, any>) {
+        if (!this.verboseLogging || !this.outputChannel) { return; }
+        try {
+            const timestamp = new Date().toISOString();
+            const payload = data ? (() => { try { const j = JSON.stringify(data); return j.length>400 ? j.slice(0,400)+'…' : j; } catch { return '[unserializable]'; } })() : '';
+            this.outputChannel.appendLine(`[${timestamp}] event=${event}${payload ? ' data='+payload : ''}`);
+        } catch {/* ignore */}
+    }
+
     /** Refresh configuration-driven flags */
     public refreshConfig() {
         const config = vscode.workspace.getConfiguration('naruhodocs');
@@ -95,13 +115,85 @@ export class LLMService {
 
     /** Retrieve (or create) a chat session bound to a logical key */
     public async getSession(key: string, systemMessage: string, options?: { forceNew?: boolean; taskType?: LLMTaskType; temperatureOverride?: number; modelOverride?: string }): Promise<ChatSession> {
-        if (!options?.forceNew && this.sessionCache.has(key)) {
-            return this.sessionCache.get(key)!;
-        }
+        // If session exists and not forced new, return it unless local provider model changed underneath
+        const existing = this.sessionCache.get(key);
         const taskType: LLMTaskType = options?.taskType || 'chat';
         const policy = this.modelPolicy[taskType] || { temperature: 0 };
         const temperature = options?.temperatureOverride ?? policy.temperature ?? 0;
-        const modelHint = options?.modelOverride || policy.modelHint;
+
+        // MODEL RESOLUTION
+        // New precedence (user configuration has priority over static policy hints):
+        // 1. Explicit override passed in options
+        // 2. Per-task setting (naruhodocs.llm.models.<task>)
+        // 3. Default model setting (naruhodocs.llm.defaultModel)
+        // 4. Policy modelHint (code-defined fallback suggestion)
+        // 5. Provider-specific fallback: if provider=local use naruhodocs.llm.localModel (or default), else gemini-2.0-flash
+        let modelHint = options?.modelOverride;
+        let modelResolutionTrace: string[] = [];
+        let providerType = 'ootb';
+        try {
+            providerType = vscode.workspace.getConfiguration('naruhodocs').get<string>('llm.provider', 'ootb');
+        } catch { /* ignore */ }
+
+        if (modelHint) {
+            modelResolutionTrace.push('explicit-override');
+        } else if (this.modelConfigManager?.isActive()) {
+            // Use file-based resolution
+            const resolved = this.modelConfigManager.resolveModel(providerType, taskType, policy.modelHint, providerType === 'local' ? 'gemma3:1b' : 'gemini-2.0-flash');
+            modelHint = resolved.model;
+            modelResolutionTrace = ['file-active', ...resolved.trace];
+        } else {
+            // Legacy settings-based path
+            try {
+                const config = vscode.workspace.getConfiguration('naruhodocs');
+                const taskSettingMap: Record<LLMTaskType, string> = {
+                    chat: 'naruhodocs.llm.models.chat',
+                    summarize: 'naruhodocs.llm.models.summarize',
+                    read_files: 'naruhodocs.llm.models.readFiles',
+                    analyze: 'naruhodocs.llm.models.analyze',
+                    translate: 'naruhodocs.llm.models.translate',
+                    generate_doc: 'naruhodocs.llm.models.generateDoc',
+                    visualization_context: 'naruhodocs.llm.models.visualizationContext'
+                };
+                const perTaskSetting = (config.get<string>(taskSettingMap[taskType] as any) || '').trim();
+                if (perTaskSetting) { modelHint = perTaskSetting; modelResolutionTrace.push('per-task-setting'); }
+                if (!modelHint) {
+                    const defaultModelSetting = (config.get<string>('naruhodocs.llm.defaultModel') || '').trim();
+                    if (defaultModelSetting) { modelHint = defaultModelSetting; modelResolutionTrace.push('default-setting'); }
+                }
+                if (!modelHint && policy.modelHint) { modelHint = policy.modelHint; modelResolutionTrace.push('policy-hint'); }
+                if (!modelHint) {
+                    if (providerType === 'local') {
+                        modelHint = (config.get<string>('llm.localModel') || config.get<string>('naruhodocs.llm.localModel') || 'gemma3:1b');
+                        modelResolutionTrace.push('local-provider-fallback');
+                    } else {
+                        modelHint = 'gemini-2.0-flash';
+                        modelResolutionTrace.push('gemini-fallback');
+                    }
+                }
+            } catch {
+                modelHint = 'unknown-model';
+                modelResolutionTrace.push('error-unknown');
+            }
+        }
+
+        // If existing session and not forceNew, check if local provider model changed compared to stored hint
+        if (existing && !options?.forceNew) {
+            const config = vscode.workspace.getConfiguration('naruhodocs');
+            const providerType = config.get<string>('llm.provider', 'ootb');
+            if (providerType === 'local') {
+                const currentLocalModel = (config.get<string>('llm.localModel') || config.get<string>('naruhodocs.llm.localModel'));
+                const stored = this.sessionModelHints.get(key);
+                if (currentLocalModel && stored && currentLocalModel !== stored && !options?.modelOverride) {
+                    // Recreate to apply new local model
+                    this.clearSession(key);
+                } else {
+                    return existing; // Safe to reuse
+                }
+            } else {
+                return existing; // Non-local provider reuse is fine
+            }
+        }
 
         // Prefer provider manager if initialized
         const provider = this.providerManager.getCurrentProvider?.();
@@ -112,6 +204,7 @@ export class LLMService {
                 this.sessionProviders.set(key, provider.name);
                 this.sessionSystemMessages.set(key, systemMessage);
                 this.sessionModelHints.set(key, modelHint);
+                this.logEvent('session_init', { key, provider: provider.name, model: modelHint, taskType, resolution: modelResolutionTrace });
                 return session;
             } catch (e) {
                 console.warn('[LLMService] Provider session creation failed, falling back to direct createChat:', e);
@@ -126,6 +219,7 @@ export class LLMService {
         this.sessionProviders.set(key, 'fallback-gemini');
         this.sessionSystemMessages.set(key, systemMessage);
         this.sessionModelHints.set(key, modelHint);
+        this.logEvent('session_init', { key, provider: 'fallback-gemini', model: modelHint, taskType, resolution: modelResolutionTrace });
         return session;
     }
 
@@ -325,7 +419,7 @@ export class LLMService {
                         metaLine = ' meta=' + (json.length > 240 ? json.slice(0,240)+'…' : json);
                     } catch { /* ignore */ }
                 }
-                this.outputChannel.appendLine(`[${timestamp}] task=${task} provider=${providerName} model=${modelHint || 'default'} durationMs=${durationMs} inTokens~= ${estIn} outTokens~= ${estOut}${metaLine}`);
+                this.outputChannel.appendLine(`[${timestamp}] task=${task} provider=${providerName} model=${modelHint || 'unknown'} durationMs=${durationMs} inTokens~= ${estIn} outTokens~= ${estOut}${metaLine}`);
                 this.outputChannel.appendLine(`  SYSTEM>>> ${systemSnippet.replace(/\r?\n/g, ' \u23CE ')}`);
                 if (historySnapshot.length) {
                     const recent = historySnapshot.slice(-6); // last 6 messages

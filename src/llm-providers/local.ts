@@ -108,7 +108,7 @@ export class LocalProvider implements LLMProvider {
 
     private getDefaultModel(backend: string): string {
         const defaultModels: Record<string, string> = {
-            ollama: 'llama3.1:8b',
+            ollama: 'gemma3:1b',
             lmstudio: 'local-model',
             llamacpp: 'model',
             textgen: 'model',
