@@ -383,8 +383,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 						
 						// Send each message in the history to the webview
 						for (const msg of history) {
-							const sender = msg instanceof HumanMessage ? 'You' : 'Bot';
-							const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+							let role: string | undefined = (msg as any).type || (typeof (msg as any)._getType === 'function' ? (msg as any)._getType() : undefined);
+							if (!role || role === 'unknown') {
+								const ctor = msg.constructor?.name?.toLowerCase?.() || '';
+								if (ctor.includes('human')) { role = 'human'; }
+								else if (ctor.includes('ai')) { role = 'ai'; }
+							}
+							if (role === 'user') { role = 'human'; }
+							if (role === 'assistant' || role === 'bot') { role = 'ai'; }
+							const sender = role === 'human' ? 'You' : 'Bot';
+							const content = typeof (msg as any).content === 'string' ? (msg as any).content : (msg as any).text || JSON.stringify((msg as any).content);
 							this._view?.webview.postMessage({ 
 								type: 'addMessage', 
 								sender: sender, 
@@ -586,32 +594,22 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		// exclusively via extension.ts calling addSystemMessage("Provider changed to ...").
 
     // Recreate the general purpose session with the new provider
-		const generalThreadId = 'naruhodocs-general-thread';
-		if (this.threadManager.hasSession(generalThreadId)) {
-			const generalThreadTitle = 'General Purpose';
-			const sysMessage = SystemMessages.GENERAL_PURPOSE;
-			
-			if (this.llmManager) {
-				this.llmService = LLMService.getOrCreate(this.llmManager);
-				this.llmService.clearSession(generalThreadId);
-				this.llmService.getSession(generalThreadId, sysMessage, { taskType: 'chat', forceNew: true })
-					.then(session => {
-					this.threadManager.setSession(generalThreadId, session);
-					this.threadManager.setThreadTitle(generalThreadId, generalThreadTitle);
-					if (this.threadManager.getActiveThreadId() === generalThreadId) {
-						this._postThreadList();
-					}
-				}).catch(error => {
-					console.error('Failed to update general chat session:', error);
+		// Recreate ALL sessions so that history is preserved across provider changes.
+		// LLMService.clearAllSessions() is invoked externally (extension.ts) before this call.
+		// We now obtain a fresh LLMService instance and ask ThreadManager to reinitialize its sessions.
+		if (this.llmManager) {
+			this.llmService = LLMService.getOrCreate(this.llmManager);
+			this.threadManager.reinitializeSessions(this.llmService)
+				.catch(err => {
+					console.error('Failed to reinitialize sessions after provider change:', err);
 					if (this._view) {
-						this._view.webview.postMessage({ 
-							type: 'addMessage', 
-							sender: 'System', 
-							message: `❌ Failed to update LLM provider: ${error.message}` 
+						this._view.webview.postMessage({
+							type: 'addMessage',
+							sender: 'System',
+							message: `❌ Failed to reinitialize sessions after provider change: ${err.message}`
 						});
 					}
 				});
-			}
 		}
 	}
 
