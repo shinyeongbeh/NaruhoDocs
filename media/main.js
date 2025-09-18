@@ -62,7 +62,9 @@
     function showClearHistoryConfirm() {
         // Remove any existing modal
         let oldModal = document.getElementById('clear-history-modal');
-        if (oldModal) oldModal.remove();
+        if (oldModal) {
+            oldModal.remove();
+        }
 
         // Create modal
         const modal = document.createElement('div');
@@ -177,7 +179,7 @@
                 chatInputContainer.parentElement.insertBefore(chatModeButtons, chatInputContainer);
             }
         }
-    if (typeof activeThreadId === 'string' && activeThreadId !== 'naruhodocs-general-thread') {
+        if (typeof activeThreadId === 'string' && activeThreadId !== 'naruhodocs-general-thread') {
             chatModeButtons.innerHTML = '';
             // Create custom slide switch for mode selection
             const switchLabel = document.createElement('label');
@@ -384,8 +386,8 @@
             window.addEventListener('message', handleAISuggestedDocs);
         }
 
-    /** @param {HTMLElement} modal */
-    function showCustomDocPrompt(modal) {
+        /** @param {HTMLElement} modal */
+        function showCustomDocPrompt(modal) {
             // Remove previous prompt if any
             let oldPrompt = document.getElementById('custom-doc-prompt');
             if (oldPrompt) { oldPrompt.remove(); }
@@ -511,8 +513,8 @@
             window.addEventListener('message', handleAISuggestedDocs);
         }
 
-    /** @param {any} modal */
-    function showCustomTemplatePrompt(modal) {
+        /** @param {any} modal */
+        function showCustomTemplatePrompt(modal) {
             let oldPrompt = document.getElementById('custom-doc-prompt');
             if (oldPrompt) { oldPrompt.remove(); }
 
@@ -810,7 +812,7 @@
                         // Set up zoom functionality
                         let currentZoom = 1;
                         const zoomStep = 0.2;
-                        
+
                         /** @param {number} newZoom */
                         function updateZoom(newZoom) {
                             currentZoom = Math.max(0.5, Math.min(3, newZoom));
@@ -857,8 +859,8 @@
         };
 
         // Keyboard shortcuts
-    /** @param {KeyboardEvent} e */
-    function handleKeyDown(e) {
+        /** @param {KeyboardEvent} e */
+        function handleKeyDown(e) {
             if (e.key === 'Escape') {
                 closeModal();
             } else if (e.key === '+' || e.key === '=') {
