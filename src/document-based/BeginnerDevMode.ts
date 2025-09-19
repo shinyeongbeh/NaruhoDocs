@@ -9,7 +9,7 @@ export class BeginnerDevMode {
     if (sessionId === 'naruhodocs-general-thread') {
       return;
     }
-    console.log('BeginnerDevMode: setThreadBeginnerMode called', sessionId);
+  // setThreadBeginnerMode called
     const session = sessions.get(sessionId);
     const title = threadTitles.get(sessionId) || '';
     let initialContext = '';
@@ -34,7 +34,7 @@ export class BeginnerDevMode {
     if (sessionId === 'naruhodocs-general-thread') {
       return;
     }
-    console.log('BeginnerDevMode: setThreadDeveloperMode called');
+  // setThreadDeveloperMode called
     const session = sessions.get(sessionId);
     const title = threadTitles.get(sessionId) || '';
     let initialContext = '';

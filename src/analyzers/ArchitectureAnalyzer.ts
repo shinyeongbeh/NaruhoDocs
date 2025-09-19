@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { ChatSession } from '../langchain-backend/llm';
 import { LLMProviderManager } from '../llm-providers/manager';
+import { LLMService } from '../managers/LLMService';
 
 export interface ArchitectureComponent {
     name: string;
@@ -22,10 +22,13 @@ export interface ArchitectureAnalysis {
 }
 
 export class ArchitectureAnalyzer {
-    private llmSession?: ChatSession;
+    private sessionId = 'analyzer:architecture';
+    private llmService: LLMService;
     private analysisContext: Map<string, any> = new Map();
     
-    constructor(private llmManager: LLMProviderManager) {}
+    constructor(private llmManager: LLMProviderManager) {
+        this.llmService = LLMService.getOrCreate(llmManager);
+    }
 
     public async analyzeProjectArchitecture(): Promise<ArchitectureAnalysis> {
         try {
@@ -86,21 +89,8 @@ When analyzing files, focus on:
 
 Be precise and factual. Base your analysis on actual code content, not assumptions.`;
 
-        if (this.llmManager.getCurrentProvider) {
-            const provider = this.llmManager.getCurrentProvider();
-            if (provider) {
-                this.llmSession = await provider.createChatSession(systemMessage);
-                return;
-            }
-        }
-        
-        // Fallback - try to create session directly
-        const { createChat } = require('../langchain-backend/llm');
-        this.llmSession = createChat({ 
-            systemMessage,
-            maxHistoryMessages: 50,
-            temperature: 0.1 
-        });
+        // Use centralized LLMService
+        await this.llmService.getSession(this.sessionId, systemMessage, { taskType: 'analyze', temperatureOverride: 0.1, forceNew: true });
     }
 
     private async discoverProjectType(): Promise<{ type: string; framework?: string; language: string }> {
@@ -119,7 +109,7 @@ Respond in JSON format:
     "description": "brief description of what this project does"
 }`;
 
-        const response = await this.llmSession!.chat(prompt);
+    const response = await this.llmService.trackedChat({ sessionId: this.sessionId, systemMessage: 'architecture analysis', prompt, task: 'analyze' });
         
         try {
             const analysis = JSON.parse(this.extractJSON(response));
@@ -156,7 +146,7 @@ Based on the folder names and file organization, identify:
 
 Respond in JSON format with your analysis.`;
 
-        const response = await this.llmSession!.chat(prompt);
+    const response = await this.llmService.trackedChat({ sessionId: this.sessionId, systemMessage: 'architecture analysis', prompt, task: 'analyze' });
         const analysis = JSON.parse(this.extractJSON(response));
         this.analysisContext.set('fileStructure', analysis);
         return analysis;
@@ -186,7 +176,7 @@ Respond in JSON format:
     }
 }`;
 
-        const response = await this.llmSession!.chat(prompt);
+    const response = await this.llmService.trackedChat({ sessionId: this.sessionId, systemMessage: 'architecture analysis', prompt, task: 'analyze' });
         
         try {
             const deps = JSON.parse(this.extractJSON(response));
@@ -233,7 +223,7 @@ Respond in JSON format:
     ]
 }`;
 
-        const response = await this.llmSession!.chat(prompt);
+    const response = await this.llmService.trackedChat({ sessionId: this.sessionId, systemMessage: 'architecture analysis', prompt, task: 'analyze' });
         
         try {
             const analysis = JSON.parse(this.extractJSON(response));
@@ -260,7 +250,7 @@ What architectural patterns and design principles are being used? Consider:
 
 Respond with a JSON array of identified patterns: ["pattern1", "pattern2"]`;
 
-        const response = await this.llmSession!.chat(prompt);
+    const response = await this.llmService.trackedChat({ sessionId: this.sessionId, systemMessage: 'architecture analysis', prompt, task: 'analyze' });
         
         try {
             return JSON.parse(this.extractJSON(response));
@@ -292,7 +282,7 @@ Respond in JSON format:
     ]
 }`;
 
-        const response = await this.llmSession!.chat(prompt);
+    const response = await this.llmService.trackedChat({ sessionId: this.sessionId, systemMessage: 'architecture analysis', prompt, task: 'analyze' });
         
         try {
             const analysis = JSON.parse(this.extractJSON(response));
@@ -315,7 +305,7 @@ Provide 3-5 brief architectural recommendations for improving this codebase:
 
 Respond as a JSON array of recommendation strings.`;
 
-        const response = await this.llmSession!.chat(prompt);
+    const response = await this.llmService.trackedChat({ sessionId: this.sessionId, systemMessage: 'architecture analysis', prompt, task: 'analyze' });
         
         try {
             return JSON.parse(this.extractJSON(response));

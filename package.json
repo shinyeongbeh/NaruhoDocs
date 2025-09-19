@@ -2,7 +2,7 @@
   "name": "naruhodocs",
   "displayName": "NaruhoDocs",
   "description": "A VSCode extension that could help in documentation writing and reading. ",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "engines": {
     "vscode": "^1.103.0"
   },
@@ -10,7 +10,6 @@
     "Other"
   ],
   "activationEvents": [
-    "onView:naruhodocs.chatView",
     "onLanguage:markdown",
     "onLanguage:plaintext"
   ],
@@ -26,18 +25,8 @@
         "title": "Create File (NaruhoDocs)"
       },
       {
-        "command": "naruhodocs.configureLLM",
-        "title": "Configure LLM Provider",
-        "category": "NaruhoDocs"
-      },
-      {
         "command": "naruhodocs.testLLMConnection",
         "title": "Test LLM Connection",
-        "category": "NaruhoDocs"
-      },
-      {
-        "command": "naruhodocs.selectLocalModel",
-        "title": "Select Local Model",
         "category": "NaruhoDocs"
       },
       {
@@ -46,28 +35,43 @@
         "category": "NaruhoDocs"
       },
       {
+        "command": "naruhodocs.openModelConfig",
+        "title": "Open Model Config",
+        "category": "NaruhoDocs"
+      },
+      {
         "command": "naruhodocs.visualizeArchitecture",
-        "title": "🏗️ Visualize Architecture",
+        "title": "Visualize Architecture",
         "category": "NaruhoDocs"
       },
       {
         "command": "naruhodocs.visualizeFolderStructure",
-        "title": "📁 Visualize Folder Structure",
+        "title": "Visualize Folder Structure",
         "category": "NaruhoDocs"
       },
       {
         "command": "naruhodocs.visualizeDocRelations",
-        "title": "🔗 Visualize Document Relations",
+        "title": "Visualize Document Relations",
         "category": "NaruhoDocs"
       },
       {
         "command": "naruhodocs.showVisualizationMenu",
-        "title": "📊 Show Visualization Menu",
+        "title": "Show Visualization Menu",
         "category": "NaruhoDocs"
       },
       {
         "command": "naruhodocs.resetChat",
-        "title": "🔄 Reset Chat Conversation",
+        "title": "Reset Chat Conversation",
+        "category": "NaruhoDocs"
+      },
+      {
+        "command": "naruhodocs.showLLMStats",
+        "title": "Show LLM Usage Stats",
+        "category": "NaruhoDocs"
+      },
+      {
+        "command": "naruhodocs.changeProvider",
+        "title": "Change LLM Provider",
         "category": "NaruhoDocs"
       }
     ],
@@ -95,38 +99,6 @@
           "description": "API key for BYOK mode (stored securely)",
           "when": "config.naruhodocs.llm.provider == 'byok'"
         },
-        "naruhodocs.llm.localBackend": {
-          "type": "string",
-          "enum": [
-            "ollama",
-            "lmstudio",
-            "llamacpp",
-            "textgen",
-            "custom"
-          ],
-          "enumDescriptions": [
-            "Ollama - Easy model management with built-in API",
-            "LM Studio - User-friendly GUI with OpenAI-compatible API",
-            "llama.cpp - Lightweight C++ implementation",
-            "Text Generation WebUI - Advanced web interface",
-            "Custom - Custom API endpoint"
-          ],
-          "default": "ollama",
-          "description": "Local LLM backend to use",
-          "when": "config.naruhodocs.llm.provider == 'local'"
-        },
-        "naruhodocs.llm.localModel": {
-          "type": "string",
-          "default": "llama3.1:8b",
-          "description": "Local model name for local LLM",
-          "when": "config.naruhodocs.llm.provider == 'local'"
-        },
-        "naruhodocs.llm.localUrl": {
-          "type": "string",
-          "default": "http://localhost:11434",
-          "description": "Local LLM server URL",
-          "when": "config.naruhodocs.llm.provider == 'local'"
-        },
         "naruhodocs.visualization.defaultLibrary": {
           "type": "string",
           "enum": [
@@ -152,6 +124,12 @@
           "default": 1000,
           "description": "Maximum number of files to analyze for large projects"
         }
+        ,
+        "naruhodocs.logging.verbose": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable verbose LLM request/response logging in dedicated output channel"
+        }
       }
     },
     "viewsContainers": {
@@ -168,7 +146,8 @@
         {
           "id": "naruhodocs.chatView",
           "type": "webview",
-          "name": "NaruhoDocs Chat"
+          "name": "NaruhoDocs Chat",
+          "icon": "media/icon.svg"
         }
       ]
     }
@@ -189,37 +168,39 @@
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
-    "@types/node": "22.x",
+    "@types/node": "24.x",
     "@types/node-fetch": "^2.6.13",
     "@types/sinon": "^17.0.4",
-    "@types/vscode": "^1.103.0",
-    "@typescript-eslint/eslint-plugin": "^8.39.0",
-    "@typescript-eslint/parser": "^8.39.0",
+    "@types/vscode": "^1.104.0",
+    "@typescript-eslint/eslint-plugin": "^8.44.0",
+    "@typescript-eslint/parser": "^8.44.0",
     "@vscode/test-cli": "^0.0.11",
     "@vscode/test-electron": "^2.5.2",
-    "esbuild": "^0.25.8",
-    "eslint": "^9.32.0",
+    "esbuild": "^0.25.10",
+    "eslint": "^9.35.0",
     "markdownlint": "^0.38.0",
     "npm-run-all": "^4.1.5",
     "sinon": "^21.0.0",
     "typescript": "^5.9.2"
   },
   "dependencies": {
-    "@google/genai": "^1.16.0",
-    "@huggingface/inference": "^4.8.0",
-    "@langchain/community": "^0.3.54",
-    "@langchain/core": "^0.3.72",
-    "@langchain/google-genai": "^0.2.16",
+    "@google/genai": "^1.20.0",
+    "@langchain/community": "^0.3.56",
+    "@langchain/core": "^0.3.77",
+    "@langchain/google-genai": "^0.2.18",
     "@langchain/langgraph": "^0.4.9",
-    "@langchain/openai": "^0.6.11",
-    "@xenova/transformers": "^2.17.2",
-    "chromadb": "^3.0.15",
-    "dotenv": "^17.2.1",
-    "langchain": "^0.3.31",
+    "@langchain/openai": "^0.6.13",
+    "dotenv": "^16.4.5",
+    "langchain": "^0.3.34",
     "markdown-it": "^14.1.0",
     "mermaid": "^11.11.0",
     "node-fetch": "^3.3.2",
     "sqlite3": "^5.1.7",
     "watch": "^1.0.2"
+  },
+    "overrides": 
+  {
+    "exec-sh":"^0.3.4"
   }
+
 }

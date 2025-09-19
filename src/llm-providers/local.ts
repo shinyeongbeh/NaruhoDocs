@@ -108,7 +108,7 @@ export class LocalProvider implements LLMProvider {
 
     private getDefaultModel(backend: string): string {
         const defaultModels: Record<string, string> = {
-            ollama: 'llama3.1:8b',
+            ollama: 'gemma3:1b',
             lmstudio: 'local-model',
             llamacpp: 'model',
             textgen: 'model',
@@ -164,7 +164,7 @@ export class LocalProvider implements LLMProvider {
         }
     }
 
-    async createChatSession(systemMessage: string): Promise<ChatSession> {
+    async createChatSession(systemMessage: string, options?: { temperature?: number; model?: string }): Promise<ChatSession> {
         if (!this.model || !this.backendConfig) {
             throw new LLMProviderError(
                 'Provider not initialized',
@@ -172,11 +172,20 @@ export class LocalProvider implements LLMProvider {
                 'MODEL_ERROR'
             );
         }
+        // Apply model override (if provided) by updating backend config and recreating model
+        if (options?.model && this.backendConfig.defaultModel !== options.model) {
+            try {
+                this.backendConfig.defaultModel = options.model;
+                this.model = this.createModelForBackend(this.backendConfig, { temperature: options.temperature });
+            } catch (e) {
+                console.warn('[LocalProvider] Failed to apply model override:', e);
+            }
+        }
 
-        return this.createLocalChatSession(systemMessage);
+        return this.createLocalChatSession(systemMessage, { temperature: options?.temperature });
     }
 
-    private createLocalChatSession(systemMessage: string): ChatSession {
+    private createLocalChatSession(systemMessage: string, options?: { temperature?: number }): ChatSession {
         const maxHistory = 40;
         let history: BaseMessage[] = [];
         const model = this.model; // Capture model reference

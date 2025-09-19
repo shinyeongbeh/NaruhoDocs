@@ -13,7 +13,7 @@ export interface LLMProvider {
     readonly isAvailable: boolean;
     
     initialize(options: LLMProviderOptions): Promise<void>;
-    createChatSession(systemMessage: string): Promise<ChatSession>;
+    createChatSession(systemMessage: string, options?: { temperature?: number; model?: string }): Promise<ChatSession>;
     testConnection(): Promise<boolean>;
     getUsageInfo(): Promise<UsageInfo>;
 }

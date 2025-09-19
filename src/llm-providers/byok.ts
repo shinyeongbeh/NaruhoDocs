@@ -33,7 +33,7 @@ export class BYOKProvider implements LLMProvider {
         }
     }
 
-    async createChatSession(systemMessage: string): Promise<ChatSession> {
+    async createChatSession(systemMessage: string, options?: { temperature?: number; model?: string }): Promise<ChatSession> {
         if (!this.apiKey) {
             throw new LLMProviderError(
                 'Provider not initialized',
@@ -41,17 +41,16 @@ export class BYOKProvider implements LLMProvider {
                 'AUTH_FAILED'
             );
         }
-
         try {
             return createChat({
                 apiKey: this.apiKey,
-                model: 'gemini-2.0-flash',
-                temperature: 0,
+                model: options?.model || 'gemini-2.0-flash',
+                temperature: options?.temperature ?? 0,
                 systemMessage
             });
-        } catch (error) {
+        } catch (error: any) {
             throw new LLMProviderError(
-                'Failed to create BYOK chat session',
+                `Failed to create BYOK chat session: ${error?.message || 'Unknown error'}`,
                 this.name,
                 'MODEL_ERROR'
             );
@@ -64,15 +63,15 @@ export class BYOKProvider implements LLMProvider {
         }
 
         try {
-            const model = new ChatGoogleGenerativeAI({
+            const session = createChat({
                 apiKey: this.apiKey,
-                model: 'gemini-2.0-flash'
+                model: 'gemini-2.0-flash',
+                temperature: 0,
+                systemMessage: 'Health check'
             });
-
-            // Simple test message
-            await model.invoke('Test');
+            await session.chat('ping');
             return true;
-        } catch (error) {
+        } catch {
             return false;
         }
     }

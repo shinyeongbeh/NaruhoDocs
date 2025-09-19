@@ -1,5 +1,7 @@
 # 📋 Consolidated Console Logging
 
+> NOTE (Updated): The project has since migrated from raw `console.log` output to a structured, provider-aware logging system routed through the dedicated VS Code Output Channel: `NaruhoDocs LLM`. All high-volume diagnostic logs are now gated behind the user setting `naruhodocs.logging.verbose` (default `false`). This document remains for historical reference of the original console consolidation step.
+
 ## ✅ **Logging Improvements Complete**
 
 I've consolidated all the console logging to reduce console clutter while maintaining comprehensive debugging information.

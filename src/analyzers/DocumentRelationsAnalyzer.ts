@@ -1,8 +1,8 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { ChatSession } from '../langchain-backend/llm';
 import { LLMProviderManager } from '../llm-providers/manager';
+import { LLMService } from '../managers/LLMService';
 
 export interface DocumentNode {
     name: string;
@@ -47,10 +47,14 @@ export interface DocumentCluster {
 }
 
 export class DocumentRelationsAnalyzer {
-    private llmSession?: ChatSession;
+    private llmService: LLMService;
+    private sessionId = 'analyzer:document-relations';
+    private systemMessageText = '';
     private analysisContext: Map<string, any> = new Map();
     
-    constructor(private llmManager: LLMProviderManager) {}
+    constructor(private llmManager: LLMProviderManager) {
+        this.llmService = LLMService.getOrCreate(llmManager);
+    }
 
     public async analyzeDocumentRelations(): Promise<DocumentRelationsAnalysis | null> {
         try {
@@ -91,7 +95,7 @@ export class DocumentRelationsAnalyzer {
     }
 
     private async initializeAISession(): Promise<void> {
-        const systemMessage = `You are an expert technical documentation analyst and information architect. You analyze documentation relationships to understand information flow, identify gaps, and suggest improvements. Focus on:
+    const systemMessage = `You are an expert technical documentation analyst and information architect. You analyze documentation relationships to understand information flow, identify gaps, and suggest improvements. Focus on:
 
 1. **Documentation Structure**: Understand how documents relate to each other
 2. **Information Flow**: Track how information flows between documents
@@ -100,22 +104,8 @@ export class DocumentRelationsAnalyzer {
 5. **Quality Assessment**: Evaluate documentation completeness and usefulness
 
 Provide actionable insights about documentation organization and quality.`;
-
-        if (this.llmManager.getCurrentProvider) {
-            const provider = this.llmManager.getCurrentProvider();
-            if (provider) {
-                this.llmSession = await provider.createChatSession(systemMessage);
-                return;
-            }
-        }
-        
-        // Fallback - try to create session directly
-        const { createChat } = require('../langchain-backend/llm');
-        this.llmSession = createChat({ 
-            systemMessage,
-            maxHistoryMessages: 30,
-            temperature: 0.1 
-        });
+    this.systemMessageText = systemMessage;
+    await this.llmService.getSession(this.sessionId, systemMessage, { taskType: 'analyze', temperatureOverride: 0.1, forceNew: true });
     }
 
     private async discoverDocuments(rootPath: string): Promise<DocumentNode[]> {
@@ -279,7 +269,7 @@ Provide actionable insights about documentation organization and quality.`;
         links: DocumentLink[]
     ): Promise<{ clusters: DocumentCluster[]; insights: DocumentRelationsAnalysis['insights'] }> {
         
-        if (!this.llmSession) {
+        if (!this.systemMessageText) {
             return this.getFallbackClustersAndInsights(documents, links);
         }
 
@@ -327,7 +317,7 @@ Provide analysis in JSON format:
 
 Focus on practical insights about documentation organization.`;
 
-            const response = await this.llmSession.chat(prompt);
+            const response = await this.llmService.trackedChat({ sessionId: this.sessionId, systemMessage: this.systemMessageText, prompt, task: 'analyze' });
             
             try {
                 const jsonMatch = response.match(/\{[\s\S]*\}/);
@@ -403,7 +393,7 @@ Focus on practical insights about documentation organization.`;
         clusters: DocumentCluster[]
     ): Promise<string> {
         
-        if (!this.llmSession) {
+        if (!this.systemMessageText) {
             return this.generateBasicMermaidDiagram(documents, links);
         }
 
@@ -428,7 +418,7 @@ Create a diagram that:
 
 Return only the Mermaid code starting with "graph TD" or "graph LR".`;
 
-            const response = await this.llmSession.chat(prompt);
+            const response = await this.llmService.trackedChat({ sessionId: this.sessionId, systemMessage: this.systemMessageText, prompt, task: 'analyze' });
             
             const mermaidMatch = response.match(/graph\s+(TD|LR|TB|RL)[\s\S]*?(?=\n\n|\n$|$)/i);
             if (mermaidMatch) {

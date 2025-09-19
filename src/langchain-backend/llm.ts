@@ -55,10 +55,10 @@ Keep responses focused and technical, using the retrieved context as your primar
 
   history.push(new SystemMessage(opts.systemMessage || defaultSystemMessage));
 
-  // // Define tools using LangGraph.js
+  // Define tools using LangGraph.js
   // const retrieveFilenames = tool(
   //   async () => {
-  //     console.log('Tool used: retrieveFilenames');
+  //     // Tool used: retrieveFilenames
   //     const toolInstance = new RetrieveWorkspaceFilenamesTool();
   //     return await toolInstance._call();
   //   },
@@ -70,7 +70,7 @@ Keep responses focused and technical, using the retrieved context as your primar
 
   // const retrieveFileContent = tool(
   //   async ({ filePath }) => {
-  //     console.log(`Tool used: retrieveFileContent with filePath=${filePath}`);
+  // // Tool used: retrieveFileContent with filePath=${filePath}
   //     const toolInstance = new RetrieveFileContentTool();
   //     return await toolInstance._call(filePath);
   //   },
@@ -78,12 +78,12 @@ Keep responses focused and technical, using the retrieved context as your primar
   //     name: 'retrieveFileContent',
   //     description: 'Retrieve the content of a specific file.',
   //     schema: z.object({
-  //       filePath: z.string().describe('The path of the file to read.'),
+  //       query: z.string().describe('The query to find relevant code snippets for.'),
   //     }),
   //   }
   // );
 
-  // Initialize RAG tools
+    // Initialize RAG tools
   const RAGretrieval = tool(
     async ({ query }) => {
       console.log('Tool used: retrieveContext with query:', query);
@@ -145,7 +145,7 @@ Based on the above context, please provide a response.`;
       if (typeof lastMessage.content === 'string') {
         aiText = lastMessage.content;
       } else if (Array.isArray(lastMessage.content)) {
-        aiText = lastMessage.content.map(c =>
+  aiText = lastMessage.content.map((c: any) =>
           typeof c === 'string' ? c : JSON.stringify(c)
         ).join(' ');
       } else {
