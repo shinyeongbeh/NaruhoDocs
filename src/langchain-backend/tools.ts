@@ -22,13 +22,19 @@ export class RAGretrievalTool extends Tool {
                 return 'No relevant context found in the workspace.';
             }
 
-            // Format results with file paths and code snippets
+            // Format results with only file paths and line ranges for logging
+            const logResults = docs.map((doc: Document) => {
+                const metadata = doc.metadata;
+                return `File: ${metadata.filePath} (Lines ${metadata.startLine}-${metadata.endLine})`;
+            }).join('\n');
+
+            // But return the full code snippets as before
             const formattedResults = docs.map((doc: Document) => {
                 const metadata = doc.metadata;
                 return `File: ${metadata.filePath} (Lines ${metadata.startLine}-${metadata.endLine})\n\`\`\`\n${doc.pageContent}\n\`\`\`\n`;
             }).join('\n');
 
-            console.log(`Called TOOL retrieve_relevant_context - found ${docs.length} relevant chunks`);
+            console.log(`Called TOOL retrieve_relevant_context - found ${docs.length} relevant chunks\nFiles:\n${logResults}`);
             return `Relevant code snippets:\n${formattedResults}`;
 
         } catch (error: any) {

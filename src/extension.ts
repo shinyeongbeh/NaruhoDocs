@@ -5,14 +5,13 @@ import * as dotenv from 'dotenv';
 import * as path from 'path';
 import { SystemMessages } from './SystemMessages';
 import { LocalMemoryVectorStore } from './rag/vectorstore/memory';
-import { HuggingFaceEmbeddings } from './rag/embeddings/huggingfaceCloud';
-import { Document } from '@langchain/core/documents';
 import { checkGrammar } from './external-tools/LanguageTool-integration';
 import { lintMarkdownDocument } from './external-tools/markdownLinter';
 import { LLMProviderManager } from './llm-providers/manager';
 import { LocalProvider } from './llm-providers/local';
 import { VisualizationProvider } from './VisualizationProvider';
-import vectorStore from './rag/vectorstore/vectorStoreSingleton';
+import { buildVectorDB } from './rag/vectorstore/chunking_buildVectorDB';
+
 
 // Load env once
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
@@ -21,36 +20,7 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 // Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
 	// --- BEGIN: Build vector DB on activation ---
-	async function buildVectorDB() {
-		// Use the shared vector store instance
-		const docs: Document[] = [];
-		const files = await vscode.workspace.findFiles('**/*', '**/node_modules/**');
-		for (const file of files) {
-			try {
-				const content = (await vscode.workspace.fs.readFile(file)).toString();
-				// Simple chunking: one doc per file (replace with real chunking as needed)
-				docs.push(new Document({
-					pageContent: content,
-					metadata: {
-						filePath: file.fsPath,
-						chunkId: file.fsPath,
-						startLine: 1,
-						endLine: content.split('\n').length,
-						lastUpdated: Date.now()
-					}
-				}));
-			} catch (e) {
-				console.warn('Failed to read file for vector DB:', file.fsPath, e);
-			}
-		}
-		if (docs.length > 0) {
-			await vectorStore.addDocuments(docs);
-			vscode.window.showInformationMessage(`NaruhoDocs: Vector DB built with ${docs.length} files.`);
-			console.log(vectorStore.similaritySearch('NaruhoDocs: Vector DB built! '));
-		} else {
-			vscode.window.showWarningMessage('NaruhoDocs: No files found for vector DB.');
-		}
-	}
+	
 	buildVectorDB();
 	// --- END: Build vector DB on activation ---
 	// Register scanDocs command to call provider.scanDocs()
