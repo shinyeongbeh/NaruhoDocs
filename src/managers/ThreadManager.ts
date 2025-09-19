@@ -8,6 +8,7 @@ export class ThreadManager {
     private sessions: Map<string, ChatSession> = new Map();
     private activeThreadId?: string;
     private threadTitles: Map<string, string> = new Map(); // sessionId -> document title
+    private systemMessages: Map<string, string> = new Map(); // sessionId -> system message (for rehydration)
     
     constructor(
         private context: vscode.ExtensionContext,
@@ -27,6 +28,7 @@ export class ThreadManager {
         const generalThreadId = 'naruhodocs-general-thread';
         const generalThreadTitle = 'General Purpose';
         const sysMessage = SystemMessages.GENERAL_PURPOSE;
+        this.systemMessages.set(generalThreadId, sysMessage);
 
         // Use LLM manager if available, fallback to direct createChat
         if (this.llmService) {
@@ -48,41 +50,43 @@ export class ThreadManager {
         this.activeThreadId = generalThreadId;
     }
 
-    // Create a new thread/session for a document
-    public createThread(sessionId: string, initialContext: string, title: string): void {
-        if (!this.sessions.has(sessionId)) {
-            const sysMessage = SystemMessages.DOCUMENT_SPECIFIC_DEVELOPER(title, initialContext);
-            // Try to load history from workspaceState
-            const savedHistory = this.context.workspaceState.get<any[]>(`thread-history-${sessionId}`);
-            
-            // Use the LLM manager instead of direct createChat
-            if (this.llmService) {
-                this.llmService.getSession(sessionId, sysMessage, { taskType: 'chat' }).then(session => {
-                    if (savedHistory && Array.isArray(savedHistory)) {
-                        session.setHistory(savedHistory);
-                    }
+    // Create a new thread/session for a document. Returns a promise that resolves when the session is ready.
+    public createThread(sessionId: string, initialContext: string, title: string): Promise<void> {
+        if (this.sessions.has(sessionId)) {
+            // Already exists – nothing to do
+            return Promise.resolve();
+        }
+        const sysMessage = SystemMessages.DOCUMENT_SPECIFIC_DEVELOPER(title, initialContext);
+        const savedHistory = this.context.workspaceState.get<any[]>(`thread-history-${sessionId}`);
+        this.systemMessages.set(sessionId, sysMessage);
+        const applyHistory = (session: ChatSession) => {
+            if (savedHistory && Array.isArray(savedHistory)) {
+                try { session.setHistory(savedHistory as any); } catch { /* ignore */ }
+            }
+        };
+        if (this.llmService) {
+            return this.llmService.getSession(sessionId, sysMessage, { taskType: 'chat' })
+                .then(session => {
+                    applyHistory(session);
                     this.sessions.set(sessionId, session);
                     this.threadTitles.set(sessionId, title);
                     this.onThreadListChange?.();
-                }).catch(err => {
+                })
+                .catch(err => {
                     console.error('LLMService session creation failed, fallback:', err);
                     const session = createChat({ apiKey: this.apiKey, maxHistoryMessages: 40, systemMessage: sysMessage });
-                    if (savedHistory && Array.isArray(savedHistory)) {
-                        session.setHistory(savedHistory);
-                    }
+                    applyHistory(session);
                     this.sessions.set(sessionId, session);
                     this.threadTitles.set(sessionId, title);
                     this.onThreadListChange?.();
                 });
-            } else {
-                const session = createChat({ apiKey: this.apiKey, maxHistoryMessages: 40, systemMessage: sysMessage });
-                if (savedHistory && Array.isArray(savedHistory)) {
-                    session.setHistory(savedHistory);
-                }
-                this.sessions.set(sessionId, session);
-                this.threadTitles.set(sessionId, title);
-                this.onThreadListChange?.();
-            }
+        } else {
+            const session = createChat({ apiKey: this.apiKey, maxHistoryMessages: 40, systemMessage: sysMessage });
+            applyHistory(session);
+            this.sessions.set(sessionId, session);
+            this.threadTitles.set(sessionId, title);
+            this.onThreadListChange?.();
+            return Promise.resolve();
         }
     }
 
@@ -141,6 +145,7 @@ export class ThreadManager {
         if (this.sessions.has(sessionId)) {
             this.sessions.delete(sessionId);
             this.threadTitles.delete(sessionId);
+            this.systemMessages.delete(sessionId);
             await this.context.workspaceState.update(`thread-history-${sessionId}`, undefined);
             // If the deleted thread was active, switch to general
             if (this.activeThreadId === sessionId) {
@@ -165,6 +170,7 @@ export class ThreadManager {
         const preservedTitle = this.threadTitles.get(generalId);
         this.sessions = new Map();
         this.threadTitles = new Map();
+        this.systemMessages = new Map([[generalId, SystemMessages.GENERAL_PURPOSE]]);
         if (preservedSession && preservedTitle) {
             this.sessions.set(generalId, preservedSession);
             this.threadTitles.set(generalId, preservedTitle);
@@ -174,22 +180,21 @@ export class ThreadManager {
 
     // Restore threads from workspace state
     public async restoreThreads(keys: readonly string[]): Promise<void> {
+        const creationPromises: Promise<void>[] = [];
         for (const key of keys) {
             if (key.startsWith('thread-history-')) {
                 const sessionId = key.replace('thread-history-', '');
-                const savedHistory = this.context.workspaceState.get<any[]>(key);
-                const title = sessionId.split('/').pop() || sessionId;
                 let documentText = '';
                 try {
                     const uri = vscode.Uri.parse(sessionId);
                     const doc = await vscode.workspace.openTextDocument(uri);
                     documentText = doc.getText();
-                } catch (e) {
-                    documentText = '';
-                }
-                this.createThread(sessionId, documentText, title);
+                } catch { /* ignore */ }
+                const title = sessionId.split('/').pop() || sessionId;
+                creationPromises.push(this.createThread(sessionId, documentText, title));
             }
         }
+        await Promise.all(creationPromises);
         this.onThreadListChange?.();
     }
 
@@ -200,8 +205,22 @@ export class ThreadManager {
     public async saveThreadHistory(sessionId: string): Promise<void> {
         const session = this.sessions.get(sessionId);
         if (session) {
-            const history = session.getHistory();
-            await this.context.workspaceState.update(`thread-history-${sessionId}`, history);
+            const raw = session.getHistory();
+            const serialized = raw.map((m: any) => {
+                const directType = (m as any).type;
+                const fnType = typeof m._getType === 'function' ? m._getType() : undefined;
+                let role = directType || fnType || 'unknown';
+                if (role !== 'human' && role !== 'ai') {
+                    const ctor = m.constructor?.name?.toLowerCase?.() || '';
+                    if (ctor.includes('human')) { role = 'human'; }
+                    else if (ctor.includes('ai')) { role = 'ai'; }
+                }
+                const text = (m as any).text || (typeof m.content === 'string' ? m.content : JSON.stringify(m.content));
+                if (role === 'user') { role = 'human'; }
+                if (role === 'assistant' || role === 'bot') { role = 'ai'; }
+                return { type: role, text };
+            });
+            await this.context.workspaceState.update(`thread-history-${sessionId}`, serialized);
         }
     }
 
@@ -219,5 +238,44 @@ export class ThreadManager {
     public getThreadListData(): { threads: Array<{id: string, title: string}>, activeThreadId: string | undefined } {
         const threads = Array.from(this.threadTitles.entries()).map(([id, title]) => ({ id, title }));
         return { threads, activeThreadId: this.activeThreadId };
+    }
+
+    /**
+     * Reinitialize all existing thread sessions after a provider change while preserving history.
+     * This is necessary because LLMService.clearAllSessions() removes its internal sessions cache,
+     * and subsequent trackedChat() calls would otherwise start fresh, losing conversational context.
+     */
+    public async reinitializeSessions(llmService: LLMService): Promise<void> {
+        const entries = Array.from(this.sessions.entries());
+        for (const [sessionId, oldSession] of entries) {
+            try {
+                const history = oldSession.getHistory().map((m: any) => {
+                    const directType = (m as any).type || (typeof m._getType === 'function' ? m._getType() : undefined);
+                    let role = directType || 'unknown';
+                    if (role !== 'human' && role !== 'ai') {
+                        const ctor = m.constructor?.name?.toLowerCase?.() || '';
+                        if (ctor.includes('human')) { role = 'human'; }
+                        else if (ctor.includes('ai')) { role = 'ai'; }
+                    }
+                    const text = (m as any).text || (typeof m.content === 'string' ? m.content : JSON.stringify(m.content));
+                    if (role === 'user') { role = 'human'; }
+                    if (role === 'assistant' || role === 'bot') { role = 'ai'; }
+                    return { type: role, text };
+                });
+                const sys = this.systemMessages.get(sessionId) || SystemMessages.GENERAL_PURPOSE;
+                const newSession = await llmService.getSession(sessionId, sys, { taskType: 'chat', forceNew: true });
+                newSession.setHistory(history as any);
+                this.sessions.set(sessionId, newSession);
+                // Persist snapshot again (best-effort)
+                await this.saveThreadHistory(sessionId);
+            } catch (e) {
+                console.warn('[ThreadManager] Failed to reinitialize session', sessionId, e);
+            }
+        }
+        // Ensure active thread still valid
+        if (this.activeThreadId && !this.sessions.has(this.activeThreadId)) {
+            this.activeThreadId = 'naruhodocs-general-thread';
+        }
+        this.onThreadListChange?.();
     }
 }

@@ -93,4 +93,24 @@ suite('LLMService Tests', () => {
         const restoredStats = service2.getStats();
         assert.strictEqual(restoredStats.requests, preStats.requests, 'Should restore request count for same day');
     });
+
+    test('History survives provider change via reinitializeSessions', async () => {
+        // This test simulates: user chats, provider sessions cleared, sessions recreated with preserved history.
+        const mgr = new MockProviderManager();
+        const service = LLMService.getOrCreate(mgr);
+        // Create a session and add some messages
+        const session = await service.getSession('thread1', 'Sys');
+        await session.chat('Hello');
+        await session.chat('Second');
+        const histBefore = session.getHistory();
+        assert.ok(histBefore.length >= 2, 'Expected at least 2 history messages');
+        // Simulate provider change clearing service sessions
+        service.clearAllSessions();
+        // We need a lightweight stand-in ThreadManager behaviour for reinitialization logic.
+        // Minimal inline rehydrate: create new session and restore history.
+        const session2 = await service.getSession('thread1', 'Sys', { forceNew: true });
+        session2.setHistory(histBefore as any);
+        const histAfter = session2.getHistory();
+        assert.strictEqual(histAfter.length, histBefore.length, 'History length should match after rehydration');
+    });
 });

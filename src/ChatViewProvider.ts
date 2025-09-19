@@ -88,7 +88,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		// Get all filenames and contents
 		const filesAndContents = await this.documentSuggestion.getWorkspaceFilesAndContents();
 		// Get AI suggestions
-		const aiSuggestions = await this.documentSuggestion.getAISuggestions(filesAndContents);
+		const aiSuggestions = await this.documentSuggestion.getAISuggestions(this.llmService, filesAndContents);
 		// AI suggestions retrieved
 		// Pass all AI suggestions to modal, but filter after AI generates
 		this.postMessage({
@@ -164,42 +164,38 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		// Ensure currently open documents are represented as threads when the view opens
 		try {
 			const openDocs = vscode.workspace.textDocuments;
+			const pending: Promise<void>[] = [];
 			for (const document of openDocs) {
 				const fileNameLower = document.fileName.toLowerCase();
 				if (fileNameLower.endsWith('.md') || fileNameLower.endsWith('.txt')) {
 					const sessionId = document.uri.toString();
-					this.threadManager.createThread(sessionId, document.getText(), document.fileName);
+					pending.push(this.threadManager.createThread(sessionId, document.getText(), document.fileName));
 				}
 			}
+			if (pending.length) { await Promise.all(pending); }
 		} catch { }
 
-		// 🔥 Always push active thread + history when webview is first resolved
+		// Defer sending history until webview signals readiness (chatViewReady)
 		this._postThreadList();
-		const activeThreadId = this.threadManager.getActiveThreadId();
-		if (activeThreadId) {
-			const session = this.threadManager.getSession(activeThreadId);
-			if (session) {
-				const history = session.getHistory();
-				this._view?.webview.postMessage({ type: 'showHistory', history });
-			}
-		}
 
 		// Refresh UI whenever the view becomes visible again (e.g., after switching panels)
 		webviewView.onDidChangeVisibility(() => {
 			if (webviewView.visible) {
 				this._postThreadList();
-				const activeThreadId = this.threadManager.getActiveThreadId();
-				if (activeThreadId) {
-					const session = this.threadManager.getSession(activeThreadId);
-					if (session) {
-						const history = session.getHistory();
-						this._view?.webview.postMessage({ type: 'showHistory', history });
-					}
+				// Only send history if view already had a ready handshake once
+				if ((webviewView as any)._naruhodocsReady) {
+					this._sendFullHistory();
 				}
 			}
 		});
 
 		webviewView.webview.onDidReceiveMessage(async data => {
+			if (data.type === 'chatViewReady') {
+				(webviewView as any)._naruhodocsReady = true;
+				// Now safe to send full history
+				this._sendFullHistory();
+				return;
+			}
 			// Webview received message
 			if (data.type === 'scanDocs') {
 				// scanDocs triggered from webview
@@ -238,7 +234,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 				case 'generateDoc': {
 					// generateDoc triggered (doc-generate thread)
 
-					const response = await generateDocument(data);
+					const response = await generateDocument(this.llmService, data);
 					// Response from docGenerate.generate captured
 					this._view?.webview.postMessage({ type: response.type, sender: response.sender, message: response.message });
 
@@ -398,34 +394,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 				}
 				case 'switchThread': {
 					const sessionId = data.sessionId as string;
-
-					// Clear current conversation display
-					this._view?.webview.postMessage({ type: 'clearMessages' });
-
-					// Switch to the new thread
 					this.threadManager.setActiveThread(sessionId);
-
-					// Load and display the conversation history for the new thread
-					const newSession = this.threadManager.getSession(sessionId);
-					if (newSession) {
-						const history = newSession.getHistory();
-
-						// Send each message in the history to the webview
-						for (const msg of history) {
-							const sender = msg instanceof HumanMessage ? 'You' : 'Bot';
-							const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
-							this._view?.webview.postMessage({
-								type: 'addMessage',
-								sender: sender,
-								message: content
-							});
-						}
-						
-						// Switched to existing thread verbose log removed
-					} else {
-						// Switched to new thread verbose log removed
-					}
-
+					this._sendFullHistory(sessionId);
 					break;
 				}
 				case 'showVisualizationMenu': {
@@ -614,33 +584,23 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		// Legacy provider update chat message removed. Provider change is now announced
 		// exclusively via extension.ts calling addSystemMessage("Provider changed to ...").
 
-		// Recreate the general purpose session with the new provider
-		const generalThreadId = 'naruhodocs-general-thread';
-		if (this.threadManager.hasSession(generalThreadId)) {
-			const generalThreadTitle = 'General Purpose';
-			const sysMessage = SystemMessages.GENERAL_PURPOSE;
-
-			if (this.llmManager) {
-				this.llmService = LLMService.getOrCreate(this.llmManager);
-				this.llmService.clearSession(generalThreadId);
-				this.llmService.getSession(generalThreadId, sysMessage, { taskType: 'chat', forceNew: true })
-					.then(session => {
-					this.threadManager.setSession(generalThreadId, session);
-					this.threadManager.setThreadTitle(generalThreadId, generalThreadTitle);
-					if (this.threadManager.getActiveThreadId() === generalThreadId) {
-						this._postThreadList();
-					}
-				}).catch(error => {
-					console.error('Failed to update general chat session:', error);
+    // Recreate the general purpose session with the new provider
+		// Recreate ALL sessions so that history is preserved across provider changes.
+		// LLMService.clearAllSessions() is invoked externally (extension.ts) before this call.
+		// We now obtain a fresh LLMService instance and ask ThreadManager to reinitialize its sessions.
+		if (this.llmManager) {
+			this.llmService = LLMService.getOrCreate(this.llmManager);
+			this.threadManager.reinitializeSessions(this.llmService)
+				.catch(err => {
+					console.error('Failed to reinitialize sessions after provider change:', err);
 					if (this._view) {
 						this._view.webview.postMessage({
 							type: 'addMessage',
 							sender: 'System',
-							message: `❌ Failed to update LLM provider: ${error.message}`
+							message: `❌ Failed to reinitialize sessions after provider change: ${err.message}`
 						});
 					}
 				});
-			}
 		}
 	}
 
@@ -687,6 +647,64 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
 			const isGeneralTab = activeThreadId === 'naruhodocs-general-thread';
 			this._view.webview.postMessage({ type: 'toggleGeneralTabUI', visible: isGeneralTab });
+		}
+	}
+
+	/**
+	 * Normalize and send entire history for the active thread in one atomic message to avoid
+	 * flicker and race conditions with iterative addMessage calls after webview recreation.
+	 */
+	private _sendFullHistory(sessionId?: string) {
+		if (!this._view) { return; }
+		const activeId = sessionId || this.threadManager.getActiveThreadId();
+		if (!activeId) { return; }
+		const session = this.threadManager.getSession(activeId);
+		if (!session) { return; }
+		try {
+			const raw = session.getHistory();
+			if (this.context.extensionMode === vscode.ExtensionMode.Development) {
+				console.log('[NaruhoDocs][History] Raw history length:', raw.length, 'for session', activeId);
+			}
+			const normalized = raw.map((msg: any) => {
+				let role: string | undefined = msg.type || (typeof msg._getType === 'function' ? msg._getType() : undefined);
+				if (!role || role === 'unknown') {
+					const ctor = msg.constructor?.name?.toLowerCase?.() || '';
+					if (ctor.includes('human')) { role = 'human'; }
+					else if (ctor.includes('ai')) { role = 'ai'; }
+				}
+				if (role === 'user') { role = 'human'; }
+				if (role === 'assistant' || role === 'bot') { role = 'ai'; }
+				const sender = role === 'human' ? 'You' : 'Bot';
+				const text = typeof msg.content === 'string' ? msg.content : msg.text || JSON.stringify(msg.content);
+				return { sender, message: text };
+			});
+			if (this.context.extensionMode === vscode.ExtensionMode.Development) {
+				console.log('[NaruhoDocs][History] Normalized history length:', normalized.length);
+			}
+			// Fallback: if raw has items but normalized becomes empty (unexpected), replay manually
+			if (raw.length > 0 && normalized.length === 0) {
+				if (this.context.extensionMode === vscode.ExtensionMode.Development) {
+					console.warn('[NaruhoDocs][History] Normalized empty; falling back to manual replay');
+				}
+				this._view.webview.postMessage({ type: 'clearMessages' });
+				for (const msg of raw) {
+					let role: string | undefined = (msg as any).type || (typeof (msg as any)._getType === 'function' ? (msg as any)._getType() : undefined);
+					if (!role || role === 'unknown') {
+						const ctor = msg.constructor?.name?.toLowerCase?.() || '';
+						if (ctor.includes('human')) { role = 'human'; }
+						else if (ctor.includes('ai')) { role = 'ai'; }
+					}
+					if (role === 'user') { role = 'human'; }
+					if (role === 'assistant' || role === 'bot') { role = 'ai'; }
+					const sender = role === 'human' ? 'You' : 'Bot';
+					const content = typeof (msg as any).content === 'string' ? (msg as any).content : (msg as any).text || JSON.stringify((msg as any).content);
+					this._view.webview.postMessage({ type: 'addMessage', sender, message: content });
+				}
+				return;
+			}
+			this._view.webview.postMessage({ type: 'setFullHistory', history: normalized });
+		} catch (e) {
+			console.warn('Failed to send full history:', e);
 		}
 	}
 

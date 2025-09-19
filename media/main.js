@@ -1091,6 +1091,18 @@
     window.addEventListener('message', event => {
         const message = event.data;
         switch (message.type) {
+            case 'setFullHistory':
+                // Atomically replace chat messages with provided normalized history
+                if (chatMessages) { chatMessages.innerHTML = ''; }
+                if (Array.isArray(message.history)) {
+                    message.history.forEach(/** @param {{sender?: string, message?: string}} entry */ (entry) => {
+                        if (entry && typeof entry === 'object') {
+                            addMessage(entry.sender || 'Bot', entry.message || '');
+                        }
+                    });
+                }
+                persistState();
+                break;
             case 'addMessage':
                 addMessage(message.sender, message.message);
                 break;
@@ -1198,6 +1210,13 @@
                             uri: message.sessionId,
                             docType: message.docType || message.templateType || 'README'
                         });
+
+                        // Notify extension that webview is fully initialized and ready to accept history
+                        try {
+                            vscode.postMessage({ type: 'chatViewReady' });
+                        } catch (e) {
+                            console.warn('[NaruhoDocs] Failed to post chatViewReady:', e);
+                        }
                         btnContainer.remove();
                     };
 

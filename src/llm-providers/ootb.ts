@@ -4,38 +4,28 @@ import { createChat, ChatSession } from '../langchain-backend/llm';
 
 export class OOTBProvider implements LLMProvider {
     readonly name = 'Out-of-the-Box Gemini';
-    // Built-in key is now ONLY sourced from environment for security; no hard-coded fallback committed to repo
-    private readonly BUILT_IN_API_KEY = process.env.NARUHODOCS_BUILT_IN_KEY || '';
+    // Uses the primary GOOGLE_API_KEY env var; no separate built-in key anymore
+    private readonly API_KEY = process.env.GOOGLE_API_KEY || '';
     private readonly DAILY_LIMIT = 50; // Retained constant for potential future soft warnings (limit no longer enforced)
     // Map<dateString, count>
     private usageTracker: Map<string, number> = new Map();
 
-    get isAvailable(): boolean {
-        return !!this.BUILT_IN_API_KEY; // Only available if built-in key is set
-    }
+    get isAvailable(): boolean { return !!this.API_KEY; }
 
     async initialize(options: LLMProviderOptions): Promise<void> {
-        if (!this.BUILT_IN_API_KEY) {
-            throw new LLMProviderError(
-                'Built-in API key not configured. Please use BYOK mode instead.',
-                this.name,
-                'AUTH_FAILED'
-            );
+        if (!this.API_KEY) {
+            throw new LLMProviderError('API key not configured. Set GOOGLE_API_KEY or use BYOK mode.', this.name, 'AUTH_FAILED');
         }
         // No additional initialization needed for OOTB
     }
 
     async createChatSession(systemMessage: string, options?: { temperature?: number; model?: string }): Promise<ChatSession> {
-        if (!this.BUILT_IN_API_KEY) {
-            throw new LLMProviderError(
-                'Built-in key unavailable. Switch to BYOK or configure environment variable NARUHODOCS_BUILT_IN_KEY.',
-                this.name,
-                'AUTH_FAILED'
-            );
+        if (!this.API_KEY) {
+            throw new LLMProviderError('API key unavailable. Set GOOGLE_API_KEY or switch to BYOK.', this.name, 'AUTH_FAILED');
         }
         try {
             const baseSession = createChat({
-                apiKey: this.BUILT_IN_API_KEY,
+                apiKey: this.API_KEY,
                 model: options?.model || 'gemini-2.0-flash',
                 temperature: options?.temperature ?? 0,
                 systemMessage
@@ -67,13 +57,13 @@ export class OOTBProvider implements LLMProvider {
     }
 
     async testConnection(): Promise<boolean> {
-        if (!this.BUILT_IN_API_KEY) {
+        if (!this.API_KEY) {
             return false;
         }
         
         try {
             const session = createChat({
-                apiKey: this.BUILT_IN_API_KEY,
+                apiKey: this.API_KEY,
                 model: 'gemini-2.0-flash',
                 temperature: 0,
                 systemMessage: 'Health check'

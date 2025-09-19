@@ -380,9 +380,49 @@ export class LLMService {
         try {
             const hist = session.getHistory?.();
             if (hist) {
-                historySnapshot = hist.map((m: any) => ({ role: m.type || 'unknown', content: (m.text || '').toString() }));
+                historySnapshot = hist.map((m: any) => {
+                    let role: string | undefined = (m as any).type || (typeof (m as any)._getType === 'function' ? (m as any)._getType() : undefined);
+                    if (!role || role === 'unknown') {
+                        const ctor = m.constructor?.name?.toLowerCase?.() || '';
+                        if (ctor.includes('human')) { role = 'human'; }
+                        else if (ctor.includes('ai')) { role = 'ai'; }
+                    }
+                    if (role === 'user') { role = 'human'; }
+                    if (role === 'assistant' || role === 'bot') { role = 'ai'; }
+                    if (role !== 'human' && role !== 'ai') { role = 'unknown'; }
+                    const content = (m as any).text || (typeof (m as any).content === 'string' ? (m as any).content : JSON.stringify((m as any).content || ''));
+                    return { role, content: content.toString() };
+                });
             }
         } catch { /* ignore */ }
+        // Verbose pre-dispatch logging of context going to the model
+        try {
+            if (this.verboseLogging && this.outputChannel) {
+                let sessionKey: string | undefined;
+                for (const [k, s] of this.sessionCache.entries()) { if (s === session) { sessionKey = k; break; } }
+                const providerName = sessionKey ? this.sessionProviders.get(sessionKey) : 'unknown-provider';
+                const modelHint = sessionKey ? this.sessionModelHints.get(sessionKey) : undefined;
+                const systemMsg = sessionKey ? this.sessionSystemMessages.get(sessionKey) : undefined;
+                const timestamp = new Date().toISOString();
+                this.outputChannel.appendLine(`[${timestamp}] dispatch_start task=${task} provider=${providerName || 'unknown'} model=${modelHint || 'unknown'} session=${sessionKey || 'n/a'} historyMessages=${historySnapshot.length} promptChars=${prompt.length}`);
+                if (systemMsg) {
+                    const sysPreview = systemMsg.length > 200 ? systemMsg.slice(0,200) + '…' : systemMsg;
+                    this.outputChannel.appendLine(`  SYSTEM(full) >>> ${sysPreview.replace(/\r?\n/g,' \u23CE ')}`);
+                }
+                if (historySnapshot.length) {
+                    const recent = historySnapshot.slice(-12); // up to last 12 messages
+                    recent.forEach((m, idx) => {
+                        const content = m.content.length > 220 ? m.content.slice(0,220)+'…' : m.content;
+                        const roleLabel = m.role === 'human' ? 'HUMAN' : (m.role === 'ai' ? 'AI' : 'UNKNOWN');
+                        this.outputChannel!.appendLine(`  CONTEXT[${recent.length-idx}/${historySnapshot.length}] ${roleLabel}: ${content.replace(/\r?\n/g,' \u23CE ')}`);
+                    });
+                } else {
+                    this.outputChannel.appendLine('  CONTEXT (none)');
+                }
+                const combinedChars = historySnapshot.reduce((acc, m) => acc + m.content.length, 0) + prompt.length;
+                this.outputChannel.appendLine(`  CONTEXT_STATS totalChars=${combinedChars} estTokens~= ${this.estimateTokens('', combinedChars)} (history + prompt)`);
+            }
+        } catch { /* ignore logging errors */ }
         const before = Date.now();
         const answer = await session.chat(prompt);
         const durationMs = Date.now() - before;
@@ -425,7 +465,8 @@ export class LLMService {
                     const recent = historySnapshot.slice(-6); // last 6 messages
                     recent.forEach((m, idx) => {
                         const content = m.content.length > 160 ? m.content.slice(0,160)+'…' : m.content;
-                        this.outputChannel!.appendLine(`  HIST[${recent.length-idx}] ${m.role.toUpperCase()}: ${content.replace(/\r?\n/g,' \u23CE ')}`);
+                        const roleLabel = m.role === 'human' ? 'HUMAN' : (m.role === 'ai' ? 'AI' : 'UNKNOWN');
+                        this.outputChannel!.appendLine(`  HIST[${recent.length-idx}] ${roleLabel}: ${content.replace(/\r?\n/g,' \u23CE ')}`);
                     });
                 }
                 this.outputChannel.appendLine(`  PROMPT>>> ${safePrompt.replace(/\r?\n/g, ' \u23CE ')}`);
