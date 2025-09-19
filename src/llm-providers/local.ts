@@ -213,7 +213,6 @@ export class LocalProvider implements LLMProvider {
                     const response = await model.invoke(history);
 
                     let aiText = '';
-                    
                     if (typeof response.content === 'string') {
                         aiText = response.content;
                     } else if (Array.isArray(response.content)) {
@@ -223,6 +222,9 @@ export class LocalProvider implements LLMProvider {
                     } else {
                         aiText = JSON.stringify(response.content);
                     }
+
+                    // Filter out a pair of <think>...</think> tags (any capitalization) at the beginning of the response
+                    aiText = aiText.replace(/^\s*<think>([\s\S]*?)<\/think>\s*/i, '');
 
                     const aiMessage = new AIMessage(aiText);
                     history.push(aiMessage);
