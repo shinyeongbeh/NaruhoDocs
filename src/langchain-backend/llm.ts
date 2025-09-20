@@ -1,4 +1,5 @@
 // Factory for creating a reusable Gemini chat session with in-memory conversation history.
+import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { AIMessage, HumanMessage, BaseMessage, SystemMessage } from '@langchain/core/messages';
 import { createReactAgent } from '@langchain/langgraph/prebuilt';
@@ -12,6 +13,7 @@ export interface CreateChatOptions {
   temperature?: number;      // Sampling temperature
   maxHistoryMessages?: number; // Cap stored message pairs (human+ai counts as 2)
   systemMessage?: string;    // Optional initial system message for context
+  chatModel?: BaseChatModel; // Optional custom chat model instance
 }
 
 export interface ChatSession {
@@ -27,7 +29,7 @@ export function createChat(opts: CreateChatOptions = {}): ChatSession {
   if (!apiKey) {
     throw new Error('Gemini API key missing. Set naruhodocs.geminiApiKey in settings or GOOGLE_API_KEY env var.');
   }
-  const model = new ChatGoogleGenerativeAI({
+  const model = opts.chatModel || new ChatGoogleGenerativeAI({
     apiKey,
     model: opts.model || 'gemini-2.0-flash',
     temperature: opts.temperature ?? 0,
@@ -114,6 +116,7 @@ export function createChat(opts: CreateChatOptions = {}): ChatSession {
 
       prune();
 
+      aiText = aiText.replace(/^\s*<think>([\s\S]*?)<\/think>\s*/i, '');
       return aiText;
     },
     reset() {
