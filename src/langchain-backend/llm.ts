@@ -1,10 +1,11 @@
 // Factory for creating a reusable Gemini chat session with in-memory conversation history.
+import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { AIMessage, HumanMessage, BaseMessage, SystemMessage } from '@langchain/core/messages';
 import { createReactAgent } from '@langchain/langgraph/prebuilt';
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
-// import { RetrieveWorkspaceFilenamesTool, RetrieveFileContentTool, RAGretrievalTool } from './tools';
+// import { RetrieveWorkspaceFilenamesTool, RetrieveFileContentTool } from './features';
 import { RAGretrievalTool } from './tools';
 
 export interface CreateChatOptions {
@@ -13,6 +14,7 @@ export interface CreateChatOptions {
   temperature?: number;      // Sampling temperature
   maxHistoryMessages?: number; // Cap stored message pairs (human+ai counts as 2)
   systemMessage?: string;    // Optional initial system message for context
+  chatModel?: BaseChatModel; // Optional custom chat model instance
 }
 
 export interface ChatSession {
@@ -28,7 +30,8 @@ export function createChat(opts: CreateChatOptions = {}): ChatSession {
   if (!apiKey) {
     throw new Error('Gemini API key missing. Set naruhodocs.geminiApiKey in settings or GOOGLE_API_KEY env var.');
   }
-  const model = new ChatGoogleGenerativeAI({
+  //use opts.chatModel for creating local model chat
+  const model = opts.chatModel || new ChatGoogleGenerativeAI({
     apiKey,
     model: opts.model || 'gemini-2.0-flash',
     temperature: opts.temperature ?? 0,
@@ -83,7 +86,7 @@ Keep responses focused and technical, using the retrieved context as your primar
   //   }
   // );
 
-    // Initialize RAG tools
+  // Initialize RAG tools
   const RAGretrieval = tool(
     async ({ query }) => {
       console.log('Tool used: retrieveContext with query:', query);
@@ -117,7 +120,7 @@ Keep responses focused and technical, using the retrieved context as your primar
       // First, always retrieve relevant context using RAG
       const contextTool = new RAGretrievalTool();
       const relevantContext = await contextTool._call(userMessage);
-      
+
       // Construct an enhanced prompt with the retrieved context
       const enhancedMessage = `
 Query: ${userMessage}
@@ -126,7 +129,7 @@ Retrieved Context:
 ${relevantContext}
 
 Based on the above context, please provide a response.`;
-      
+
       history.push(new HumanMessage(enhancedMessage));
       prune();
 
@@ -145,7 +148,7 @@ Based on the above context, please provide a response.`;
       if (typeof lastMessage.content === 'string') {
         aiText = lastMessage.content;
       } else if (Array.isArray(lastMessage.content)) {
-  aiText = lastMessage.content.map((c: any) =>
+        aiText = lastMessage.content.map((c: any) =>
           typeof c === 'string' ? c : JSON.stringify(c)
         ).join(' ');
       } else {
@@ -158,6 +161,7 @@ Based on the above context, please provide a response.`;
 
       prune();
 
+      aiText = aiText.replace(/^\s*<think>([\s\S]*?)<\/think>\s*/i, '');
       return aiText;
     },
     reset() {
