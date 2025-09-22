@@ -322,7 +322,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 							// Log the current context that will be sent to the LLM
 							const activeThreadId = this.threadManager.getActiveThreadId();
 							const currentHistory = session.getHistory();
-							const sessionSystemMessage = (session as any).systemMessage || 'No system message';
+							const sessionSystemMessage = this.threadManager.getSystemMessage(activeThreadId||'');
 							const historyPreview = currentHistory.map((msg: any, index: any) => {
 								const msgType = (msg as any).type || 'unknown';
 								const msgContent = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
@@ -334,7 +334,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 							
 							const botResponse = await this.llmService.trackedChat({
 								sessionId: activeThreadId!,
-								systemMessage: (session as any).systemMessage || SystemMessages.GENERAL_PURPOSE,
+								systemMessage: sessionSystemMessage || '',
 								prompt: userMessage,
 								task: 'chat'
 							});

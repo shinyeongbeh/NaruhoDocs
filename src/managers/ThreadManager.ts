@@ -140,6 +140,13 @@ export class ThreadManager {
         return this.sessions;
     }
 
+    public getSystemMessage(sessionId: string): string | undefined {
+        if(!this.systemMessages.has(sessionId)){
+            throw new Error(`No system message found for sessionId: ${sessionId}`);
+        }
+        return this.systemMessages.get(sessionId);
+    }
+
     // Remove a thread
     public async removeThread(sessionId: string): Promise<void> {
         if (this.sessions.has(sessionId)) {

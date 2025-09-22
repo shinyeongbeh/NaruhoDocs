@@ -90,14 +90,13 @@ export async function generateDocument(llmService: LLMService, data: { docType: 
                 Do not include code fences, explanations, or conversational text.`;
 
         const filesAndContentsString = filesAndContents.map(f => `File: ${f.path}\n${f.content}`).join('\n\n');
-        const prompt2 = (`Generate a starter documentation for ${fileName} based on this project. Refer to the relevant workspace files and contents:\n${filesAndContentsString}. If you are unable to generate the file based on information given, do not make up generic content yourself`) || '';
-        aiGeneratedDoc = await llmService.trackedChat({
-          sessionId: 'naruhodocs-general-thread',
-          systemMessage: sys2,
-          prompt: prompt2,
-          task: 'generate_doc',
-          forceNew: true
-        });
+        const prompt2 = (`Generate a starter documentation for ${fileName} based on this project. Refer to the relevant workspace files and contents:\n${filesAndContentsString}. If you are unable to generate the file based on information given, do not make up generic content yourself`) || '';;
+        aiGeneratedDoc = (await llmService.request({
+          type: 'generate_doc',
+          title: fileName,
+          sourceContent: filesAndContentsString,
+          systemMessage: sys2
+        })).content;
 
         // AI doc generation response captured
         aiGeneratedDoc = aiGeneratedDoc.replace(/^```markdown\s*/i, '').replace(/^\*\*\*markdown\s*/i, '').replace(/```$/g, '').trim();
@@ -125,14 +124,11 @@ export async function generateDocument(llmService: LLMService, data: { docType: 
 async function suggestFilename(docType: string, llmService: LLMService): Promise<string> {
   let aiFilename = '';
   // Attempting AI filename suggestion for docType: ${docType}
-  try {
-    aiFilename = await llmService.trackedChat({
-      sessionId: 'chatview:filename-suggest',
-      systemMessage: 'You suggest concise filesystem-friendly markdown filenames.',
+  try {    
+    aiFilename = (await llmService.request({
+      type: 'chat', 
       prompt: `Suggest a concise, filesystem-friendly filename (with .md extension) for a ${docType} documentation file. Respond with only the filename, no explanation.`,
-      task: 'generate_doc',
-      forceNew: true
-    });
+    })).content;
     aiFilename = aiFilename.trim().replace(/\s+/g, '_').toUpperCase();
   } catch (e) {
     aiFilename = '';

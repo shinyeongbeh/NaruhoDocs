@@ -117,18 +117,29 @@ Keep responses focused and technical, using the retrieved context as your primar
 
   return {
     async chat(userMessage: string): Promise<string> {
-      // First, always retrieve relevant context using RAG
+      // Step 1: Let the LLM act as a prompt engineer for the RAG tool
+      const promptEngineeringMessage = `Rewrite the following user question to maximize retrieval of the most relevant code or documentation snippets from the project. Be specific and include keywords, file types, or function names if possible. Only return the rewritten query, nothing else.\n\nUser question: ${userMessage}`;
+
+      // Use the base model (not the agent) to generate the focused RAG query
+      const peResponse = await model.invoke([
+        new SystemMessage("You are an expert prompt engineer for code retrieval."),
+        new HumanMessage(promptEngineeringMessage)
+      ]);
+      let ragQuery = '';
+      if (typeof peResponse.content === 'string') {
+        ragQuery = peResponse.content.trim();
+      } else if (Array.isArray(peResponse.content)) {
+        ragQuery = peResponse.content.map((c: any) => typeof c === 'string' ? c : JSON.stringify(c)).join(' ').trim();
+      } else {
+        ragQuery = JSON.stringify(peResponse.content);
+      }
+
+      // Step 2: Use the LLM-generated query for RAG retrieval
       const contextTool = new RAGretrievalTool();
-      const relevantContext = await contextTool._call(userMessage);
+      const relevantContext = await contextTool._call(ragQuery);
 
-      // Construct an enhanced prompt with the retrieved context
-      const enhancedMessage = `
-Query: ${userMessage}
-
-Retrieved Context:
-${relevantContext}
-
-Based on the above context, please provide a response.`;
+      // Step 3: Construct the enhanced prompt for the main agent
+      const enhancedMessage = `\nQuery: ${userMessage}\n\nPrompt-engineered RAG Query: ${ragQuery}\n\nRetrieved Context:\n${relevantContext}\n\nBased on the above context, please provide a response.`;
 
       history.push(new HumanMessage(enhancedMessage));
       prune();
