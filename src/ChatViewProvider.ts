@@ -12,27 +12,6 @@ import { ThreadManager } from './managers/ThreadManager';
 import * as path from 'path';
 import * as fs from 'fs';
 
-const HISTORY_FILE = path.join(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '', '.naruhodocs-history.json');
-
-function loadHistory(): any[] {
-	try {
-		const data = require('fs').readFileSync(HISTORY_FILE, 'utf8');
-		return JSON.parse(data);
-	} catch {
-		return [];
-	}
-}
-
-function saveHistory(history: any[]) {
-	require('fs').writeFileSync(HISTORY_FILE, JSON.stringify(history, null, 2), 'utf8');
-}
-
-function clearHistory() {
-	if (fs.existsSync(HISTORY_FILE)) {
-		fs.unlinkSync(HISTORY_FILE);
-	}
-}
-
 export class ChatViewProvider implements vscode.WebviewViewProvider {
 	private documentSuggestion = new DocumentSuggestion();
 	private setBeginnerDevMode = new BeginnerDevMode();
@@ -40,6 +19,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 	private existingDocFiles: string[] = [];
 	private didDevCleanupOnce: boolean = false;
 	private fileWatcher?: vscode.FileSystemWatcher;
+	private isInitializing: boolean = true;
 
 	public static readonly viewType = 'naruhodocs.chatView';
 
@@ -218,10 +198,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 				return;
 			}
 			if (data.type === 'clearHistory') {
-				clearHistory();
-				// Optionally, send a message back to webview to update UI
-				this._view?.webview.postMessage({ type: 'historyCleared' });
-			}
+				const activeThreadId = this.threadManager.getActiveThreadId();
+                if (activeThreadId) {
+                    await this.threadManager.resetSession(activeThreadId);
+                    this._view?.webview.postMessage({ type: 'historyCleared' });
+                    this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: 'Chat history for this tab has been cleared.' });
+                }
+                // --- END: CORRECTED CLEAR HISTORY LOGIC ---
+            }
 
 			const session = this.threadManager.getActiveSession();
 			switch (data.type) {
@@ -245,8 +229,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 				case 'sendMessage': {
 					const userMessage = data.value as string;
 
-					// Log initial message processing
 					const activeThreadId = this.threadManager.getActiveThreadId();
+                    if (!activeThreadId) {
+                        this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: 'Error: No active thread selected.' });
+                        break;
+                    }
+                    const session = this.threadManager.getSession(activeThreadId);
 					
 					try {
 						if (!session) { throw new Error('No active thread'); }
@@ -339,10 +327,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 								templateType
 							});
 						} else {
-							// Default: just chat as before
-
-							// Log the current context that will be sent to the LLM
 							const activeThreadId = this.threadManager.getActiveThreadId();
+                            if (!activeThreadId) { 
+								throw new Error("Could not determine active thread for chat."); 
+							}
 							const currentHistory = session.getHistory();
 							const sessionSystemMessage = (session as any).systemMessage || 'No system message';
 							const historyPreview = currentHistory.map((msg: any, index: any) => {
@@ -604,6 +592,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
 	// Switch active thread
 	public setActiveThread(sessionId: string) {
+		if (this.isInitializing) {
+            return;
+        }
 		this.threadManager.setActiveThread(sessionId);
 	}
 

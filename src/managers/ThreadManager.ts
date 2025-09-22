@@ -93,6 +93,10 @@ export class ThreadManager {
     // Switch active thread
     public setActiveThread(sessionId: string): void {
         if (this.sessions.has(sessionId)) {
+            // Before switching, save the history of the current (outgoing) thread.
+            if (this.activeThreadId) {
+                this.saveThreadHistory(this.activeThreadId);
+            }
             this.activeThreadId = sessionId;
             this.onThreadListChange?.();
         }
