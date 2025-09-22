@@ -46,7 +46,7 @@ export function activate(context: vscode.ExtensionContext) {
 	function updateProviderModelStatus(sessionId: string = 'naruhodocs-general-thread') {
 		try {
 			const provider = llmManager.getCurrentProvider();
-			const providerType = vscode.workspace.getConfiguration('naruhodocs').get<string>('llm.provider','ootb');
+			const providerType = vscode.workspace.getConfiguration('naruhodocs').get<string>('llm.provider', 'ootb');
 			const svcAny = llmService as any;
 			let model: string | undefined = svcAny.sessionModelHints?.get(sessionId) || svcAny.sessionModelHints?.get('general');
 			let trace: string[] = [];
@@ -79,11 +79,11 @@ export function activate(context: vscode.ExtensionContext) {
 	llmService.setModelConfigManager(modelConfigManager);
 
 	// Provider profile memory removed (deprecated). Models now fully governed by .naruhodocs/models.json and runtime hints.
-	let currentProviderType = vscode.workspace.getConfiguration('naruhodocs').get<string>('llm.provider','ootb');
-	
+	let currentProviderType = vscode.workspace.getConfiguration('naruhodocs').get<string>('llm.provider', 'ootb');
+
 	// Initialize Visualization Provider
 	const visualizationProvider = new VisualizationProvider(context, llmManager);
-	
+
 	// Initialize the LLM provider and then create initial threads only after provider is ready
 	(async () => {
 		// Load model config file early
@@ -109,20 +109,20 @@ export function activate(context: vscode.ExtensionContext) {
 			await llmManager.initializeFromConfig();
 			llmService.logEvent('provider_init', { provider: llmManager.getCurrentProvider()?.name });
 			// Clear any pre-existing sessions created via fallback before provider ready
-			llmService.clearAllSessions();
+			// llmService.clearAllSessions();
 
 			// Initialize the general-purpose thread AFTER provider is confirmed
-			const generalThreadId = 'naruhodocs-general-thread';
-			const generalThreadTitle = 'General Purpose';
-			if (!threadMap.has(generalThreadId)) {
-				threadMap.set(generalThreadId, { document: undefined as any, sessionId: generalThreadId });
-				// Ensure backing LLM session is created through LLMService so logging + provider attribution work
-				await llmService.getSession(generalThreadId, SystemMessages.GENERAL_PURPOSE, { taskType: 'chat', forceNew: true });
-				provider.createThread(generalThreadId, SystemMessages.GENERAL_PURPOSE, generalThreadTitle);
-				activeThreadId = generalThreadId;
-				provider.setActiveThread(generalThreadId);
-			}
-			updateProviderModelStatus(generalThreadId);
+			// const generalThreadId = 'naruhodocs-general-thread';
+			// const generalThreadTitle = 'General Purpose';
+			// if (!threadMap.has(generalThreadId)) {
+			// 	threadMap.set(generalThreadId, { document: undefined as any, sessionId: generalThreadId });
+			// 	// Ensure backing LLM session is created through LLMService so logging + provider attribution work
+			// 	await llmService.getSession(generalThreadId, SystemMessages.GENERAL_PURPOSE, { taskType: 'chat', forceNew: true });
+			// 	provider.createThread(generalThreadId, SystemMessages.GENERAL_PURPOSE, generalThreadTitle);
+			// 	activeThreadId = generalThreadId;
+			// 	provider.setActiveThread(generalThreadId);
+			// }
+			updateProviderModelStatus('naruhodocs-general-thread');
 
 			// For already-open documents, create threads now that provider is ready
 			const openDocs = vscode.workspace.textDocuments;
@@ -159,7 +159,7 @@ export function activate(context: vscode.ExtensionContext) {
 			if (event.affectsConfiguration('naruhodocs.llm.provider') ||
 				event.affectsConfiguration('naruhodocs.llm.apiKey') ||
 				event.affectsConfiguration('naruhodocs.logging.verbose')) {
-				
+
 				// Debounce configuration changes to avoid multiple rapid updates
 				if (configChangeTimeout) {
 					clearTimeout(configChangeTimeout);
@@ -168,7 +168,7 @@ export function activate(context: vscode.ExtensionContext) {
 				configChangeTimeout = setTimeout(async () => {
 					try {
 						const config = vscode.workspace.getConfiguration('naruhodocs');
-						const newProviderType = config.get<string>('llm.provider','ootb');
+						const newProviderType = config.get<string>('llm.provider', 'ootb');
 						const providerChanged = newProviderType !== currentProviderType;
 						if (providerChanged || event.affectsConfiguration('naruhodocs.llm.apiKey')) {
 							await llmManager.initializeFromConfig();
@@ -285,22 +285,22 @@ export function activate(context: vscode.ExtensionContext) {
 				targetLanguage: picked,
 				systemMessage: 'You are a professional technical translator. Preserve code blocks and formatting.'
 			});
-	// Show LLM stats command
-	context.subscriptions.push(
-		vscode.commands.registerCommand('naruhodocs.showLLMStats', async () => {
-			const stats = llmService.getStats();
-			const lines = [
-				`Day: ${stats.day}`,
-				`Requests: ${stats.requests}`,
-				`Estimated Tokens (in/out): ${stats.estimatedInputTokens}/${stats.estimatedOutputTokens}`,
-				'Per Task:'
-			];
-			for (const k of Object.keys(stats.perTask)) {
-				lines.push(`  - ${k}: ${stats.perTask[k as keyof typeof stats.perTask]}`);
-			}
-			vscode.window.showInformationMessage(lines.join('\n'), { modal: false });
-		})
-	);
+			// Show LLM stats command
+			context.subscriptions.push(
+				vscode.commands.registerCommand('naruhodocs.showLLMStats', async () => {
+					const stats = llmService.getStats();
+					const lines = [
+						`Day: ${stats.day}`,
+						`Requests: ${stats.requests}`,
+						`Estimated Tokens (in/out): ${stats.estimatedInputTokens}/${stats.estimatedOutputTokens}`,
+						'Per Task:'
+					];
+					for (const k of Object.keys(stats.perTask)) {
+						lines.push(`  - ${k}: ${stats.perTask[k as keyof typeof stats.perTask]}`);
+					}
+					vscode.window.showInformationMessage(lines.join('\n'), { modal: false });
+				})
+			);
 			// Open translation in a side-by-side editor
 			const translationDoc = await vscode.workspace.openTextDocument({
 				content: `# Translation (${picked}) of ${path.basename(doc.fileName)}\n\n${resp.content}`,
@@ -347,10 +347,10 @@ export function activate(context: vscode.ExtensionContext) {
 			try {
 				await modelConfigManager.scaffoldIfMissing();
 				await modelConfigManager.load();
-				const provider = await vscode.window.showQuickPick(['ootb','byok','local'], { placeHolder: 'Select provider' });
+				const provider = await vscode.window.showQuickPick(['ootb', 'byok', 'local'], { placeHolder: 'Select provider' });
 				if (!provider) { return; }
 				const task = await vscode.window.showQuickPick([
-					'chat','summarize','read_files','analyze','translate','generate_doc','visualization_context'
+					'chat', 'summarize', 'read_files', 'analyze', 'translate', 'generate_doc', 'visualization_context'
 				], { placeHolder: 'Select task to override' });
 				if (!task) { return; }
 				const model = await vscode.window.showInputBox({ prompt: `Enter model name for ${provider}:${task}` });
@@ -413,7 +413,7 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 			const runPicker = async (): Promise<void> => {
 				try {
 					const config = vscode.workspace.getConfiguration('naruhodocs');
-					const current = config.get<string>('llm.provider','ootb');
+					const current = config.get<string>('llm.provider', 'ootb');
 					const items: Array<{ label: string; value: string; description?: string }> = [
 						{ label: 'Out-of-the-box (Gemini)', value: 'ootb', description: 'Built-in, limited usage' },
 						{ label: 'Bring Your Own Key', value: 'byok', description: 'Use your own API key' },
@@ -548,7 +548,7 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 		})
 	);
 
-    // (Removed early general thread creation; now happens after provider init)
+	// (Removed early general thread creation; now happens after provider init)
 
 	// Markdownlint diagnostics
 	const markdownDiagnostics = vscode.languages.createDiagnosticCollection('naruhodocs-markdownlint');
@@ -744,12 +744,12 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 
 // This method is called when your extension is deactivated
 export async function deactivate() {
-    try {
-        const existing = (LLMService as any).instance as LLMService | undefined;
-        if (existing) {
-            await existing.saveState();
-        }
-    } catch (e) {
-        console.warn('Failed to persist LLMService state on deactivate', e);
-    }
+	try {
+		const existing = (LLMService as any).instance as LLMService | undefined;
+		if (existing) {
+			await existing.saveState();
+		}
+	} catch (e) {
+		console.warn('Failed to persist LLMService state on deactivate', e);
+	}
 }

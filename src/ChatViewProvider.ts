@@ -138,29 +138,33 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
         webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
 
-        // --- START: UNIFIED INITIALIZATION LOGIC ---
         if (this.isInitializing) {
             this.isInitializing = false; // Prevent this block from running again
             try {
+                this.llmService.clearAllSessions();
+
                 // 1. Restore all threads from workspace state.
                 const keys = this.context.workspaceState.keys ? this.context.workspaceState.keys() : [];
                 await this.threadManager.restoreThreads(keys);
 
-                // 2. Ensure the general thread exists after restoration.
-                await this.threadManager.initializeGeneralThread();
+                // 2. Ensure the general thread exists if it wasn't restored (e.g., first run).
+                if (!this.threadManager.hasSession('naruhodocs-general-thread')) {
+                    await this.threadManager.initializeGeneralThread();
+                }
 
-                // --- START: FIX ---
-                // 3. Always set the "General" thread as active on startup, per user request.
+                // 3. Always set the "General" thread as active on startup.
                 this.threadManager.setActiveThread('naruhodocs-general-thread');
-                // --- END: FIX ---
+
+                // 4. Post the thread list and the history for the now-active general thread.
+                // This ensures the UI is populated as soon as the backend is ready.
+                this._postThreadList();
+                this._sendFullHistory();
 
             } catch (e) {
                 console.error("Error during thread restoration:", e);
                 vscode.window.showErrorMessage("NaruhoDocs: Failed to restore chat sessions.");
             }
         }
-        // --- END: UNIFIED INITIALIZATION LOGIC ---
-
         // Refresh UI whenever the view becomes visible again
         webviewView.onDidChangeVisibility(() => {
             if (webviewView.visible) {

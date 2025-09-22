@@ -28,9 +28,6 @@
 
     const oldState = vscode.getState() || {};
 
-    if (oldState.chatHTML && chatMessages) {
-        chatMessages.innerHTML = oldState.chatHTML;
-    }
     if (oldState.activeDocName && currentDocName) {
         currentDocName.textContent = oldState.activeDocName;
     }
@@ -1101,6 +1098,7 @@
                         }
                     });
                 }
+                vscode.setState(null);
                 persistState();
                 break;
             case 'addMessage':
