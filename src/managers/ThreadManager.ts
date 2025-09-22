@@ -9,13 +9,13 @@ export class ThreadManager {
     private activeThreadId?: string;
     private threadTitles: Map<string, string> = new Map(); // sessionId -> document title
     private systemMessages: Map<string, string> = new Map(); // sessionId -> system message (for rehydration)
-    
+
     constructor(
         private context: vscode.ExtensionContext,
         private apiKey?: string,
         private llmManager?: LLMProviderManager,
         private onThreadListChange?: () => void
-    ) {}
+    ) { }
 
     private get llmService(): LLMService | undefined {
         if (!this.llmManager) { return undefined; }
@@ -139,6 +139,31 @@ export class ThreadManager {
         return this.threadTitles;
     }
 
+    private threadManager?: ThreadManager; // Ensure this property exists
+
+    public setThreadManager(manager: ThreadManager): void {
+        this.threadManager = manager;
+    }
+
+    public async saveState(): Promise<void> {
+        if (this.threadManager) {
+            const sessions = this.threadManager.getSessions();
+            const savePromises: Promise<void>[] = [];
+            for (const sessionId of sessions.keys()) {
+                savePromises.push(this.threadManager.saveThreadHistory(sessionId));
+            }
+            if (savePromises.length > 0) {
+                await Promise.all(savePromises);
+                console.log(`[NaruhoDocs] Saved state for ${savePromises.length} threads.`);
+            }
+        }
+        // Also persist the last active thread ID
+        const lastActiveId = this.threadManager?.getActiveThreadId();
+        if (lastActiveId) {
+            await this.context.globalState.update('lastActiveThreadId', lastActiveId);
+        }
+    }
+
     // Get all sessions
     public getSessions(): Map<string, ChatSession> {
         return this.sessions;
@@ -239,7 +264,7 @@ export class ThreadManager {
     }
 
     // Get thread list data for UI
-    public getThreadListData(): { threads: Array<{id: string, title: string}>, activeThreadId: string | undefined } {
+    public getThreadListData(): { threads: Array<{ id: string, title: string }>, activeThreadId: string | undefined } {
         const threads = Array.from(this.threadTitles.entries()).map(([id, title]) => ({ id, title }));
         return { threads, activeThreadId: this.activeThreadId };
     }

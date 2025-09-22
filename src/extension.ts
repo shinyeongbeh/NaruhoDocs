@@ -110,7 +110,6 @@ export function activate(context: vscode.ExtensionContext) {
 			llmService.logEvent('provider_init', { provider: llmManager.getCurrentProvider()?.name });
 			// Clear any pre-existing sessions created via fallback before provider ready
 			llmService.clearAllSessions();
-			await llmService.restoreState();
 
 			// Initialize the general-purpose thread AFTER provider is confirmed
 			const generalThreadId = 'naruhodocs-general-thread';
@@ -745,12 +744,12 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 
 // This method is called when your extension is deactivated
 export async function deactivate() {
-	try {
-		const existing = (LLMService as any).instance as LLMService | undefined;
-		if (existing) {
-			await existing.saveState();
-		}
-	} catch (e) {
-		console.warn('Failed to persist LLMService state on deactivate', e);
-	}
+    try {
+        const existing = (LLMService as any).instance as LLMService | undefined;
+        if (existing) {
+            await existing.saveState();
+        }
+    } catch (e) {
+        console.warn('Failed to persist LLMService state on deactivate', e);
+    }
 }
