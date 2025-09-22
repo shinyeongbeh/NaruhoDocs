@@ -67,10 +67,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 			() => this._postThreadList() // Callback for thread list changes
 		);
 
-		// Initialize the general-purpose thread
-		this.threadManager.initializeGeneralThread().catch(error => {
-			console.error('Failed to initialize general thread:', error);
-		});
+		// Do NOT initialize general thread here anymore. It will be handled in resolveWebviewView.
 
 		// Watch for file deletions (markdown/txt)
 		this.fileWatcher = vscode.workspace.createFileSystemWatcher('**/*.{md,txt}');
@@ -158,11 +155,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 			this.didDevCleanupOnce = true;
 		}
 
-		// Restore threads from workspaceState
+		// --- START: REVISED INITIALIZATION LOGIC ---
+
+		// 1. Ensure the general thread is created first.
+		await this.threadManager.initializeGeneralThread();
+
+		// 2. Restore all other threads from workspaceState.
 		const keys = this.context.workspaceState.keys ? this.context.workspaceState.keys() : [];
 		await this.threadManager.restoreThreads(keys);
 
-		// Ensure currently open documents are represented as threads when the view opens
+		// 3. Create threads for any currently open documents.
 		try {
 			const openDocs = vscode.workspace.textDocuments;
 			const pending: Promise<void>[] = [];
@@ -174,7 +176,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 				}
 			}
 			if (pending.length) { await Promise.all(pending); }
-		} catch { }
+		} catch (e) {
+			console.error("Error creating threads for open documents:", e);
+		}
+
+		// 4. Set the active thread. Always default to the general thread on initial load.
+        const initialSessionId = 'naruhodocs-general-thread';
+        this.threadManager.setActiveThread(initialSessionId);
+
+        // --- END: REVISED INITIALIZATION LOGIC ---
 
 		// Defer sending history until webview signals readiness (chatViewReady)
 		this._postThreadList();
@@ -215,23 +225,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
 			const session = this.threadManager.getActiveSession();
 			switch (data.type) {
-				// case 'suggestTemplate': {
-				// 	// Generate template using AI and show save modal
-				// 	let templateContent = '';
-				// 	try {
-				// 		if (!session) { throw new Error('No active thread'); }
-				// 		templateContent = await session.chat(`Generate a documentation template for ${data.templateType || 'this project'}.`);
-				// 	} catch (err) {
-				// 		templateContent = 'Unable to generate template.';
-				// 	}
-				// 	this._view?.webview.postMessage({
-				// 		type: 'showSaveTemplateButtons',
-				// 		template: templateContent,
-				// 		sessionId: this.activeThreadId,
-				// 		templateType: data.templateType || 'README'
-				// 	});
-				// 	break;
-				// }
 				case 'generateDoc': {
 					// generateDoc triggered (doc-generate thread)
 
