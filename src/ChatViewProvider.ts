@@ -78,32 +78,32 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 	/**
 	 * Send a message to a specific thread and display the bot response.
 	 */
-	public async sendMessageToThread(sessionId: string, prompt: string) {
-		this.threadManager.setActiveThread(sessionId);
-		const session = this.threadManager.getSession(sessionId);
-		if (!session) {
-			this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: 'No active thread.' });
-			return Promise.resolve('No active thread.');
-		}
-		// Immediately show user message
-		this._view?.webview.postMessage({ type: 'addMessage', sender: 'You', message: prompt });
-		// Await and return bot response
-		try {
-			const botResponse = await this.llmService.trackedChat({
-				sessionId,
-				systemMessage: (session as any).systemMessage || SystemMessages.GENERAL_PURPOSE,
-				prompt,
-				task: 'chat'
-			});
-            this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: botResponse });
-            await this.threadManager.saveThreadHistory(sessionId);
-            return botResponse;
-		} catch (error: any) {
-			const errorMsg = `Error: ${error.message || 'Unable to connect to LLM.'}`;
-			this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: errorMsg });
-			return errorMsg;
-		}
-	}
+	// public async sendMessageToThread(sessionId: string, prompt: string) {
+	// 	this.threadManager.setActiveThread(sessionId);
+	// 	const session = this.threadManager.getSession(sessionId);
+	// 	if (!session) {
+	// 		this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: 'No active thread.' });
+	// 		return Promise.resolve('No active thread.');
+	// 	}
+	// 	// Immediately show user message
+	// 	this._view?.webview.postMessage({ type: 'addMessage', sender: 'You', message: prompt });
+	// 	// Await and return bot response
+	// 	try {
+	// 		const botResponse = await this.llmService.trackedChat({
+	// 			sessionId,
+	// 			systemMessage: (session as any).systemMessage || SystemMessages.GENERAL_PURPOSE,
+	// 			prompt,
+	// 			task: 'chat'
+	// 		});
+  //           this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: botResponse });
+  //           await this.threadManager.saveThreadHistory(sessionId);
+  //           return botResponse;
+	// 	} catch (error: any) {
+	// 		const errorMsg = `Error: ${error.message || 'Unable to connect to LLM.'}`;
+	// 		this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: errorMsg });
+	// 		return errorMsg;
+	// 	}
+	// }
 
 	/**
 	 * Post a system-level message to the webview (non-user/non-bot semantic).
