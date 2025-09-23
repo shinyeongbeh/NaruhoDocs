@@ -46,7 +46,7 @@ export function activate(context: vscode.ExtensionContext) {
 	function updateProviderModelStatus(sessionId: string = 'naruhodocs-general-thread') {
 		try {
 			const provider = llmManager.getCurrentProvider();
-			const providerType = vscode.workspace.getConfiguration('naruhodocs').get<string>('llm.provider','ootb');
+			const providerType = vscode.workspace.getConfiguration('naruhodocs').get<string>('llm.provider', 'ootb');
 			const svcAny = llmService as any;
 			let model: string | undefined = svcAny.sessionModelHints?.get(sessionId) || svcAny.sessionModelHints?.get('general');
 			let trace: string[] = [];
@@ -79,11 +79,11 @@ export function activate(context: vscode.ExtensionContext) {
 	llmService.setModelConfigManager(modelConfigManager);
 
 	// Provider profile memory removed (deprecated). Models now fully governed by .naruhodocs/models.json and runtime hints.
-	let currentProviderType = vscode.workspace.getConfiguration('naruhodocs').get<string>('llm.provider','ootb');
-	
+	let currentProviderType = vscode.workspace.getConfiguration('naruhodocs').get<string>('llm.provider', 'ootb');
+
 	// Initialize Visualization Provider
 	const visualizationProvider = new VisualizationProvider(context, llmManager);
-	
+
 	// Initialize the LLM provider and then create initial threads only after provider is ready
 	(async () => {
 		// Load model config file early
@@ -109,21 +109,20 @@ export function activate(context: vscode.ExtensionContext) {
 			await llmManager.initializeFromConfig();
 			llmService.logEvent('provider_init', { provider: llmManager.getCurrentProvider()?.name });
 			// Clear any pre-existing sessions created via fallback before provider ready
-			llmService.clearAllSessions();
-			await llmService.restoreState();
+			// llmService.clearAllSessions();
 
 			// Initialize the general-purpose thread AFTER provider is confirmed
-			const generalThreadId = 'naruhodocs-general-thread';
-			const generalThreadTitle = 'General Purpose';
-			if (!threadMap.has(generalThreadId)) {
-				threadMap.set(generalThreadId, { document: undefined as any, sessionId: generalThreadId });
-				// Ensure backing LLM session is created through LLMService so logging + provider attribution work
-				await llmService.getSession(generalThreadId, SystemMessages.GENERAL_PURPOSE, { taskType: 'chat', forceNew: true });
-				provider.createThread(generalThreadId, SystemMessages.GENERAL_PURPOSE, generalThreadTitle);
-				activeThreadId = generalThreadId;
-				provider.setActiveThread(generalThreadId);
-			}
-			updateProviderModelStatus(generalThreadId);
+			// const generalThreadId = 'naruhodocs-general-thread';
+			// const generalThreadTitle = 'General Purpose';
+			// if (!threadMap.has(generalThreadId)) {
+			// 	threadMap.set(generalThreadId, { document: undefined as any, sessionId: generalThreadId });
+			// 	// Ensure backing LLM session is created through LLMService so logging + provider attribution work
+			// 	await llmService.getSession(generalThreadId, SystemMessages.GENERAL_PURPOSE, { taskType: 'chat', forceNew: true });
+			// 	provider.createThread(generalThreadId, SystemMessages.GENERAL_PURPOSE, generalThreadTitle);
+			// 	activeThreadId = generalThreadId;
+			// 	provider.setActiveThread(generalThreadId);
+			// }
+			updateProviderModelStatus('naruhodocs-general-thread');
 
 			// For already-open documents, create threads now that provider is ready
 			const openDocs = vscode.workspace.textDocuments;
@@ -160,16 +159,16 @@ export function activate(context: vscode.ExtensionContext) {
 			if (event.affectsConfiguration('naruhodocs.llm.provider') ||
 				event.affectsConfiguration('naruhodocs.llm.apiKey') ||
 				event.affectsConfiguration('naruhodocs.logging.verbose')) {
-				
+
 				// Debounce configuration changes to avoid multiple rapid updates
 				if (configChangeTimeout) {
 					clearTimeout(configChangeTimeout);
 				}
-				
+
 				configChangeTimeout = setTimeout(async () => {
 					try {
 						const config = vscode.workspace.getConfiguration('naruhodocs');
-						const newProviderType = config.get<string>('llm.provider','ootb');
+						const newProviderType = config.get<string>('llm.provider', 'ootb');
 						const providerChanged = newProviderType !== currentProviderType;
 						if (providerChanged || event.affectsConfiguration('naruhodocs.llm.apiKey')) {
 							await llmManager.initializeFromConfig();
@@ -286,22 +285,22 @@ export function activate(context: vscode.ExtensionContext) {
 				targetLanguage: picked,
 				systemMessage: 'You are a professional technical translator. Preserve code blocks and formatting.'
 			});
-	// Show LLM stats command
-	context.subscriptions.push(
-		vscode.commands.registerCommand('naruhodocs.showLLMStats', async () => {
-			const stats = llmService.getStats();
-			const lines = [
-				`Day: ${stats.day}`,
-				`Requests: ${stats.requests}`,
-				`Estimated Tokens (in/out): ${stats.estimatedInputTokens}/${stats.estimatedOutputTokens}`,
-				'Per Task:'
-			];
-			for (const k of Object.keys(stats.perTask)) {
-				lines.push(`  - ${k}: ${stats.perTask[k as keyof typeof stats.perTask]}`);
-			}
-			vscode.window.showInformationMessage(lines.join('\n'), { modal: false });
-		})
-	);
+			// Show LLM stats command
+			context.subscriptions.push(
+				vscode.commands.registerCommand('naruhodocs.showLLMStats', async () => {
+					const stats = llmService.getStats();
+					const lines = [
+						`Day: ${stats.day}`,
+						`Requests: ${stats.requests}`,
+						`Estimated Tokens (in/out): ${stats.estimatedInputTokens}/${stats.estimatedOutputTokens}`,
+						'Per Task:'
+					];
+					for (const k of Object.keys(stats.perTask)) {
+						lines.push(`  - ${k}: ${stats.perTask[k as keyof typeof stats.perTask]}`);
+					}
+					vscode.window.showInformationMessage(lines.join('\n'), { modal: false });
+				})
+			);
 			// Open translation in a side-by-side editor
 			const translationDoc = await vscode.workspace.openTextDocument({
 				content: `# Translation (${picked}) of ${path.basename(doc.fileName)}\n\n${resp.content}`,
@@ -348,10 +347,10 @@ export function activate(context: vscode.ExtensionContext) {
 			try {
 				await modelConfigManager.scaffoldIfMissing();
 				await modelConfigManager.load();
-				const provider = await vscode.window.showQuickPick(['ootb','byok','local'], { placeHolder: 'Select provider' });
+				const provider = await vscode.window.showQuickPick(['ootb', 'byok', 'local'], { placeHolder: 'Select provider' });
 				if (!provider) { return; }
 				const task = await vscode.window.showQuickPick([
-					'chat','summarize','read_files','analyze','translate','generate_doc','visualization_context'
+					'chat', 'summarize', 'read_files', 'analyze', 'translate', 'generate_doc', 'visualization_context'
 				], { placeHolder: 'Select task to override' });
 				if (!task) { return; }
 				const model = await vscode.window.showInputBox({ prompt: `Enter model name for ${provider}:${task}` });
@@ -414,7 +413,7 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 			const runPicker = async (): Promise<void> => {
 				try {
 					const config = vscode.workspace.getConfiguration('naruhodocs');
-					const current = config.get<string>('llm.provider','ootb');
+					const current = config.get<string>('llm.provider', 'ootb');
 					const items: Array<{ label: string; value: string; description?: string }> = [
 						{ label: 'Out-of-the-box (Gemini)', value: 'ootb', description: 'Built-in, limited usage' },
 						{ label: 'Bring Your Own Key', value: 'byok', description: 'Use your own API key' },
@@ -549,7 +548,7 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 		})
 	);
 
-    // (Removed early general thread creation; now happens after provider init)
+	// (Removed early general thread creation; now happens after provider init)
 
 	// Markdownlint diagnostics
 	const markdownDiagnostics = vscode.languages.createDiagnosticCollection('naruhodocs-markdownlint');
@@ -651,6 +650,94 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 		lintStatusBar.tooltip = `Markdownlint: ${issues.length} issue${issues.length > 1 ? 's' : ''}`;
 		lintStatusBar.show();
 	}
+
+	const gitHeadWatcher = vscode.workspace.createFileSystemWatcher('**/.git/logs/HEAD');
+	context.subscriptions.push(gitHeadWatcher);
+
+	gitHeadWatcher.onDidChange(async (uri) => {
+		try {
+			const content = await vscode.workspace.fs.readFile(uri);
+			const lines = Buffer.from(content).toString('utf8').trim().split('\n');
+			const lastLine = lines[lines.length - 1];
+			const parts = lastLine.split(' ');
+			const newCommitHash = parts[1];
+
+			const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+			if (!workspaceFolder) {
+				return;
+			}
+
+			const { exec } = require('child_process');
+			exec(`git diff-tree --no-commit-id --name-only -r ${newCommitHash}`, { cwd: workspaceFolder }, async (err: any, stdout: string) => {
+				if (err) {
+					return;
+				}
+				const changedFiles = stdout.trim().split('\n').filter(f => !!f);
+
+				const codeChanged = changedFiles.length > 0;
+				const docChanged = changedFiles.some(f => f.endsWith('.md') || f.endsWith('.txt'));
+
+				// 1. Auto-open documentation for editing if code changed but docs did not
+				if (codeChanged && !docChanged) {
+					// Auto-open related docs (.md/.txt) for each changed file
+					for (const file of changedFiles) {
+						const base = file.replace(/\.[^/.]+$/, '');
+						for (const ext of ['.md', '.txt']) {
+							const docPath = require('path').join(workspaceFolder, base + ext);
+							try {
+								await vscode.workspace.fs.stat(vscode.Uri.file(docPath));
+								const doc = await vscode.workspace.openTextDocument(docPath);
+								await vscode.window.showTextDocument(doc, { preview: false });
+							} catch {
+								// File does not exist, skip
+							}
+						}
+					}
+
+					// Build a detailed message
+					const changedList = changedFiles.length > 5
+						? changedFiles.slice(0, 5).join('\n  ') + `\n  ...and ${changedFiles.length - 5} more`
+						: changedFiles.join('\n  ');
+
+					const author = parts.slice(2, parts.length - 3).join(' ');
+
+					vscode.window.showWarningMessage(
+						`⚠️ Code changed without documentation update!\n` +
+						`Commit: ${newCommitHash}\n` +
+						`Changed files:\n${changedList}\n` +
+						`Docs may be stale! Related docs opened for editing.`
+					);
+				}
+
+				// 2. Integrate with doc threads: post a message to the thread if code changes
+				if (codeChanged) {
+					for (const file of changedFiles) {
+						const uriStr = vscode.Uri.file(require('path').join(workspaceFolder, file)).toString();
+						if (threadMap.has(uriStr)) {
+							provider.sendMessageToThread(uriStr, `Heads up: ${file} was just changed in commit ${newCommitHash}. Please review documentation for drift.`);
+						}
+					}
+				}
+
+				// 3. Notify about dependent components (simple example: check for imports)
+				for (const file of changedFiles) {
+					if (file.endsWith('.js') || file.endsWith('.ts')) {
+						const filePath = require('path').join(workspaceFolder, file);
+						const fileContent = await vscode.workspace.fs.readFile(vscode.Uri.file(filePath)).then(buf => buf.toString(), () => '');
+						const importMatches = fileContent.match(/import\s+.*?from\s+['"](.*?)['"]/g) || [];
+						for (const match of importMatches) {
+							const dep = match.match(/['"](.*?)['"]/);
+							if (dep && dep[1]) {
+								vscode.window.showInformationMessage(`Dependency "${dep[1]}" in ${file} may be affected by recent changes.`);
+							}
+						}
+					}
+				}
+			});
+		} catch (e: any) {
+			console.error('Doc drift detection failed:', e.message);
+		}
+	});
 }
 
 // Removed legacy interactive configuration helpers (showLLMConfigurationQuickPick, configureLocalLLM, showLocalLLMSetupInstructions).
