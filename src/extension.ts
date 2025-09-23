@@ -4,6 +4,7 @@ import { SummaryCodeLensProvider } from './DocCodeLensProvider.js';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 import { SystemMessages } from './SystemMessages';
+import { LocalMemoryVectorStore } from './rag/vectorstore/memory';
 import { checkGrammar } from './external-tools/LanguageTool-integration';
 import { lintMarkdownDocument } from './external-tools/markdownLinter';
 import { LLMProviderManager } from './llm-providers/manager';
@@ -11,6 +12,8 @@ import { ModelConfigManager } from './managers/ModelConfigManager.js';
 import { LLMService } from './managers/LLMService';
 import { LocalProvider } from './llm-providers/local';
 import { VisualizationProvider } from './VisualizationProvider';
+import { buildVectorDB } from './rag/vectorstore/chunking_buildVectorDB';
+
 
 // Load env once
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
@@ -18,6 +21,10 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
+	// --- BEGIN: Build vector DB on activation ---
+	
+	buildVectorDB();
+	// --- END: Build vector DB on activation ---
 	// Register scanDocs command to call provider.scanDocs()
 	context.subscriptions.push(
 		vscode.commands.registerCommand('naruhodocs.scanDocs', async () => {

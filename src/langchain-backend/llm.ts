@@ -6,6 +6,8 @@ import { createReactAgent } from '@langchain/langgraph/prebuilt';
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { RetrieveWorkspaceFilenamesTool, RetrieveFileContentTool } from './features';
+import { RAGretrievalTool } from './tools';
+import { SystemMessages } from '../SystemMessages';
 
 export interface CreateChatOptions {
   apiKey?: string;           // Gemini / Google API key
@@ -29,6 +31,7 @@ export function createChat(opts: CreateChatOptions = {}): ChatSession {
   if (!apiKey) {
     throw new Error('Gemini API key missing. Set naruhodocs.geminiApiKey in settings or GOOGLE_API_KEY env var.');
   }
+  //use opts.chatModel for creating local model chat
   const model = opts.chatModel || new ChatGoogleGenerativeAI({
     apiKey,
     model: opts.model || 'gemini-2.0-flash',
@@ -38,43 +41,105 @@ export function createChat(opts: CreateChatOptions = {}): ChatSession {
   const maxHistory = opts.maxHistoryMessages ?? 20;
   let history: BaseMessage[] = [];
 
-  // Add initial SystemMessage if provided
-  if (opts.systemMessage) {
-    history.push(new SystemMessage(opts.systemMessage));
+  // Add initial SystemMessage if provided, or use default RAG-optimized prompt
+  const defaultSystemMessage = `You are a technical documentation assistant that helps answer questions about code and documentation.
+  
+For each user query, you will receive:
+1. The original question
+2. Retrieved relevant code snippets and documentation
+3. Additional context from the conversation history
+
+Your task is to:
+1. Analyze the retrieved context thoroughly
+2. Provide accurate, concise answers based primarily on the retrieved information
+3. If the context is insufficient, you can use additional tools to gather more information
+4. Always cite specific files/locations when referencing code or documentation
+
+Keep responses focused and technical, using the retrieved context as your primary source of information.`;
+
+  history.push(new SystemMessage(opts.systemMessage || defaultSystemMessage));
+
+  let tools: any[] = [];
+  if (opts.systemMessage === SystemMessages.GENERAL_PURPOSE) {
+    // Use RAG-enabled agent for general-purpose chat
+    // Initialize RAG tools
+    const RAGretrieval = tool(
+      async ({ query }) => {
+        console.log('Tool used: retrieveContext with query:', query);
+        // Step 1: Let the LLM act as a prompt engineer for the RAG tool
+        const promptEngineeringMessage = `Rewrite the following user question to maximize retrieval of the most relevant code or documentation snippets from the project. Be specific and include keywords, file types, or function names if possible. Only return the rewritten query, nothing else.\n\nUser question: ${query}`;
+
+        // Use the base model (not the agent) to generate the focused RAG query
+        const peResponse = await model.invoke([
+          new HumanMessage(promptEngineeringMessage)
+        ]);
+        let ragQuery = '';
+        if (typeof peResponse.content === 'string') {
+          ragQuery = peResponse.content.trim();
+        } else if (Array.isArray(peResponse.content)) {
+          ragQuery = peResponse.content.map((c: any) => typeof c === 'string' ? c : JSON.stringify(c)).join(' ').trim();
+        } else {
+          ragQuery = JSON.stringify(peResponse.content);
+        }
+
+        // Step 2: Use the LLM-generated query for RAG retrieval
+        const contextTool = new RAGretrievalTool();
+        const relevantContext = await contextTool._call(ragQuery);
+
+        // Step 3: Construct the enhanced prompt for the main agent
+        const enhancedMessage = `\nQuery: ${query}\n\nPrompt-engineered RAG Query: ${ragQuery}\n\nRetrieved Context:\n${relevantContext}\n\nBased on the above context, please provide a response.`;
+
+        history.push(new HumanMessage(enhancedMessage));
+        prune();
+        return enhancedMessage;
+      },
+      {
+        name: 'RAGretrieveContext',
+        description: 'Retrieve semantically relevant code snippets based on the query.',
+        schema: z.object({
+          query: z.string().describe('The query to find relevant code snippets for.'),
+        }),
+      }
+    );
+    tools = [RAGretrieval];
+  } else {
+    const retrieveFilenames = tool(
+      async () => {
+        // Tool used: retrieveFilenames
+        const toolInstance = new RetrieveWorkspaceFilenamesTool();
+        return await toolInstance._call();
+      },
+      {
+        name: 'retrieveFilenames',
+        description: 'Retrieve all filenames in the workspace.',
+      }
+    );
+
+    const retrieveFileContent = tool(
+      async ({ filePath }) => {
+        // Tool used: retrieveFileContent with filePath=${filePath}
+        const toolInstance = new RetrieveFileContentTool();
+        return await toolInstance._call(filePath);
+      },
+      {
+        name: 'retrieveFileContent',
+        description: 'Retrieve the content of a specific file.',
+        schema: z.object({
+          filePath: z.string().describe('The path to the file to retrieve content from.'),
+          query: z.string().describe('The query to find relevant code snippets for.'),
+        }),
+      }
+    );
+
+    tools = [retrieveFilenames, retrieveFileContent];
   }
 
-  // Define tools using LangGraph.js
-  const retrieveFilenames = tool(
-    async () => {
-  // Tool used: retrieveFilenames
-      const toolInstance = new RetrieveWorkspaceFilenamesTool();
-      return await toolInstance._call();
-    },
-    {
-      name: 'retrieveFilenames',
-      description: 'Retrieve all filenames in the workspace.',
-    }
-  );
 
-  const retrieveFileContent = tool(
-    async ({ filePath }) => {
-  // Tool used: retrieveFileContent with filePath=${filePath}
-      const toolInstance = new RetrieveFileContentTool();
-      return await toolInstance._call(filePath);
-    },
-    {
-      name: 'retrieveFileContent',
-      description: 'Retrieve the content of a specific file.',
-      schema: z.object({
-        filePath: z.string().describe('The path of the file to read.'),
-      }),
-    }
-  );
-
-  // Create LangGraph agent
+  // Create LangGraph agent with RAG capabilities
   const agent = createReactAgent({
     llm: model,
-    tools: [retrieveFilenames, retrieveFileContent],
+    // tools: [retrieveFilenames, retrieveFileContent, RAGretrieval],
+    tools: tools
   });
 
   function prune() {
@@ -88,7 +153,7 @@ export function createChat(opts: CreateChatOptions = {}): ChatSession {
       history.push(new HumanMessage(userMessage));
       prune();
 
-      // Use LangGraph agent to process the user message
+      // Use LangGraph agent for additional tool usage if needed
       const response = await agent.invoke({
         messages: history.map(msg => ({
           role: msg instanceof HumanMessage ? 'user' : 'assistant',
@@ -103,7 +168,7 @@ export function createChat(opts: CreateChatOptions = {}): ChatSession {
       if (typeof lastMessage.content === 'string') {
         aiText = lastMessage.content;
       } else if (Array.isArray(lastMessage.content)) {
-  aiText = lastMessage.content.map((c: any) =>
+        aiText = lastMessage.content.map((c: any) =>
           typeof c === 'string' ? c : JSON.stringify(c)
         ).join(' ');
       } else {

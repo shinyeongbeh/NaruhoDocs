@@ -123,8 +123,7 @@
           "type": "number",
           "default": 1000,
           "description": "Maximum number of files to analyze for large projects"
-        }
-        ,
+        },
         "naruhodocs.logging.verbose": {
           "type": "boolean",
           "default": false,
@@ -189,17 +188,17 @@
     "@langchain/core": "^0.3.77",
     "@langchain/google-genai": "^0.2.18",
     "@langchain/langgraph": "^0.4.9",
+    "@langchain/ollama": "^0.2.4",
     "@langchain/openai": "^0.6.13",
     "dotenv": "^16.4.5",
     "langchain": "^0.3.34",
     "markdown-it": "^14.1.0",
     "mermaid": "^11.11.0",
     "node-fetch": "^3.3.2",
+    "sqlite3": "^5.1.7",
     "watch": "^1.0.2"
   },
-    "overrides": 
-  {
-    "exec-sh":"^0.3.4"
+  "overrides": {
+    "exec-sh": "^0.3.4"
   }
-
 }

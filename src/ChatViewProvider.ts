@@ -327,7 +327,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                                 throw new Error("Could not determine active thread for chat.");
                             }
                             const currentHistory = session.getHistory();
-                            const sessionSystemMessage = (session as any).systemMessage || 'No system message';
+                            const sessionSystemMessage = this.threadManager.getSystemMessage(activeThreadId||'No system message');
                             const historyPreview = currentHistory.map((msg: any, index: any) => {
                                 const msgType = (msg as any).type || 'unknown';
                                 const msgContent = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
@@ -339,7 +339,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
                             const botResponse = await this.llmService.trackedChat({
                                 sessionId: activeThreadId!,
-                                systemMessage: (session as any).systemMessage || SystemMessages.GENERAL_PURPOSE,
+                                systemMessage: sessionSystemMessage || 'No system message',
                                 prompt: userMessage,
                                 task: 'chat'
                             });
