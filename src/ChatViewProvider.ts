@@ -30,6 +30,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 	private llmService!: LLMService;
 
 	private context: vscode.ExtensionContext;
+
 	constructor(
 		private readonly _extensionUri: vscode.Uri,
 		private apiKey?: string, // Keep for backward compatibility
@@ -79,128 +80,133 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 	 * Send a message to a specific thread and display the bot response.
 	 */
 	public async sendMessageToThread(sessionId: string, prompt: string) {
-        this.threadManager.setActiveThread(sessionId);
-        const session = this.threadManager.getSession(sessionId);
-        if (!session) {
-            this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: 'No active thread.' });
-            return Promise.resolve('No active thread.');
-        }
-        // Immediately show user message
-        this._view?.webview.postMessage({ type: 'addMessage', sender: 'You', message: prompt });
+		this.threadManager.setActiveThread(sessionId);
+		const session = this.threadManager.getSession(sessionId);
+		if (!session) {
+			this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: 'No active thread.' });
+			return Promise.resolve('No active thread.');
+		}
+		// Immediately show user message
+		this._view?.webview.postMessage({ type: 'addMessage', sender: 'You', message: prompt });
 
-        try {
-            const botResponse = await this.llmService.trackedChat({
-                sessionId,
-                systemMessage: (session as any).systemMessage || SystemMessages.GENERAL_PURPOSE,
-                prompt,
-                task: 'chat'
-            });
+		try {
+			const botResponse = await this.llmService.trackedChat({
+				sessionId,
+				systemMessage: (session as any).systemMessage || SystemMessages.GENERAL_PURPOSE,
+				prompt,
+				task: 'chat'
+			});
 
-            // --- START: FIX ---
-            // Manually add the new exchange to the session's history object
-            const history = session.getHistory();
-            history.push(new HumanMessage(prompt));
-            history.push(new AIMessage(botResponse));
-            // --- END: FIX ---
+			// --- START: FIX ---
+			// Manually add the new exchange to the session's history object
+			const history = session.getHistory();
+			history.push(new HumanMessage(prompt));
+			history.push(new AIMessage(botResponse));
+			// --- END: FIX ---
 
-            this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: botResponse });
-            
-            // Now, save the updated history
-            await this.threadManager.saveThreadHistory(sessionId);
+			this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: botResponse });
 
-            return botResponse;
-        } catch (error: any) {
-            const errorMsg = `Error: ${error.message || 'Unable to connect to LLM.'}`;
-            this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: errorMsg });
-            return errorMsg;
-        }
-    }
+			// Now, save the updated history
+			await this.threadManager.saveThreadHistory(sessionId);
+
+			return botResponse;
+		} catch (error: any) {
+			const errorMsg = `Error: ${error.message || 'Unable to connect to LLM.'}`;
+			this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: errorMsg });
+			return errorMsg;
+		}
+	}
 
 	/**
 	 * Post a system-level message to the webview (non-user/non-bot semantic).
 	 * Use for lifecycle events like provider changes, resets, or configuration notices.
 	 */
 	public addSystemMessage(message: string) {
-        this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message });
-    }
+		this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message });
+	}
 
-    public async resolveWebviewView(
-        webviewView: vscode.WebviewView,
-        _context: vscode.WebviewViewResolveContext,
-        _token: vscode.CancellationToken,
-    ) {
-        this._view = webviewView;
+	public async resolveWebviewView(
+		webviewView: vscode.WebviewView,
+		_context: vscode.WebviewViewResolveContext,
+		_token: vscode.CancellationToken,
+	) {
+		this._view = webviewView;
 
-        webviewView.webview.options = {
-            enableScripts: true,
-            localResourceRoots: [this._extensionUri]
-        };
+		webviewView.webview.options = {
+			enableScripts: true,
+			localResourceRoots: [this._extensionUri]
+		};
 
-        webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
+		webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
 
-        if (this.isInitializing) {
-            this.isInitializing = false; // Prevent this block from running again
-            try {
-                this.llmService.clearAllSessions();
+		webviewView.onDidChangeVisibility(() => {
+			if (webviewView.visible) {
+				setTimeout(() => {
+					try { this._postThreadList(); } catch (e) { console.warn('[NaruhoDocs] postThreadList on visibility:', e); }
+					try { this._sendFullHistory(); } catch (e) { console.warn('[NaruhoDocs] sendFullHistory on visibility:', e); }
+				}, 200);
+			}
+		});
 
-                // 1. Restore all threads from workspace state.
-                const keys = this.context.workspaceState.keys ? this.context.workspaceState.keys() : [];
-                await this.threadManager.restoreThreads(keys);
+		// Also ensure we resend when the view is first resolved (in case it wasn't sent earlier)
+		try {
+			setTimeout(() => {
+				try { this._postThreadList(); } catch (e) { /* noop */ }
+				try { this._sendFullHistory(); } catch (e) { /* noop */ }
+			}, 50);
+		} catch (e) {
+			console.warn('[NaruhoDocs] Failed to populate view on resolve:', e);
+		}
 
-                // 2. Ensure the general thread exists if it wasn't restored (e.g., first run).
-                if (!this.threadManager.hasSession('naruhodocs-general-thread')) {
-                    await this.threadManager.initializeGeneralThread();
-                }
+		webviewView.webview.onDidReceiveMessage(async data => {
+			if (data.type === 'chatViewReady') {
+				(webviewView as any)._naruhodocsReady = true;
 
-                // 3. Always set the "General" thread as active on startup.
-                this.threadManager.setActiveThread('naruhodocs-general-thread');
+				// This logic should only run ONCE when the extension first starts
+				if (this.isInitializing) {
+					this.isInitializing = false;
 
-                // 4. Post the thread list and the history for the now-active general thread.
-                // This ensures the UI is populated as soon as the backend is ready.
-                this._postThreadList();
-                this._sendFullHistory();
+					// Correctly initialize and restore all threads
+					await this.threadManager.restoreThreads(this.context.workspaceState.keys());
+					await this.threadManager.initializeGeneralThread();
+					this._postThreadList();
 
-            } catch (e) {
-                console.error("Error during thread restoration:", e);
-                vscode.window.showErrorMessage("NaruhoDocs: Failed to restore chat sessions.");
-            }
-        }
-        // Refresh UI whenever the view becomes visible again
-        webviewView.onDidChangeVisibility(() => {
-            if (webviewView.visible) {
-                this._postThreadList();
-                if ((webviewView as any)._naruhodocsReady) {
-                    this._sendFullHistory();
-                }
-            }
-        });
+					const lastActiveId = this.context.globalState.get<string>('lastActiveThreadId');
+					const finalActiveId = (lastActiveId && this.threadManager.hasSession(lastActiveId))
+						? lastActiveId
+						: 'naruhodocs-general-thread';
 
-        webviewView.webview.onDidReceiveMessage(async data => {
-            if (data.type === 'chatViewReady') {
-                (webviewView as any)._naruhodocsReady = true;
-                this._postThreadList(); // Post threads first
-                this._sendFullHistory(); // Then send history for the active one
-                return;
-            }
-            // Webview received message
-            if (data.type === 'scanDocs') {
-                // scanDocs triggered from webview
-                await vscode.commands.executeCommand('naruhodocs.scanDocs');
-                return;
-            }
-            if (data.type === 'existingDocs') {
-                this.existingDocFiles = Array.isArray(data.files) ? data.files : [];
-                return;
-            }
-            if (data.type === 'clearHistory') {
-                const activeThreadId = this.threadManager.getActiveThreadId();
-                if (activeThreadId) {
-                    await this.threadManager.resetSession(activeThreadId);
-                    this._view?.webview.postMessage({ type: 'historyCleared' });
-                    this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: 'Chat history for this tab has been cleared.' });
-                }
-                // --- END: CORRECTED CLEAR HISTORY LOGIC ---
-            }
+					this.setActiveThread(finalActiveId);
+					await new Promise(resolve => setTimeout(resolve, 100));
+					try {
+						this._postThreadList();
+						this._view?.webview.postMessage({ type: 'clearMessages' });
+						this._sendFullHistory(finalActiveId);
+					} catch (e) {
+						console.warn('[NaruhoDocs] Failed to populate restored history on init:', e);
+					}
+				}
+				return;
+			}
+			// Webview received message
+			if (data.type === 'scanDocs') {
+				// scanDocs triggered from webview
+				await vscode.commands.executeCommand('naruhodocs.scanDocs');
+				return;
+			}
+			if (data.type === 'existingDocs') {
+				this.existingDocFiles = Array.isArray(data.files) ? data.files : [];
+				return;
+			}
+			if (data.type === 'clearHistory') {
+				const activeThreadId = this.threadManager.getActiveThreadId();
+				if (activeThreadId) {
+					await this.threadManager.resetSession(activeThreadId);
+					this._view?.webview.postMessage({ type: 'historyCleared' });
+					this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: 'Chat history for this tab has been cleared.' });
+				}
+				// --- END: CORRECTED CLEAR HISTORY LOGIC ---
+			}
 
 			const session = this.threadManager.getActiveSession();
 			switch (data.type) {
@@ -323,43 +329,41 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 							});
 						} else {
 							const activeThreadId = this.threadManager.getActiveThreadId();
-                            if (!activeThreadId) {
-                                throw new Error("Could not determine active thread for chat.");
-                            }
-                            const currentHistory = session.getHistory();
-                            const sessionSystemMessage = this.threadManager.getSystemMessage(activeThreadId||'No system message');
-                            const historyPreview = currentHistory.map((msg: any, index: any) => {
-                                const msgType = (msg as any).type || 'unknown';
-                                const msgContent = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
-                                const truncatedContent = msgContent.length > 200 ? msgContent.substring(0, 200) + '...' : msgContent;
-                                return `  [${index}] ${msgType}: ${truncatedContent}`;
-                            }).join('\n');
+							if (!activeThreadId) {
+								throw new Error("Could not determine active thread for chat.");
+							}
+							const currentHistory = session.getHistory();
+							const sessionSystemMessage = this.threadManager.getSystemMessage(activeThreadId || 'No system message');
+							const historyPreview = currentHistory.map((msg: any, index: any) => {
+								const msgType = (msg as any).type || 'unknown';
+								const msgContent = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+								const truncatedContent = msgContent.length > 200 ? msgContent.substring(0, 200) + '...' : msgContent;
+								return `  [${index}] ${msgType}: ${truncatedContent}`;
+							}).join('\n');
 
-                            // User message sent verbose log removed
+							// User message sent verbose log removed
 
-                            const botResponse = await this.llmService.trackedChat({
-                                sessionId: activeThreadId!,
-                                systemMessage: sessionSystemMessage || 'No system message',
-                                prompt: userMessage,
-                                task: 'chat'
-                            });
+							const botResponse = await this.llmService.trackedChat({
+								sessionId: activeThreadId!,
+								systemMessage: sessionSystemMessage || 'No system message',
+								prompt: userMessage,
+								task: 'chat'
+							});
 
-                            // --- START: FIX ---
-                            // Manually add the new exchange to the session's history object before saving
-                            const history = session.getHistory();
-                            history.push(new HumanMessage(userMessage));
-                            history.push(new AIMessage(botResponse));
-                            // --- END: FIX ---
+							// Manually add the new exchange to the session's history object before saving
+							const history = session.getHistory();
+							history.push(new HumanMessage(userMessage));
+							history.push(new AIMessage(botResponse));
 
-                            this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: botResponse });
-                            // Save history after message
-                            if (activeThreadId && session) {
-                                await this.threadManager.saveThreadHistory(activeThreadId);
-                            }
-                        }
-                    } catch (error: any) {
-                        this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: `Error: ${error.message || 'Unable to connect to LLM.'}` });
-                    }
+							this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: botResponse });
+							// Save history after message
+							if (activeThreadId && session) {
+								await this.threadManager.saveThreadHistory(activeThreadId);
+							}
+						}
+					} catch (error: any) {
+						this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: `Error: ${error.message || 'Unable to connect to LLM.'}` });
+					}
 					break;
 				}
 				case 'resetSession': {
@@ -589,16 +593,29 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	// Create a new thread/session for a document
-    public createThread(sessionId: string, initialContext: string, title: string) {
-        this.threadManager.createThread(sessionId, initialContext, title);
-    }
+	public createThread(sessionId: string, initialContext: string, title: string) {
+		this.threadManager.createThread(sessionId, initialContext, title);
+	}
 
-    public setActiveThread(sessionId: string) {
-        this.threadManager.setActiveThread(sessionId);
-    }
+	// ...existing code...
+	public setActiveThread(sessionId: string) {
+		this.threadManager.setActiveThread(sessionId);
+		// Update UI thread list immediately
+		try {
+			this._postThreadList();
+		} catch (e) {
+			console.warn('[NaruhoDocs] Failed to post thread list after setActiveThread:', e);
+		}
+		// Send the full normalized history for the newly active thread to the webview
+		try {
+			this._sendFullHistory(sessionId);
+		} catch (e) {
+			console.warn('[NaruhoDocs] Failed to send full history after setActiveThread:', e);
+		}
+	}
 
-    // Reset current active chat session
-    public async resetActiveChat() {
+	// Reset current active chat session
+	public async resetActiveChat() {
 		const activeThreadId = this.threadManager.getActiveThreadId();
 		if (!activeThreadId) {
 			vscode.window.showWarningMessage('No active chat session to reset.');

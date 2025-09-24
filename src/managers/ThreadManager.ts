@@ -30,14 +30,18 @@ export class ThreadManager {
         const sysMessage = SystemMessages.GENERAL_PURPOSE;
         this.systemMessages.set(generalThreadId, sysMessage);
 
-        // Use LLM manager if available, fallback to direct createChat
+        // If a session was already restored from history, do not create a new one.
+        if (this.sessions.has(generalThreadId)) {
+            return;
+        }
+
+        // If no session exists, create a new one.
         if (this.llmService) {
             try {
-                const session = await this.llmService.getSession(generalThreadId, sysMessage, { taskType: 'chat' });
+                const session = await this.llmService.getSession(generalThreadId, sysMessage, { taskType: 'chat', forceNew: true });
                 this.sessions.set(generalThreadId, session);
                 this.threadTitles.set(generalThreadId, generalThreadTitle);
                 this.activeThreadId = generalThreadId;
-                // General thread initialized via LLMService
                 return;
             } catch (error) {
                 console.error('LLMService general thread creation failed, falling back:', error);
@@ -146,19 +150,17 @@ export class ThreadManager {
     }
 
     public async saveState(): Promise<void> {
-        if (this.threadManager) {
-            const sessions = this.threadManager.getSessions();
-            const savePromises: Promise<void>[] = [];
-            for (const sessionId of sessions.keys()) {
-                savePromises.push(this.threadManager.saveThreadHistory(sessionId));
-            }
-            if (savePromises.length > 0) {
-                await Promise.all(savePromises);
-                console.log(`[NaruhoDocs] Saved state for ${savePromises.length} threads.`);
-            }
+        const sessions = this.getSessions();
+        const savePromises: Promise<void>[] = [];
+        for (const sessionId of sessions.keys()) {
+            savePromises.push(this.saveThreadHistory(sessionId));
+        }
+        if (savePromises.length > 0) {
+            await Promise.all(savePromises);
+            // console.log(`[NaruhoDocs] Saved state for ${savePromises.length} threads.`);
         }
         // Also persist the last active thread ID
-        const lastActiveId = this.threadManager?.getActiveThreadId();
+        const lastActiveId = this.getActiveThreadId();
         if (lastActiveId) {
             await this.context.globalState.update('lastActiveThreadId', lastActiveId);
         }
@@ -170,7 +172,7 @@ export class ThreadManager {
     }
 
     public getSystemMessage(sessionId: string): string | undefined {
-        if (!this.systemMessages.has(sessionId)) {
+        if(!this.systemMessages.has(sessionId)){
             throw new Error(`No system message found for sessionId: ${sessionId}`);
         }
         return this.systemMessages.get(sessionId);
@@ -220,6 +222,9 @@ export class ThreadManager {
         for (const key of keys) {
             if (key.startsWith('thread-history-')) {
                 const sessionId = key.replace('thread-history-', '');
+                // if (sessionId === 'naruhodocs-general-thread') {
+                //     continue;
+                // }
                 let documentText = '';
                 try {
                     const uri = vscode.Uri.parse(sessionId);
