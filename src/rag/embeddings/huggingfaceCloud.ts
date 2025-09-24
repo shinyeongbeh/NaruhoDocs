@@ -6,12 +6,15 @@ export class HuggingFaceEmbeddings extends Embeddings {
     private embeddings: HuggingFaceInferenceEmbeddings;
     private readonly EMBEDDING_DIMENSION = 384; // Adjust based on the model used
 
-    constructor() {
+    constructor(apiKey: string, model: string) {
         super({});
         this.embeddings = new HuggingFaceInferenceEmbeddings({
-            apiKey: "",
-            model: 'sentence-transformers/all-MiniLM-L6-v2'
+            apiKey: apiKey,
+            model: model
         });
+        if(apiKey==='' ||!apiKey) {
+            throw new Error('HuggingFace API key is required.');
+        }
     }
 
     async embedQuery(text: string): Promise<number[]> {

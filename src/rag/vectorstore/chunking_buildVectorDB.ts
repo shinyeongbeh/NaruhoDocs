@@ -1,13 +1,14 @@
 import * as vscode from 'vscode';
-import vectorStore from './vectorStoreSingleton';
+// import vectorStore from './vectorStoreSingleton';
 import { Document } from '@langchain/core/documents';
+import { LocalMemoryVectorStore } from './memory';
 
 //to build the database from workspace files
-export async function buildVectorDB() {
+export async function buildVectorDB(vectorStore: LocalMemoryVectorStore) {
   // Use the shared vector store instance
   const docs: Document[] = [];
   const files = await vscode.workspace.findFiles('**/*', '{**/node_modules/**,**/.next/**,**/.vercel/**}');
-  const notAllowedExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.ico', '.exe', '.dll', '.bin', '.class', '.jar', '.war', '.zip', '.tar', '.gz', '.mp3', '.mp4', '.avi', '.mov', '.wmv', '.pdf'];
+  const notAllowedExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.ico', '.exe', '.dll', '.bin', '.class', '.jar', '.war', '.zip', '.tar', '.gz', '.mp3', '.mp4', '.avi', '.mov', '.wmv', '.pdf', '.naruhodocs'];
   for (const file of files) {
     if (notAllowedExtensions.some(ext => file.fsPath.endsWith(ext))) { continue; }
     try {

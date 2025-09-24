@@ -1,10 +1,11 @@
 import { Tool } from '@langchain/core/tools';
-import vectorStore from '../rag/vectorstore/vectorStoreSingleton';
+// import vectorStore from '../rag/vectorstore/vectorStoreSingleton';
 import { Document } from '@langchain/core/documents';
+import { getVectorStore } from '../rag/vectorstore/vectorStoreSingleton';
 
 // Tool to retrieve relevant context from the vector store
 export class RAGretrievalTool extends Tool {
-    private vectorStore = vectorStore; // Use the shared vector store instance
+    private vectorStore = getVectorStore(); // Use the shared vector store instance
 
     name = 'RAG_retrieve_context';
     description = 'Retrieves semantically relevant document chunks from the codebase based on a query.';

@@ -13,6 +13,11 @@ import { LLMService } from './managers/LLMService';
 import { LocalProvider } from './llm-providers/local';
 import { VisualizationProvider } from './VisualizationProvider';
 import { buildVectorDB } from './rag/vectorstore/chunking_buildVectorDB';
+import { EmbeddingConfigManager } from './managers/EmbeddingConfigManager';
+import { HuggingFaceEmbeddings } from './rag/embeddings/huggingfaceCloud';
+import { OllamaEmbeddings } from './rag/embeddings/ollama';
+import { getVectorStore, initializeVectorStore } from './rag/vectorstore/vectorStoreSingleton';
+import { initializeEmbeddingModel } from './rag/embeddings/InitializeEmbeddingModel';
 
 
 // Load env once
@@ -21,10 +26,67 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
-	// --- BEGIN: Build vector DB on activation ---
-	
-	buildVectorDB();
-	// --- END: Build vector DB on activation ---
+	// Initialize embedding model config and build vector database
+	const embeddingConfigManager = new EmbeddingConfigManager(context);
+	(async () => {
+		await embeddingConfigManager.scaffoldIfMissing();
+		await embeddingConfigManager.load();
+
+		 // Select embedding provider
+    const providerName = vscode.workspace.getConfiguration('naruhodocs').get<string>('embedding.provider', 'local');
+    const embeddingConfig = embeddingConfigManager.resolveProvider(providerName);
+
+		// Initialize embedding model
+		const embeddings = await initializeEmbeddingModel(embeddingConfig);
+		// Initialize vector store with embeddings
+		initializeVectorStore(embeddings);
+		// Build vector database from workspace files
+		buildVectorDB(getVectorStore());
+	})();
+
+	// Command to switch embedding provider interactively
+	context.subscriptions.push(
+		vscode.commands.registerCommand('naruhodocs.changeEmbeddingProvider', async () => {
+			const config = vscode.workspace.getConfiguration('naruhodocs');
+			const current = config.get<string>('embedding.provider', 'local');
+			const items: Array<{ label: string; value: string; description?: string }> = [
+				{ label: 'Local (Ollama)', value: 'local', description: 'Use local models via Ollama' },
+				{ label: 'Cloud (Hugging Face Inference Provider)', value: 'cloudHuggingface', description: 'Use Hugging Face cloud embeddings' },
+				{ label: '— Open model configuration (embeddings.json)…', value: '__open_models__' }
+			];
+			const pick = await vscode.window.showQuickPick(
+				items.map(i => ({ label: i.label, description: i.description })),
+				{ placeHolder: 'Select embedding provider for your RAG system', ignoreFocusOut: true }
+			);
+			if (!pick) { return; }
+			const chosen = items.find(i => i.label === pick.label);
+			if (!chosen) { return; }
+			if (chosen.value === '__open_models__') {
+				try {
+					const ws = vscode.workspace.workspaceFolders?.[0];
+					if (ws) {
+						// Scaffold embeddings.json if missing
+						await embeddingConfigManager.scaffoldIfMissing();
+						const file = vscode.Uri.joinPath(ws.uri, '.naruhodocs', 'embeddings.json');
+						await vscode.window.showTextDocument(file, { preview: false });
+					} else {
+						vscode.window.showWarningMessage('No workspace folder found.');
+					}
+				} catch (e) {
+					vscode.window.showErrorMessage('Failed to open embeddings.json: ' + (e instanceof Error ? e.message : String(e)));
+				}
+				return;
+			}
+			if (chosen.value === current) {
+				vscode.window.showInformationMessage(`Embedding provider already set to ${pick.label}.`);
+				return;
+			}
+			await config.update('embedding.provider', chosen.value, vscode.ConfigurationTarget.Global);
+			vscode.window.showInformationMessage(`Embedding provider changed to ${pick.label}.`);
+			// Optionally reinitialize vector store here if needed
+			// You may want to trigger a reload or rebuild of the vector DB
+		})
+	);
 	// Register scanDocs command to call provider.scanDocs()
 	context.subscriptions.push(
 		vscode.commands.registerCommand('naruhodocs.scanDocs', async () => {

@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { RetrieveWorkspaceFilenamesTool, RetrieveFileContentTool } from './features';
 import { RAGretrievalTool } from './tools';
 import { SystemMessages } from '../SystemMessages';
+import * as vscode from 'vscode';
 
 export interface CreateChatOptions {
   apiKey?: string;           // Gemini / Google API key
@@ -59,79 +60,85 @@ Keep responses focused and technical, using the retrieved context as your primar
 
   history.push(new SystemMessage(opts.systemMessage || defaultSystemMessage));
 
-  let tools: any[] = [];
-  if (opts.systemMessage === SystemMessages.GENERAL_PURPOSE) {
-    // Use RAG-enabled agent for general-purpose chat
-    // Initialize RAG tools
-    const RAGretrieval = tool(
-      async ({ query }) => {
-        console.log('Tool used: retrieveContext with query:', query);
-        // Step 1: Let the LLM act as a prompt engineer for the RAG tool
-        const promptEngineeringMessage = `Rewrite the following user question to maximize retrieval of the most relevant code or documentation snippets from the project. Be specific and include keywords, file types, or function names if possible. Only return the rewritten query, nothing else.\n\nUser question: ${query}`;
 
-        // Use the base model (not the agent) to generate the focused RAG query
-        const peResponse = await model.invoke([
-          new HumanMessage(promptEngineeringMessage)
-        ]);
-        let ragQuery = '';
-        if (typeof peResponse.content === 'string') {
-          ragQuery = peResponse.content.trim();
-        } else if (Array.isArray(peResponse.content)) {
-          ragQuery = peResponse.content.map((c: any) => typeof c === 'string' ? c : JSON.stringify(c)).join(' ').trim();
-        } else {
-          ragQuery = JSON.stringify(peResponse.content);
-        }
+  // Initialize RAG tools
+  const RAGretrieval = tool(
+    async ({ query }) => {
+      console.log('Tool used: retrieveContext with query:', query);
+      // Step 1: Let the LLM act as a prompt engineer for the RAG tool
+      const promptEngineeringMessage = `Rewrite the following user question to maximize retrieval of the most relevant code or documentation snippets from the project. Be specific and include keywords, file types, or function names if possible. Only return the rewritten query, nothing else.\n\nUser question: ${query}`;
 
-        // Step 2: Use the LLM-generated query for RAG retrieval
-        const contextTool = new RAGretrievalTool();
-        const relevantContext = await contextTool._call(ragQuery);
-
-        // Step 3: Construct the enhanced prompt for the main agent
-        const enhancedMessage = `\nQuery: ${query}\n\nPrompt-engineered RAG Query: ${ragQuery}\n\nRetrieved Context:\n${relevantContext}\n\nBased on the above context, please provide a response.`;
-
-        history.push(new HumanMessage(enhancedMessage));
-        prune();
-        return enhancedMessage;
-      },
-      {
-        name: 'RAGretrieveContext',
-        description: 'Retrieve semantically relevant code snippets based on the query.',
-        schema: z.object({
-          query: z.string().describe('The query to find relevant code snippets for.'),
-        }),
+      // Use the base model (not the agent) to generate the focused RAG query
+      const peResponse = await model.invoke([
+        new HumanMessage(promptEngineeringMessage)
+      ]);
+      let ragQuery = '';
+      if (typeof peResponse.content === 'string') {
+        ragQuery = peResponse.content.trim();
+      } else if (Array.isArray(peResponse.content)) {
+        ragQuery = peResponse.content.map((c: any) => typeof c === 'string' ? c : JSON.stringify(c)).join(' ').trim();
+      } else {
+        ragQuery = JSON.stringify(peResponse.content);
       }
-    );
+
+      // Step 2: Use the LLM-generated query for RAG retrieval
+      const contextTool = new RAGretrievalTool();
+      const relevantContext = await contextTool._call(ragQuery);
+
+      // Step 3: Construct the enhanced prompt for the main agent
+      const enhancedMessage = `\nQuery: ${query}\n\nPrompt-engineered RAG Query: ${ragQuery}\n\nRetrieved Context:\n${relevantContext}\n\nBased on the above context, please provide a response.`;
+
+      history.push(new HumanMessage(enhancedMessage));
+      prune();
+      return enhancedMessage;
+    },
+    {
+      name: 'RAGretrieveContext',
+      description: 'Retrieve semantically relevant code snippets based on the query.',
+      schema: z.object({
+        query: z.string().describe('The query to find relevant code snippets for.'),
+      }),
+    }
+  );
+
+  const retrieveFilenames = tool(
+    async () => {
+      // Tool used: retrieveFilenames
+      const toolInstance = new RetrieveWorkspaceFilenamesTool();
+      return await toolInstance._call();
+    },
+    {
+      name: 'retrieveFilenames',
+      description: 'Retrieve all filenames in the workspace.',
+    }
+  );
+
+  const retrieveFileContent = tool(
+    async ({ filePath }) => {
+      // Tool used: retrieveFileContent with filePath=${filePath}
+      const toolInstance = new RetrieveFileContentTool();
+      return await toolInstance._call(filePath);
+    },
+    {
+      name: 'retrieveFileContent',
+      description: 'Retrieve the content of a specific file.',
+      schema: z.object({
+        filePath: z.string().describe('The path to the file to retrieve content from.'),
+        query: z.string().describe('The query to find relevant code snippets for.'),
+      }),
+    }
+  );
+
+  let tools: any[] = [];
+  // check the settings if user enabled RAG or not
+  let RAGstatus = vscode.workspace.getConfiguration('naruhodocs').get<string>('rag.enabled', 'true');
+  if (opts.systemMessage === SystemMessages.GENERAL_PURPOSE && RAGstatus) {
+  // if (RAGstatus) {
+    // Use RAG-enabled agent for general-purpose chat
     tools = [RAGretrieval];
   } else {
-    const retrieveFilenames = tool(
-      async () => {
-        // Tool used: retrieveFilenames
-        const toolInstance = new RetrieveWorkspaceFilenamesTool();
-        return await toolInstance._call();
-      },
-      {
-        name: 'retrieveFilenames',
-        description: 'Retrieve all filenames in the workspace.',
-      }
-    );
-
-    const retrieveFileContent = tool(
-      async ({ filePath }) => {
-        // Tool used: retrieveFileContent with filePath=${filePath}
-        const toolInstance = new RetrieveFileContentTool();
-        return await toolInstance._call(filePath);
-      },
-      {
-        name: 'retrieveFileContent',
-        description: 'Retrieve the content of a specific file.',
-        schema: z.object({
-          filePath: z.string().describe('The path to the file to retrieve content from.'),
-          query: z.string().describe('The query to find relevant code snippets for.'),
-        }),
-      }
-    );
-
     tools = [retrieveFilenames, retrieveFileContent];
+    // tools = [RAGretrieval];
   }
 
 

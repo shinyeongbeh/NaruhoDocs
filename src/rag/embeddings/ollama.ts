@@ -1,14 +1,19 @@
 import { Embeddings } from '@langchain/core/embeddings';
+import * as vscode from 'vscode';
 
 export class OllamaEmbeddings extends Embeddings {
   private readonly EMBEDDING_DIMENSION = 384; // Adjust based on the model used
 
+  private OLLAMA_URL: string;
+  private MODEL: string;
 
-  private readonly OLLAMA_URL = 'http://localhost:11434';
-  private readonly MODEL = 'snowflake-arctic-embed:33m';
-
-  constructor() {
+  constructor(model: string, url: string) {
     super({});
+    this.MODEL = model;
+    if(!url || url.trim() === '') {
+      url = 'http://localhost:11434';
+    } 
+    this.OLLAMA_URL = url;
   }
 
   async embedQuery(text: string): Promise<number[]> {
@@ -23,7 +28,13 @@ export class OllamaEmbeddings extends Embeddings {
       body: JSON.stringify(body)
     });
     if (!response.ok) {
-      throw new Error(`Ollama embedding request failed: ${response.status} ${response.statusText}`);
+      if (response.status === 404) {
+        vscode.window.showErrorMessage(`Please make sure that the Ollama server is running and the model '${this.MODEL}' is installed. `);
+        throw new Error(`Please make sure that the Ollama server is running and the model '${this.MODEL}' is installed. `);
+      } else {
+        vscode.window.showErrorMessage(`Ollama embedding request failed: ${response.status} ${response.statusText}`);
+        throw new Error(`Ollama embedding request failed: ${response.status} ${response.statusText}`);
+      }
     }
     const data = await response.json();
     if (!data.embedding) {

@@ -1,10 +1,14 @@
 import { LocalMemoryVectorStore } from './memory';
-// import { HuggingFaceEmbeddings } from '../embeddings/huggingfaceCloud';
-import { OllamaEmbeddings } from '../embeddings/ollama';
+import { Embeddings } from '@langchain/core/embeddings';
 
-// Initialize the vector store once and export it
-// const embeddings = new HuggingFaceEmbeddings();
-const embeddings = new OllamaEmbeddings();
-const vectorStore = new LocalMemoryVectorStore(embeddings);
+let vectorStore: LocalMemoryVectorStore;
+export function initializeVectorStore(embeddings: Embeddings) {
+    vectorStore = new LocalMemoryVectorStore(embeddings);
+}
 
-export default vectorStore;
+export function getVectorStore(): LocalMemoryVectorStore {
+    if (!vectorStore) {
+        throw new Error('Vector store not initialized');
+    }
+    return vectorStore;
+}

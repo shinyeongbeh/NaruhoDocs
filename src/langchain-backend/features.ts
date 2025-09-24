@@ -24,7 +24,7 @@ export class RetrieveWorkspaceFilenamesTool extends Tool {
       }).join('\n');
       
   // Called TOOL retrieve_workspace_filenames - found ${files.length} files
-      
+      console.log(`Called TOOL retrieve_workspace_filenames - found ${files.length} files`);
       if (files.length === 0) {
         return 'No files found in the workspace (excluding node_modules).';
       }
@@ -60,7 +60,7 @@ export class RetrieveFileContentTool extends Tool {
       }
       
   // Called TOOL retrieve_file_content for ${filePath}
-      
+      console.log(`Called TOOL retrieve_file_content for ${filePath}`); 
       const content = await vscode.workspace.fs.readFile(fileUri);
       const text = content.toString();
       
