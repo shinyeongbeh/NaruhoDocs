@@ -50,8 +50,9 @@ export function activate(context: vscode.ExtensionContext) {
 			const config = vscode.workspace.getConfiguration('naruhodocs');
 			const current = config.get<string>('embedding.provider', 'local');
 			const items: Array<{ label: string; value: string; description?: string }> = [
-				{ label: 'Local (Ollama)', value: 'local', description: 'Use local models via Ollama' },
+				{ label: 'Local (Ollama/LM Studio)', value: 'local', description: 'Use local embedding models via Ollama / LM Studio' },
 				{ label: 'Cloud (Hugging Face Inference Provider)', value: 'cloudHuggingface', description: 'Use Hugging Face cloud embeddings' },
+				{ label: 'Built-in Hugging Face by NaruhoDocs', value: 'builtInHFApi', description: 'Use Hugging Face cloud embeddings - No API key needed.' },
 				{ label: '— Open model configuration (embeddings.json)…', value: '__open_models__' }
 			];
 			const pick = await vscode.window.showQuickPick(

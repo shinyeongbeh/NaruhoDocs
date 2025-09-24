@@ -72,6 +72,7 @@ export class EmbeddingConfigManager {
             providers: {
                 local: { name: 'Local', type: 'local', llmEngine: 'ollama', model: 'snowflake-arctic-embed:33m', baseUrl: 'http://localhost:11434', note: 'Default local embedding model' },
                 cloudHuggingface: { name: 'huggingface', type: 'huggingface', model: 'sentence-transformers/all-MiniLM-L6-v2', note: 'Default cloud embedding model' },
+                builtInHFApi: { name: 'Built-in Hugging Face by NaruhoDocs', type: 'builtInHFApi', model: 'sentence-transformers/all-MiniLM-L6-v2', note: 'Default cloud embedding model - No API key needed.' }
             }
         };
         await vscode.workspace.fs.writeFile(file, Buffer.from(JSON.stringify(defaultConfig, null, 2), 'utf8'));

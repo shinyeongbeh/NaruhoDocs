@@ -4,6 +4,8 @@ import { OllamaEmbeddings } from "./ollama";
 import { HuggingFaceEmbeddings } from "./huggingfaceCloud";
 import { Embeddings } from "@langchain/core/embeddings";
 import { LMStudioEmbeddings } from "./lmStudio";
+import * as dotenv from 'dotenv';
+import * as path from 'path';
 
 // initialize embedding model based on config
 export async function initializeEmbeddingModel(embeddingConfig: EmbeddingProviderConfig | undefined): Promise<Embeddings> {
@@ -25,6 +27,14 @@ export async function initializeEmbeddingModel(embeddingConfig: EmbeddingProvide
       vscode.window.showErrorMessage('HuggingFace API key for RAG database embedding is not set. Please configure it in settings.');
     }
     embeddings = new HuggingFaceEmbeddings(hfApiKey, embeddingConfig?.model ?? 'sentence-transformers/all-MiniLM-L6-v2');
+  } else if (embeddingConfig?.type === 'builtInHFApi') {
+    dotenv.config({ path: path.resolve(__dirname, '/.env') });
+    const hfApiKey = process.env.HF_API_KEY;
+    if (!hfApiKey || hfApiKey.trim() === '') {
+      vscode.window.showErrorMessage('Built-in Hugging Face API key for RAG database embedding is not set. Please set HF_API_KEY environment variable or get your own Hugging Face API key and use "Cloud (Hugging Face Inference Provider)" option instead.');
+      throw new Error('Built-in Hugging Face API key for RAG database embedding is not set. Please set HF_API_KEY environment variable or get your own Hugging Face API key and use "Cloud (Hugging Face Inference Provider)" option instead.');
+    }
+    embeddings = new HuggingFaceEmbeddings(hfApiKey, 'sentence-transformers/all-MiniLM-L6-v2');
   } else {
     vscode.window.showErrorMessage('Unsupported or missing embedding configuration. Please check your settings or embeddings.json file.');   
     throw new Error('Unsupported or missing embedding configuration. Please check your settings or embeddings.json file.');
