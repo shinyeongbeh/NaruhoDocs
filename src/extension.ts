@@ -18,7 +18,7 @@ import { HuggingFaceEmbeddings } from './rag/embeddings/huggingfaceCloud';
 import { OllamaEmbeddings } from './rag/embeddings/ollama';
 import { getVectorStore, initializeVectorStore } from './rag/vectorstore/vectorStoreSingleton';
 import { initializeEmbeddingModel } from './rag/embeddings/InitializeEmbeddingModel';
-
+import { ThreadManager } from './managers/ThreadManager';
 
 // Load env once
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
@@ -629,7 +629,7 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 	// (Removed early general thread creation; now happens after provider init)
 
 	// Markdownlint diagnostics
-	const markdownDiagnostics = vscode.languages.createDiagnosticCollection('naruhodocs-markdownlint');
+	const markdownDiagnostics = vscode.languages.createDiagnosticCollection('naruhodocs-markdown');
 	context.subscriptions.push(markdownDiagnostics);
 
 	context.subscriptions.push(
@@ -816,8 +816,26 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 			console.error('Doc drift detection failed:', e.message);
 		}
 	});
-}
 
+	// Register the clear thread history command
+	const clearHistoryCommand = vscode.commands.registerCommand('naruhodocs.clearAllThreadHistory', async () => {
+		try {
+			// Call the STATIC method with context parameter
+			await ThreadManager.clearAllThreadHistoryOnce(context);
+			vscode.window.showInformationMessage('Thread history cleared successfully! Extension will reload.');
+
+			// Optionally auto-reload the window
+			setTimeout(() => {
+				vscode.commands.executeCommand('workbench.action.reloadWindow');
+			}, 1000);
+
+		} catch (error) {
+			vscode.window.showErrorMessage(`Failed to clear thread history: ${error}`);
+		}
+	});
+
+	context.subscriptions.push(clearHistoryCommand);
+}
 // Removed legacy interactive configuration helpers (showLLMConfigurationQuickPick, configureLocalLLM, showLocalLLMSetupInstructions).
 
 // This method is called when your extension is deactivated

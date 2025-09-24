@@ -78,6 +78,11 @@
         "command": "naruhodocs.changeProvider",
         "title": "Change LLM Provider",
         "category": "NaruhoDocs"
+      },
+      {
+        "command": "naruhodocs.clearAllThreadHistory",
+        "title": "Clear All Thread History",
+        "category": "NaruhoDocs"
       }
     ],
     "configuration": {
