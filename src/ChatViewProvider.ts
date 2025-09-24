@@ -175,35 +175,67 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             }
         });
 
-        webviewView.webview.onDidReceiveMessage(async data => {
-            if (data.type === 'chatViewReady') {
-                (webviewView as any)._naruhodocsReady = true;
-                this._postThreadList(); // Post threads first
-                this._sendFullHistory(); // Then send history for the active one
-                return;
-            }
-            // Webview received message
-            if (data.type === 'scanDocs') {
-                // scanDocs triggered from webview
-                await vscode.commands.executeCommand('naruhodocs.scanDocs');
-                return;
-            }
-            if (data.type === 'existingDocs') {
-                this.existingDocFiles = Array.isArray(data.files) ? data.files : [];
-                return;
-            }
-            if (data.type === 'clearHistory') {
-                const activeThreadId = this.threadManager.getActiveThreadId();
-                if (activeThreadId) {
-                    await this.threadManager.resetSession(activeThreadId);
-                    this._view?.webview.postMessage({ type: 'historyCleared' });
-                    this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: 'Chat history for this tab has been cleared.' });
-                }
-                // --- END: CORRECTED CLEAR HISTORY LOGIC ---
-            }
+		webviewView.webview.onDidReceiveMessage(async data => {
+			if (data.type === 'vscodeReloadWindow') {
+				await vscode.commands.executeCommand('workbench.action.reloadWindow');
+				return;
+			}
+			if (data.type === 'chatViewReady') {
+				(webviewView as any)._naruhodocsReady = true;
+				this._postThreadList(); // Post threads first
+				this._sendFullHistory(); // Then send history for the active one
+				return;
+			}
+			// Webview received message
+			if (data.type === 'scanDocs') {
+				// scanDocs triggered from webview
+				await vscode.commands.executeCommand('naruhodocs.scanDocs');
+				return;
+			}
+			if (data.type === 'existingDocs') {
+				this.existingDocFiles = Array.isArray(data.files) ? data.files : [];
+				return;
+			}
+			if (data.type === 'clearHistory') {
+				const activeThreadId = this.threadManager.getActiveThreadId();
+				if (activeThreadId) {
+					await this.threadManager.resetSession(activeThreadId);
+					this._view?.webview.postMessage({ type: 'historyCleared' });
+					this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: 'Chat history for this tab has been cleared.' });
+				}
+				// --- END: CORRECTED CLEAR HISTORY LOGIC ---
+			}
 
 			const session = this.threadManager.getActiveSession();
 			switch (data.type) {
+				case 'refreshThread': {
+					const activeThreadId = this.threadManager.getActiveThreadId();
+					if (activeThreadId) {
+						try {
+							// Reinitialize the LLM service
+							await this.llmService.clearAllSessions();
+							await this.llmManager?.initializeFromConfig();
+							// Reinitialize the active thread
+							const session = this.threadManager.getSession(activeThreadId);
+							if (session) {
+								await this.threadManager.reinitializeSessions(this.llmService);
+								this._sendFullHistory(activeThreadId);
+								this._view?.webview.postMessage({
+									type: 'addMessage',
+									sender: 'System',
+									message: '🔄 Chat session refreshed successfully.'
+								});
+							}
+						} catch (error) {
+							this._view?.webview.postMessage({
+								type: 'addMessage',
+								sender: 'System',
+								message: `❌ Failed to refresh chat session: ${error}`
+							});
+						}
+					}
+					break;
+				}
 				case 'generateDoc': {
 					// generateDoc triggered (doc-generate thread)
 
@@ -742,7 +774,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 						<div style="flex:1 1 auto; text-align:center;">
 							<span id="current-doc-name"></span>
 						</div>
-        				<button id="clear-history" title="Clear all chat history">Clear History</button>
+						<div style="margin-left:auto; display:flex; align-items:center; gap:8px; padding-left:8px;">
+							<button class="refresh-vectordb" id="refresh-vectordb" title="Rebuild the database for RAG" style="display:flex; align-items:center; justify-content:center; padding:4px;">
+								<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+									<path d="M21.1 8.7C20.5 6.8 19.4 5.1 17.9 3.8C16.4 2.5 14.5 1.7 12.5 1.5C10.5 1.3 8.5 1.8 6.8 2.8C5.1 3.8 3.7 5.3 2.9 7.1"/>
+									<path d="M2.9 3.7V7.1H6.3"/>
+									<path d="M2.9 15.3C3.5 17.2 4.6 18.9 6.1 20.2C7.6 21.5 9.5 22.3 11.5 22.5C13.5 22.7 15.5 22.2 17.2 21.2C18.9 20.2 20.3 18.7 21.1 16.9"/>
+									<path d="M21.1 20.3V16.9H17.7"/>
+								</svg>
+							</button>
+							<button id="clear-history" title="Clear all chat history">Clear History</button>
+						</div>
 						<div id="dropdown-container" style="display:none; position:absolute; left:0; top:40px; z-index:10;">
 							<div id="thread-list-menu"></div>
 						</div>

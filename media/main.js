@@ -54,6 +54,13 @@
                 showClearHistoryConfirm();
             };
         }
+
+        const refreshChatBtn = document.getElementById('refresh-vectordb');
+        if (refreshChatBtn) {
+                refreshChatBtn.onclick = () => {
+                    vscode.postMessage({ type: 'vscodeReloadWindow' });
+                };
+        }
     });
 
     function showClearHistoryConfirm() {

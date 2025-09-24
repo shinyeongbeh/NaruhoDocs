@@ -1,4 +1,12 @@
 /* Flexible button group using CSS Grid */
+.refresh-vectordb {
+	width: 24px;
+	align-items: center;
+	background: none;
+}
+.refresh-vectordb:hover {
+	background: none;
+}
 .clearHistory-btn,
 .button-group {
 	display: grid;
