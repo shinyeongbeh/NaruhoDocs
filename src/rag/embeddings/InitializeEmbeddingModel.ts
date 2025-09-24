@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import { OllamaEmbeddings } from "./ollama";
 import { HuggingFaceEmbeddings } from "./huggingfaceCloud";
 import { Embeddings } from "@langchain/core/embeddings";
+import { LMStudioEmbeddings } from "./lmStudio";
 
 // initialize embedding model based on config
 export async function initializeEmbeddingModel(embeddingConfig: EmbeddingProviderConfig | undefined): Promise<Embeddings> {
@@ -11,6 +12,9 @@ export async function initializeEmbeddingModel(embeddingConfig: EmbeddingProvide
     switch (embeddingConfig?.llmEngine) {
       case 'ollama':
         embeddings = new OllamaEmbeddings(embeddingConfig?.model ?? 'snowflake-arctic-embed:33m', embeddingConfig?.baseUrl ?? 'http://localhost:11434');
+        break;
+      case 'lmstudio':
+        embeddings = new LMStudioEmbeddings(embeddingConfig?.model ?? 'all-MiniLM-L6-v2', embeddingConfig?.baseUrl ?? 'http://localhost:1234');
         break;
       default:
         throw new Error(`Unsupported local embedding engine: ${embeddingConfig?.llmEngine}`);
