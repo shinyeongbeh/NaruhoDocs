@@ -26,22 +26,26 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
-	// Initialize embedding model config and build vector database
+	const RAGstatus = vscode.workspace.getConfiguration('naruhodocs').get<boolean>('rag.enabled', true);
 	const embeddingConfigManager = new EmbeddingConfigManager(context);
+
+	// Initialize embedding model config and build vector database
 	(async () => {
-		await embeddingConfigManager.scaffoldIfMissing();
-		await embeddingConfigManager.load();
+		if (RAGstatus) {
+			await embeddingConfigManager.scaffoldIfMissing();
+			await embeddingConfigManager.load();
 
-		 // Select embedding provider
-    const providerName = vscode.workspace.getConfiguration('naruhodocs').get<string>('embedding.provider', 'local');
-    const embeddingConfig = embeddingConfigManager.resolveProvider(providerName);
+			// Select embedding provider
+			const providerName = vscode.workspace.getConfiguration('naruhodocs').get<string>('embedding.provider', 'local');
+			const embeddingConfig = embeddingConfigManager.resolveProvider(providerName);
 
-		// Initialize embedding model
-		const embeddings = await initializeEmbeddingModel(embeddingConfig);
-		// Initialize vector store with embeddings
-		initializeVectorStore(embeddings);
-		// Build vector database from workspace files
-		buildVectorDB(getVectorStore());
+			// Initialize embedding model
+			const embeddings = await initializeEmbeddingModel(embeddingConfig);
+			// Initialize vector store with embeddings
+			initializeVectorStore(embeddings);
+			// Build vector database from workspace files
+			buildVectorDB(getVectorStore());
+		}
 	})();
 
 	// Command to switch embedding provider interactively
@@ -62,6 +66,10 @@ export function activate(context: vscode.ExtensionContext) {
 			if (!pick) { return; }
 			const chosen = items.find(i => i.label === pick.label);
 			if (!chosen) { return; }
+			if (!RAGstatus) {
+				vscode.window.showWarningMessage('RAG is currently disabled in settings. Please enable it to change embedding provider.');
+				return;
+			}
 			if (chosen.value === '__open_models__') {
 				try {
 					const ws = vscode.workspace.workspaceFolders?.[0];

@@ -131,7 +131,7 @@ Keep responses focused and technical, using the retrieved context as your primar
 
   let tools: any[] = [];
   // check the settings if user enabled RAG or not
-  let RAGstatus = vscode.workspace.getConfiguration('naruhodocs').get<string>('rag.enabled', 'true');
+  let RAGstatus = vscode.workspace.getConfiguration('naruhodocs').get<boolean>('rag.enabled', );
   if (opts.systemMessage === SystemMessages.GENERAL_PURPOSE && RAGstatus) {
   // if (RAGstatus) {
     // Use RAG-enabled agent for general-purpose chat
