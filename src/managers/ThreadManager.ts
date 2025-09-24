@@ -170,7 +170,7 @@ export class ThreadManager {
     }
 
     public getSystemMessage(sessionId: string): string | undefined {
-        if(!this.systemMessages.has(sessionId)){
+        if (!this.systemMessages.has(sessionId)) {
             throw new Error(`No system message found for sessionId: ${sessionId}`);
         }
         return this.systemMessages.get(sessionId);
@@ -313,5 +313,28 @@ export class ThreadManager {
             this.activeThreadId = 'naruhodocs-general-thread';
         }
         this.onThreadListChange?.();
+    }
+    
+    public static async clearAllThreadHistoryOnce(context: vscode.ExtensionContext): Promise<void> {
+        console.log('Clearing all thread history...');
+        const keys = context.workspaceState.keys();
+        let cleared = 0;
+        for (const key of keys) {
+            if (typeof key === 'string' && key.startsWith('thread-history-')) {
+                await context.workspaceState.update(key, undefined);
+                cleared++;
+            }
+        }
+        console.log(`Cleared ${cleared} thread histories`);
+
+        // Close all open tabs/editors
+        try {
+            await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+            console.log('Closed all open tabs');
+        } catch (error) {
+            console.warn('Failed to close tabs:', error);
+        }
+
+        console.log('All thread history and tabs cleared');
     }
 }
