@@ -20,6 +20,8 @@ import { getVectorStore, initializeVectorStore } from './rag/vectorstore/vectorS
 import { initializeEmbeddingModel } from './rag/embeddings/InitializeEmbeddingModel';
 import { ThreadManager } from './managers/ThreadManager';
 
+let provider: ChatViewProvider;
+
 // Load env once
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
@@ -150,7 +152,7 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	}
 
-	const provider = new ChatViewProvider(context.extensionUri, undefined, context, llmManager);
+	provider = new ChatViewProvider(context.extensionUri, undefined, context, llmManager);
 
 	// Model config manager (per-repo JSON) - instantiate now, load inside activation async block
 	const modelConfigManager = new ModelConfigManager(context);
@@ -184,23 +186,19 @@ export function activate(context: vscode.ExtensionContext) {
 			watcher.onDidDelete(async () => { await modelConfigManager.load(); llmService.setModelConfigManager(modelConfigManager); llmService.clearAllSessions(); llmService.logEvent('model_config_deleted'); updateProviderModelStatus(activeThreadId); });
 		}
 		try {
-			await llmManager.initializeFromConfig();
-			llmService.logEvent('provider_init', { provider: llmManager.getCurrentProvider()?.name });
-			// Clear any pre-existing sessions created via fallback before provider ready
-			// llmService.clearAllSessions();
+            await llmManager.initializeFromConfig();
+            llmService.logEvent('provider_init', { provider: llmManager.getCurrentProvider()?.name });
 
-			// Initialize the general-purpose thread AFTER provider is confirmed
-			// const generalThreadId = 'naruhodocs-general-thread';
-			// const generalThreadTitle = 'General Purpose';
-			// if (!threadMap.has(generalThreadId)) {
-			// 	threadMap.set(generalThreadId, { document: undefined as any, sessionId: generalThreadId });
-			// 	// Ensure backing LLM session is created through LLMService so logging + provider attribution work
-			// 	await llmService.getSession(generalThreadId, SystemMessages.GENERAL_PURPOSE, { taskType: 'chat', forceNew: true });
-			// 	provider.createThread(generalThreadId, SystemMessages.GENERAL_PURPOSE, generalThreadTitle);
-			// 	activeThreadId = generalThreadId;
-			// 	provider.setActiveThread(generalThreadId);
-			// }
-			updateProviderModelStatus('naruhodocs-general-thread');
+            // Initialize the general-purpose thread AFTER provider is confirmed
+            const generalThreadId = 'naruhodocs-general-thread';
+            const generalThreadTitle = 'General Purpose';
+            // Ensure backing LLM session is created through LLMService so logging + provider attribution work
+            await llmService.getSession(generalThreadId, SystemMessages.GENERAL_PURPOSE, { taskType: 'chat', forceNew: true });
+            provider.createThread(generalThreadId, SystemMessages.GENERAL_PURPOSE, generalThreadTitle);
+            activeThreadId = generalThreadId;
+            provider.setActiveThread(generalThreadId);
+            
+            updateProviderModelStatus(activeThreadId);
 
 			// For already-open documents, create threads now that provider is ready
 			const openDocs = vscode.workspace.textDocuments;
@@ -211,7 +209,6 @@ export function activate(context: vscode.ExtensionContext) {
 					if (!threadMap.has(uriStr)) {
 						const sessionId = uriStr;
 						threadMap.set(uriStr, { document, sessionId });
-						await llmService.getSession(sessionId, SystemMessages.GENERAL_PURPOSE, { taskType: 'chat', forceNew: true });
 						provider.createThread(sessionId, document.getText(), document.fileName);
 						activeThreadId = sessionId;
 						provider.setActiveThread(sessionId);
@@ -841,11 +838,12 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 // This method is called when your extension is deactivated
 export async function deactivate() {
 	try {
-		const existing = (LLMService as any).instance as LLMService | undefined;
-		if (existing) {
-			await existing.saveState();
+		// Get the ThreadManager instance from the ChatViewProvider to save state
+		const threadManager = (provider as any)?.threadManager as ThreadManager | undefined;
+		if (threadManager) {
+			await threadManager.saveState();
 		}
 	} catch (e) {
-		console.warn('Failed to persist LLMService state on deactivate', e);
+		console.warn('Failed to persist thread state on deactivate', e);
 	}
 }

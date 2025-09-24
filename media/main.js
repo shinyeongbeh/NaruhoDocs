@@ -15,6 +15,51 @@
     const mermaidLib = window.mermaid;
     // @ts-ignore: acquireVsCodeApi is provided by VS Code webview
     const vscode = acquireVsCodeApi();
+    /**
++     * Atomically replace the chat messages with normalized history.
++     * Hoisted function so early handler can call it without TS error.
++     * @param {Array<{sender?: string, message?: string}>} history
++     */
+    function setFullHistory(history) {
+        if (chatMessages) { chatMessages.innerHTML = ''; }
+        if (Array.isArray(history)) {
+            history.forEach(function (entry) {
+                if (entry && typeof entry === 'object') {
+                    addMessage(entry.sender || 'Bot', entry.message || '');
+                }
+            });
+        }
+        try { vscode.setState(null); } catch (e) { /* ignore */ }
+        persistState();
+    }
+    
+    (function registerEarlyHandlers() {
+        window.addEventListener('message', (e) => {
+            const msg = e.data || {};
+            if (msg.type === 'threadList') {
+                threads = msg.threads || [];
+                activeThreadId = msg.activeThreadId;
+                // renderThreadListMenu is a hoisted function — safe to call
+                try { renderThreadListMenu(); } catch (err) { /* ignore until rest of UI attaches */ }
+            } else if (msg.type === 'toggleGeneralTabUI') {
+                const gb = document.getElementById('general-buttons');
+                if (gb) { gb.style.display = msg.visible ? 'flex' : 'none'; }
+            } else if (msg.type === 'clearMessages') {
+                const cm = document.getElementById('chat-messages');
+                if (cm) { cm.innerHTML = ''; }
+            } else if (msg.type === 'setFullHistory') {
+                console.debug('[NaruhoDocs] setFullHistory received (early) length=', (msg.history || []).length);
+                if (typeof showHistory === 'function') { showHistory(msg.history); }
+            }
+        }, false);
+
+        // Announce ready so extension can safely send restored history / thread list
+        try {
+            vscode.postMessage({ type: 'chatViewReady' });
+        } catch (e) {
+            console.warn('[NaruhoDocs] Failed to post chatViewReady early:', e);
+        }
+    })();
 
     const chatMessages = document.getElementById('chat-messages');
     const chatInput = document.getElementById('chat-input'); // HTMLTextAreaElement
@@ -1099,7 +1144,7 @@
                 // Atomically replace chat messages with provided normalized history
                 if (chatMessages) { chatMessages.innerHTML = ''; }
                 if (Array.isArray(message.history)) {
-                    message.history.forEach(/** @param {{sender?: string, message?: string}} entry */ (entry) => {
+                    message.history.forEach(/** @param {{sender?: string, message?: string}} entry */(entry) => {
                         if (entry && typeof entry === 'object') {
                             addMessage(entry.sender || 'Bot', entry.message || '');
                         }
