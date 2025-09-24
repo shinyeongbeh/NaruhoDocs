@@ -136,9 +136,11 @@ Keep responses focused and technical, using the retrieved context as your primar
   // if (RAGstatus) {
     // Use RAG-enabled agent for general-purpose chat
     tools = [RAGretrieval];
+    // tools = [retrieveFilenames, retrieveFileContent, RAGretrieval];
   } else {
     tools = [retrieveFilenames, retrieveFileContent];
     // tools = [RAGretrieval];
+    // tools = [retrieveFilenames, retrieveFileContent, RAGretrieval];
   }
 
 

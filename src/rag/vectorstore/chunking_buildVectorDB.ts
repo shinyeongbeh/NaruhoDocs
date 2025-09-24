@@ -18,33 +18,34 @@ export async function buildVectorDB(vectorStore: LocalMemoryVectorStore) {
         continue;
       }
 
-      // Simple chunking: split content into ?-character chunks
-      // const chunkSize = 10000;
-      // for (let i = 0; i < content.length; i += chunkSize) {
-      //   const chunk = content.slice(i, i + chunkSize);
-      //   docs.push(new Document({
-      //     pageContent: chunk,
-      //     metadata: {
-      //       filePath: file.fsPath,
-      //       chunkId: `${file.fsPath}-chunk-${Math.floor(i / chunkSize)}`,
-      //       startLine: 1, // Optionally improve: map char index to line number
-      //       endLine: 1,
-      //       lastUpdated: Date.now()
-      //     }
-      //   }));
-      // }
+      // Simple chunking: split content into line-based chunks
+      const lines = content.split('\n');
+      const chunkSize = 150; // Number of lines per chunk
+      for (let i = 0; i < lines.length; i += chunkSize) {
+        const chunk = lines.slice(i, i + chunkSize).join('\n');
+        docs.push(new Document({
+          pageContent: chunk,
+          metadata: {
+            filePath: file.fsPath,
+            chunkId: `${file.fsPath}-chunk-${Math.floor(i / chunkSize)}`,
+            startLine: i + 1,
+            endLine: Math.min(i + chunkSize, lines.length),
+            lastUpdated: Date.now()
+          }
+        }));
+      }
 
       // Add whole file as single chunk
-      docs.push(new Document({
-        pageContent: content,
-        metadata: {
-          filePath: file.fsPath,
-          chunkId: file.fsPath,
-          startLine: 1,
-          endLine: content.split('\n').length,
-          lastUpdated: Date.now()
-        }
-      }));
+      // docs.push(new Document({
+      //   pageContent: content,
+      //   metadata: {
+      //     filePath: file.fsPath,
+      //     chunkId: file.fsPath,
+      //     startLine: 1,
+      //     endLine: content.split('\n').length,
+      //     lastUpdated: Date.now()
+      //   }
+      // }));
     } catch (e) {
       console.warn('Failed to read file for vector DB:', file.fsPath, e);
     }
