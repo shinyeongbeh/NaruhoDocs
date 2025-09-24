@@ -680,19 +680,34 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 			if (this.context.extensionMode === vscode.ExtensionMode.Development) {
 				console.log('[NaruhoDocs][History] Raw history length:', raw.length, 'for session', activeId);
 			}
-			const normalized = raw.map((msg: any) => {
-				let role: string | undefined = msg.type || (typeof msg._getType === 'function' ? msg._getType() : undefined);
-				if (!role || role === 'unknown') {
-					const ctor = msg.constructor?.name?.toLowerCase?.() || '';
-					if (ctor.includes('human')) { role = 'human'; }
-					else if (ctor.includes('ai')) { role = 'ai'; }
-				}
-				if (role === 'user') { role = 'human'; }
-				if (role === 'assistant' || role === 'bot') { role = 'ai'; }
-				const sender = role === 'human' ? 'You' : 'Bot';
-				const text = typeof msg.content === 'string' ? msg.content : msg.text || JSON.stringify(msg.content);
-				return { sender, message: text };
-			});
+			const normalized = raw
+				.filter((msg: any) => {
+					// Filter out RAG Query system/context messages
+					// You can adjust this filter as needed for your app
+					// Example: skip if message contains 'Prompt-engineered RAG Query' or 'Retrieved Context:'
+					const text = typeof msg.content === 'string' ? msg.content : msg.text || JSON.stringify(msg.content);
+					if (typeof text === 'string' && (
+						text.includes('Prompt-engineered RAG Query') &&
+						text.includes('Retrieved Context:') &&
+						text.startsWith('\nQuery:')
+					)) {
+						return false;
+					}
+					return true;
+				})
+				.map((msg: any) => {
+					let role: string | undefined = msg.type || (typeof msg._getType === 'function' ? msg._getType() : undefined);
+					if (!role || role === 'unknown') {
+						const ctor = msg.constructor?.name?.toLowerCase?.() || '';
+						if (ctor.includes('human')) { role = 'human'; }
+						else if (ctor.includes('ai')) { role = 'ai'; }
+					}
+					if (role === 'user') { role = 'human'; }
+					if (role === 'assistant' || role === 'bot') { role = 'ai'; }
+					const sender = role === 'human' ? 'You' : 'Bot';
+					const text = typeof msg.content === 'string' ? msg.content : msg.text || JSON.stringify(msg.content);
+					return { sender, message: text };
+				});
 			if (this.context.extensionMode === vscode.ExtensionMode.Development) {
 				console.log('[NaruhoDocs][History] Normalized history length:', normalized.length);
 			}
