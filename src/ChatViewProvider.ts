@@ -159,6 +159,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		}
 
 		webviewView.webview.onDidReceiveMessage(async data => {
+			if (data.type === 'vscodeReloadWindow') {
+				await vscode.commands.executeCommand('workbench.action.reloadWindow');
+				return;
+			}
 			if (data.type === 'chatViewReady') {
 				(webviewView as any)._naruhodocsReady = true;
 
@@ -210,34 +214,34 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
 			const session = this.threadManager.getActiveSession();
 			switch (data.type) {
-				case 'refreshThread': {
-					const activeThreadId = this.threadManager.getActiveThreadId();
-					if (activeThreadId) {
-						try {
-							// Reinitialize the LLM service
-							await this.llmService.clearAllSessions();
-							await this.llmManager?.initializeFromConfig();
-							// Reinitialize the active thread
-							const session = this.threadManager.getSession(activeThreadId);
-							if (session) {
-								await this.threadManager.reinitializeSessions(this.llmService);
-								this._sendFullHistory(activeThreadId);
-								this._view?.webview.postMessage({
-									type: 'addMessage',
-									sender: 'System',
-									message: '🔄 Chat session refreshed successfully.'
-								});
-							}
-						} catch (error) {
-							this._view?.webview.postMessage({
-								type: 'addMessage',
-								sender: 'System',
-								message: `❌ Failed to refresh chat session: ${error}`
-							});
-						}
-					}
-					break;
-				}
+				// case 'refreshThread': {
+				// 	const activeThreadId = this.threadManager.getActiveThreadId();
+				// 	if (activeThreadId) {
+				// 		try {
+				// 			// Reinitialize the LLM service
+				// 			await this.llmService.clearAllSessions();
+				// 			await this.llmManager?.initializeFromConfig();
+				// 			// Reinitialize the active thread
+				// 			const session = this.threadManager.getSession(activeThreadId);
+				// 			if (session) {
+				// 				await this.threadManager.reinitializeSessions(this.llmService);
+				// 				this._sendFullHistory(activeThreadId);
+				// 				this._view?.webview.postMessage({
+				// 					type: 'addMessage',
+				// 					sender: 'System',
+				// 					message: '🔄 Chat session refreshed successfully.'
+				// 				});
+				// 			}
+				// 		} catch (error) {
+				// 			this._view?.webview.postMessage({
+				// 				type: 'addMessage',
+				// 				sender: 'System',
+				// 				message: `❌ Failed to refresh chat session: ${error}`
+				// 			});
+				// 		}
+				// 	}
+				// 	break;
+				// }
 				case 'generateDoc': {
 					// generateDoc triggered (doc-generate thread)
 
