@@ -325,7 +325,23 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 							// Use AI to generate template content
 							let templateContent = '';
 							try {
-								const sys2 = `You are an impeccable and meticulous technical documentation specialist. Your purpose is to produce clear, accurate, and professional documentation templates based on the given content.\n\nPrimary Goal: Generate a high-quality documentation template for ${templateType} that is comprehensive, logically structured, and easy for the intended audience to use.\n\nInstructions:\nYou will be given the template type to create, along with the relevant files and their contents from the user's project workspace.\nYour task is to analyze these files and generate a well-organized documentation template that thoroughly covers the subject matter implied by the template type.\nYou may use tools (retrieve_workspace_filenames, retrieve_file_content) to retrieve additional file contents if needed without user prompted.\n\nMandatory Rules:\n- Do not include private or sensitive information from the provided files. For example, API keys.\n- Clarity and Simplicity: Prioritize clarity and conciseness above all else. Use plain language, active voice, and short sentences. Avoid jargon, buzzwords, and redundant phrases unless they are essential for technical accuracy.\n- Structured Content: All templates must follow a clear, hierarchical structure using Markdown.\n- Formatting: The final output must be in markdown format. Do not include code fences, explanations, or conversational text.\n- Never return empty or placeholder content. If you determine that this project truly does not need this template, respond with a clear explanation such as: 'This project does not require a [${templateType}] template because ...' and do not generate a file.`;
+								const sys2 = `You are a markdown template generator. Your ONLY job is to create EMPTY SKELETON templates with placeholders.
+
+								CRITICAL RULE: Generate ONLY templates with placeholders - NEVER write actual content.
+
+								TEMPLATE STYLE - Every section must be:
+								- Placeholder: [PLACEHOLDER_NAME]
+								- Comment: <!-- Instructions for user -->
+								- TODO: TODO: Add your content here
+
+								FORBIDDEN:
+								- Writing actual descriptions, code, or examples
+								- Including project-specific information
+								- Creating complete documentation
+								- Adding real content from files
+
+								Generate a ${templateType} template using ONLY this placeholder style. Do not analyze files or write real content.`;
+
 								const filesAndContentsString = filesAndContents.map(f => `File: ${f.path}\n${f.content}`).join('\n\n');
 								templateContent = await this.llmService.trackedChat({
 									sessionId: 'chatview:template-generate',
