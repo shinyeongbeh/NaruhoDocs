@@ -35,6 +35,7 @@ export class LLMService {
         read_files: 0,
         analyze: 0,
         translate: 0,
+        grammar_check: 0,
         generate_doc: 0,
         visualization_context: 0
     };
@@ -46,6 +47,7 @@ export class LLMService {
         'read_files': { temperature: 0, modelHint: 'gemini-2.0-flash' },
         'analyze': { temperature: 0.1 },
         'translate': { temperature: 0 },
+        'grammar_check': { temperature: 0 },
         'generate_doc': { temperature: 0.2 },
         'visualization_context': { temperature: 0 },
     };
@@ -134,6 +136,8 @@ export class LLMService {
                 return this.handleAnalyze(req);
             case 'translate':
                 return this.handleTranslate(req);
+            case 'grammar_check':
+                return this.handleGrammarCheck(req);
             case 'generate_doc':
                 return this.handleGenerateDoc(req);
             case 'visualization_context':
@@ -182,6 +186,7 @@ export class LLMService {
                     read_files: 'naruhodocs.llm.models.readFiles',
                     analyze: 'naruhodocs.llm.models.analyze',
                     translate: 'naruhodocs.llm.models.translate',
+                    grammar_check: 'naruhodocs.llm.models.grammarCheck',
                     generate_doc: 'naruhodocs.llm.models.generateDoc',
                     visualization_context: 'naruhodocs.llm.models.visualizationContext'
                 };
@@ -317,6 +322,14 @@ export class LLMService {
         const meta = { targetLanguage: req.targetLanguage };
         const answer = await this.invokeTracked(session, prompt, 'translate', req.content.length, meta);
         return { type: 'translate', content: answer, meta: { targetLanguage: req.targetLanguage, provider: this.sessionProviders.get(`translate:${req.targetLanguage}`) } };
+    }
+
+    private async handleGrammarCheck(req: GrammarCheckRequest): Promise<LLMResponse> {
+        const systemMessage = req.systemMessage || 'You are an AI data filter. Your sole purpose is to return a JSON array.';
+        const session = await this.getSession(req.sessionId || 'grammar_check', systemMessage, { taskType: 'grammar_check' });
+        // This handler directly uses the prompt from the request, without modification.
+        const answer = await this.invokeTracked(session, req.prompt, 'grammar_check', req.prompt.length, { sessionId: req.sessionId });
+        return { type: 'grammar_check', content: answer, meta: { provider: this.sessionProviders.get(req.sessionId || 'grammar_check') } };
     }
 
     private async handleGenerateDoc(req: GenerateDocRequest): Promise<LLMResponse> {
@@ -481,7 +494,7 @@ export class LLMService {
 }
 
 // ---- Types ----
-export type LLMTaskType = 'chat' | 'summarize' | 'read_files' | 'analyze' | 'translate' | 'generate_doc' | 'visualization_context';
+export type LLMTaskType = 'chat' | 'summarize' | 'read_files' | 'analyze' | 'translate' | 'grammar_check' | 'generate_doc' | 'visualization_context';
 
 export interface BaseLLMRequest { type: LLMTaskType; sessionId?: string; systemMessage?: string; }
 export interface ChatRequest extends BaseLLMRequest { type: 'chat'; prompt: string; }
@@ -489,10 +502,11 @@ export interface SummarizeRequest extends BaseLLMRequest { type: 'summarize'; co
 export interface ReadFilesRequest extends BaseLLMRequest { type: 'read_files'; files: Array<{ path: string; content: string }>; prompt?: string; }
 export interface AnalyzeRequest extends BaseLLMRequest { type: 'analyze'; analysisGoal: string; context: string; }
 export interface TranslateRequest extends BaseLLMRequest { type: 'translate'; content: string; targetLanguage: string; }
+export interface GrammarCheckRequest extends BaseLLMRequest { type: 'grammar_check'; prompt: string; }
 export interface GenerateDocRequest extends BaseLLMRequest { type: 'generate_doc'; title: string; sourceContent: string; purpose?: string; tone?: string; }
 export interface VisualizationContextRequest extends BaseLLMRequest { type: 'visualization_context'; contextType: string; userPrompt: string; botResponse: string; }
 
-export type LLMRequest = ChatRequest | SummarizeRequest | ReadFilesRequest | AnalyzeRequest | TranslateRequest | GenerateDocRequest | VisualizationContextRequest;
+export type LLMRequest = ChatRequest | SummarizeRequest | ReadFilesRequest | AnalyzeRequest | TranslateRequest | GrammarCheckRequest | GenerateDocRequest | VisualizationContextRequest;
 
 export interface LLMResponse { type: LLMTaskType; content: string; meta?: Record<string, any>; }
 

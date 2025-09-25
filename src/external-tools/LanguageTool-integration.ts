@@ -1,4 +1,7 @@
 import fetch from 'node-fetch';
+import { LLMService } from '../managers/LLMService';
+import { SystemMessages } from '../SystemMessages';
+import * as vscode from 'vscode';
 
 export interface GrammarIssue {
     message: string;
