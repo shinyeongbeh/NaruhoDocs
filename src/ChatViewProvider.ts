@@ -11,6 +11,7 @@ import { getNonce } from './utils/utils';
 import { ThreadManager } from './managers/ThreadManager';
 import * as path from 'path';
 import * as fs from 'fs';
+import { generateTemplate } from './general-purpose/GenerateTemplate';
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
 	private documentSuggestion = new DocumentSuggestion();
@@ -211,6 +212,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 				}
 				// --- END: CORRECTED CLEAR HISTORY LOGIC ---
 			}
+			if (data.type === 'generateTemplate') {
+				this.addSystemMessage('Generating template...');
+				generateTemplate(this.llmService, data.templateType);
+			}
 
 			const session = this.threadManager.getActiveSession();
 			switch (data.type) {
@@ -271,139 +276,37 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
 					try {
 						if (!session) { throw new Error('No active thread'); }
-						// If the user message is a template request, scan files and generate a template with full context
-						if (/generate (a )?.*template/i.test(userMessage)) {
-							// Extract template type
-							let templateType = 'README';
-							const match = userMessage.match(/generate (?:a )?(.*) template/i);
-							if (match && match[1]) {
-								templateType = match[1].trim();
-							}
-							// Gather workspace filenames
-							const { RetrieveWorkspaceFilenamesTool, RetrieveFileContentTool } = require('./langchain-backend/features');
-							const filenamesTool = new RetrieveWorkspaceFilenamesTool();
-							const fileListStr = await filenamesTool._call();
-							const fileList = fileListStr.split('\n').filter((line: string) => line && !line.startsWith('Files in the workspace:'));
+						const activeThreadId = this.threadManager.getActiveThreadId();
+						if (!activeThreadId) {
+							throw new Error("Could not determine active thread for chat.");
+						}
+						const currentHistory = session.getHistory();
+						const sessionSystemMessage = this.threadManager.getSystemMessage(activeThreadId || 'No system message');
+						const historyPreview = currentHistory.map((msg: any, index: any) => {
+							const msgType = (msg as any).type || 'unknown';
+							const msgContent = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+							const truncatedContent = msgContent.length > 200 ? msgContent.substring(0, 200) + '...' : msgContent;
+							return `  [${index}] ${msgType}: ${truncatedContent}`;
+						}).join('\n');
 
-							// Always include project metadata and README/config files for richer context
-							const metaFiles = ['package.json', 'tsconfig.json', 'README.md', 'readme.md', 'api_reference.md', 'API_REFERENCE.md'];
-							const extraFiles = fileList.filter((f: string) => metaFiles.includes(f.split(/[/\\]/).pop()?.toLowerCase() || ''));
+						// User message sent verbose log removed
 
-							// Ask AI which files are relevant for documentation
-							const sys = `You are an AI assistant that helps users create project documentation templates based on the project files and contents.\nThe output should be in markdown format. Do not include code fences or explanations, just the template.\nFirst, select ALL the relevant files from this list for generating a ${templateType} template. You need to select as many files as needed but be concise.\nAlways include project metadata and README/config files if available. Return only a JSON array of file paths, no explanation.`;
-							let relevantFiles: string[] = [];
-							try {
-								const aiResponse = await this.llmService.trackedChat({
-									sessionId: 'chatview:template-select',
-									systemMessage: sys,
-									prompt: `Here is the list of files in the workspace:\n${fileList.join('\n')}\n\nWhich files are most relevant for generating a ${templateType} template? Always include project metadata and README/config files if available. Return only a JSON array of file paths.`,
-									task: 'analyze',
-									forceNew: true
-								});
-								// Try to parse the AI response as JSON array
-								const matchFiles = aiResponse.match(/\[.*\]/s);
-								if (matchFiles) {
-									relevantFiles = JSON.parse(matchFiles[0]);
-								} else {
-									// fallback: use all files
-									relevantFiles = fileList;
-								}
-							} catch (err) {
-								relevantFiles = fileList;
-							}
-							// Ensure meta files are always included
-							for (const meta of extraFiles) {
-								if (!relevantFiles.includes(meta)) {
-									relevantFiles.push(meta);
-								}
-							}
-							// Now scan only relevant files
-							const contentTool = new RetrieveFileContentTool();
-							const filesAndContents = [];
-							for (const path of relevantFiles) {
-								try {
-									const content = await contentTool._call(path);
-									filesAndContents.push({ path, content });
-								} catch (e) { }
-							}
-							// Use AI to generate template content
-							let templateContent = '';
-							try {
-								const sys2 = `You are a markdown template generator. Your ONLY job is to create EMPTY SKELETON templates.
+						const botResponse = await this.llmService.trackedChat({
+							sessionId: activeThreadId!,
+							systemMessage: sessionSystemMessage || 'No system message',
+							prompt: userMessage,
+							task: 'chat'
+						});
 
-								CRITICAL RULE: Generate ONLY templates - NEVER write actual content.
+						// Manually add the new exchange to the session's history object before saving
+						const history = session.getHistory();
+						history.push(new HumanMessage(userMessage));
+						history.push(new AIMessage(botResponse));
 
-								FORBIDDEN:
-								- Writing actual descriptions, code, or examples
-								- Including project-specific information
-								- Creating complete documentation
-								- Adding real content from files
-
-								Generate a ${templateType} template using ONLY this placeholder style. Do not analyze files or write real content.`;
-
-								const filesAndContentsString = filesAndContents.map(f => `File: ${f.path}\n${f.content}`).join('\n\n');
-								templateContent = await this.llmService.trackedChat({
-									sessionId: 'chatview:template-generate',
-									systemMessage: sys2,
-									// prompt: `Generate a documentation template for ${templateType} based on this project. Here are the relevant workspace files and contents:\n${filesAndContentsString}`,
-									prompt: `Generate a documentation template for ${templateType} based on this project. Return in markdown format`,
-									task: 'generate_doc',
-									forceNew: true,
-									temperatureOverride: 0.2
-								});
-								templateContent = templateContent.replace(/^```markdown\s*/i, '').replace(/^\*\*\*markdown\s*/i, '').replace(/```$/g, '').trim();
-							} catch (err) {
-								templateContent = `This project does not require a [${templateType}] template because no relevant content was found.`;
-							}
-							this._view?.webview.postMessage({
-								type: 'addMessage',
-								sender: 'Bot',
-								message: templateContent
-							});
-							// Save history after message
-							const activeThreadId = this.threadManager.getActiveThreadId();
-							if (activeThreadId && session) {
-								await this.threadManager.saveThreadHistory(activeThreadId);
-							}
-							this._view?.webview.postMessage({
-								type: 'showSaveTemplateButtons',
-								template: templateContent,
-								sessionId: activeThreadId,
-								templateType
-							});
-						} else {
-							const activeThreadId = this.threadManager.getActiveThreadId();
-							if (!activeThreadId) {
-								throw new Error("Could not determine active thread for chat.");
-							}
-							const currentHistory = session.getHistory();
-							const sessionSystemMessage = this.threadManager.getSystemMessage(activeThreadId || 'No system message');
-							const historyPreview = currentHistory.map((msg: any, index: any) => {
-								const msgType = (msg as any).type || 'unknown';
-								const msgContent = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
-								const truncatedContent = msgContent.length > 200 ? msgContent.substring(0, 200) + '...' : msgContent;
-								return `  [${index}] ${msgType}: ${truncatedContent}`;
-							}).join('\n');
-
-							// User message sent verbose log removed
-
-							const botResponse = await this.llmService.trackedChat({
-								sessionId: activeThreadId!,
-								systemMessage: sessionSystemMessage || 'No system message',
-								prompt: userMessage,
-								task: 'chat'
-							});
-
-							// Manually add the new exchange to the session's history object before saving
-							const history = session.getHistory();
-							history.push(new HumanMessage(userMessage));
-							history.push(new AIMessage(botResponse));
-
-							this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: botResponse });
-							// Save history after message
-							if (activeThreadId && session) {
-								await this.threadManager.saveThreadHistory(activeThreadId);
-							}
+						this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: botResponse });
+						// Save history after message
+						if (activeThreadId && session) {
+							await this.threadManager.saveThreadHistory(activeThreadId);
 						}
 					} catch (error: any) {
 						this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: `Error: ${error.message || 'Unable to connect to LLM.'}` });

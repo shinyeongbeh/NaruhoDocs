@@ -543,8 +543,7 @@
                         btn.textContent = suggestion.displayName;
                         btn.title = suggestion.description || '';
                         btn.addEventListener('click', () => {
-                            addMessage('You', `Generate a ${suggestion.displayName} template.`);
-                            vscode.postMessage({ type: 'sendMessage', value: `Generate a ${suggestion.displayName} template.` });
+                            vscode.postMessage({ type: 'generateTemplate', templateType: suggestion.displayName });
                             modal.remove();
                         });
                         box.appendChild(btn);
@@ -584,8 +583,7 @@
                 if (input.value.trim()) {
                     // Always send a canonical template request for custom input
                     const templateType = input.value.trim();
-                    addMessage('You', `Generate a ${templateType} template.`);
-                    vscode.postMessage({ type: 'sendMessage', value: `Generate a ${templateType} template.` });
+                    vscode.postMessage({ type: 'generateTemplate', templateType: templateType });
                     if (modal) { modal.remove(); }
                 }
             });
@@ -1229,58 +1227,58 @@
                     chatMessages.scrollTop = chatMessages.scrollHeight;
                 }
                 break;
-            case 'showSaveTemplateButtons':
-                if (chatMessages) {
-                    // If the template is a 'not needed' message, do not show save modal
-                    if (typeof message.template === 'string' && message.template.trim().toLowerCase().startsWith('this project does not require')) {
-                        // Do not show save modal
-                        break;
-                    }
-                    const prev = document.getElementById('save-template-btn-container');
-                    if (prev) {
-                        prev.remove();
-                    }
+            // case 'showSaveTemplateButtons':
+            //     if (chatMessages) {
+            //         // If the template is a 'not needed' message, do not show save modal
+            //         if (typeof message.template === 'string' && message.template.trim().toLowerCase().startsWith('this project does not require')) {
+            //             // Do not show save modal
+            //             break;
+            //         }
+            //         const prev = document.getElementById('save-template-btn-container');
+            //         if (prev) {
+            //             prev.remove();
+            //         }
 
-                    const btnContainer = document.createElement('div');
-                    btnContainer.id = 'save-template-btn-container';
-                    btnContainer.className = 'button-group';
+            //         const btnContainer = document.createElement('div');
+            //         btnContainer.id = 'save-template-btn-container';
+            //         btnContainer.className = 'button-group';
 
-                    const labelDiv = document.createElement('div');
-                    labelDiv.textContent = 'Save template as new file?';
-                    labelDiv.className = 'button-group-label';
-                    btnContainer.appendChild(labelDiv);
+            //         const labelDiv = document.createElement('div');
+            //         labelDiv.textContent = 'Save template as new file?';
+            //         labelDiv.className = 'button-group-label';
+            //         btnContainer.appendChild(labelDiv);
 
-                    const yesBtn = document.createElement('button');
-                    yesBtn.textContent = 'Yes';
-                    yesBtn.className = 'save-btn';
-                    yesBtn.onclick = () => {
-                        vscode.postMessage({
-                            type: 'createAndSaveTemplateFile',
-                            text: message.template,
-                            uri: message.sessionId,
-                            docType: message.docType || message.templateType || 'README'
-                        });
+            //         const yesBtn = document.createElement('button');
+            //         yesBtn.textContent = 'Yes';
+            //         yesBtn.className = 'save-btn';
+            //         yesBtn.onclick = () => {
+            //             vscode.postMessage({
+            //                 type: 'createAndSaveTemplateFile',
+            //                 text: message.template,
+            //                 uri: message.sessionId,
+            //                 docType: message.docType || message.templateType || 'README'
+            //             });
 
-                        // Notify extension that webview is fully initialized and ready to accept history
-                        try {
-                            vscode.postMessage({ type: 'chatViewReady' });
-                        } catch (e) {
-                            console.warn('[NaruhoDocs] Failed to post chatViewReady:', e);
-                        }
-                        btnContainer.remove();
-                    };
+            //             // Notify extension that webview is fully initialized and ready to accept history
+            //             try {
+            //                 vscode.postMessage({ type: 'chatViewReady' });
+            //             } catch (e) {
+            //                 console.warn('[NaruhoDocs] Failed to post chatViewReady:', e);
+            //             }
+            //             btnContainer.remove();
+            //         };
 
-                    const noBtn = document.createElement('button');
-                    noBtn.textContent = 'No';
-                    noBtn.className = 'save-btn';
-                    noBtn.onclick = () => { btnContainer.remove(); };
+            //         const noBtn = document.createElement('button');
+            //         noBtn.textContent = 'No';
+            //         noBtn.className = 'save-btn';
+            //         noBtn.onclick = () => { btnContainer.remove(); };
 
-                    btnContainer.appendChild(yesBtn);
-                    btnContainer.appendChild(noBtn);
-                    chatMessages.appendChild(btnContainer);
-                    chatMessages.scrollTop = chatMessages.scrollHeight;
-                }
-                break;
+            //         btnContainer.appendChild(yesBtn);
+            //         btnContainer.appendChild(noBtn);
+            //         chatMessages.appendChild(btnContainer);
+            //         chatMessages.scrollTop = chatMessages.scrollHeight;
+            //     }
+            //     break;
             case 'historyCleared':
                 clearMessages();
                 // Optionally show a toast notification
