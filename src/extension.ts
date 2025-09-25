@@ -186,19 +186,19 @@ export function activate(context: vscode.ExtensionContext) {
 			watcher.onDidDelete(async () => { await modelConfigManager.load(); llmService.setModelConfigManager(modelConfigManager); llmService.clearAllSessions(); llmService.logEvent('model_config_deleted'); updateProviderModelStatus(activeThreadId); });
 		}
 		try {
-            await llmManager.initializeFromConfig();
-            llmService.logEvent('provider_init', { provider: llmManager.getCurrentProvider()?.name });
+			await llmManager.initializeFromConfig();
+			llmService.logEvent('provider_init', { provider: llmManager.getCurrentProvider()?.name });
 
-            // Initialize the general-purpose thread AFTER provider is confirmed
-            const generalThreadId = 'naruhodocs-general-thread';
-            const generalThreadTitle = 'General Purpose';
-            // Ensure backing LLM session is created through LLMService so logging + provider attribution work
-            await llmService.getSession(generalThreadId, SystemMessages.GENERAL_PURPOSE, { taskType: 'chat', forceNew: true });
-            provider.createThread(generalThreadId, SystemMessages.GENERAL_PURPOSE, generalThreadTitle);
-            activeThreadId = generalThreadId;
-            provider.setActiveThread(generalThreadId);
-            
-            updateProviderModelStatus(activeThreadId);
+			// Initialize the general-purpose thread AFTER provider is confirmed
+			const generalThreadId = 'naruhodocs-general-thread';
+			const generalThreadTitle = 'General Purpose';
+			// Ensure backing LLM session is created through LLMService so logging + provider attribution work
+			await llmService.getSession(generalThreadId, SystemMessages.GENERAL_PURPOSE, { taskType: 'chat', forceNew: true });
+			provider.createThread(generalThreadId, SystemMessages.GENERAL_PURPOSE, generalThreadTitle);
+			activeThreadId = generalThreadId;
+			provider.setActiveThread(generalThreadId);
+
+			updateProviderModelStatus(activeThreadId);
 
 			// For already-open documents, create threads now that provider is ready
 			const openDocs = vscode.workspace.textDocuments;
@@ -730,6 +730,11 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 	context.subscriptions.push(gitHeadWatcher);
 
 	gitHeadWatcher.onDidChange(async (uri) => {
+		const DocDriftEnabled = vscode.workspace.getConfiguration('naruhodocs').get<boolean>('git.docDriftDetection', true);
+		if (!DocDriftEnabled) {
+			return;
+		}
+		console.log('.git/logs/HEAD changed, checking for doc drift...');
 		try {
 			const content = await vscode.workspace.fs.readFile(uri);
 			const lines = Buffer.from(content).toString('utf8').trim().split('\n');
@@ -745,6 +750,7 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 			const { exec } = require('child_process');
 			exec(`git diff-tree --no-commit-id --name-only -r ${newCommitHash}`, { cwd: workspaceFolder }, async (err: any, stdout: string) => {
 				if (err) {
+					console.error('Failed to get changed files:', err);
 					return;
 				}
 				const changedFiles = stdout.trim().split('\n').filter(f => !!f);
@@ -752,62 +758,116 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 				const codeChanged = changedFiles.length > 0;
 				const docChanged = changedFiles.some(f => f.endsWith('.md') || f.endsWith('.txt'));
 
-				// 1. Auto-open documentation for editing if code changed but docs did not
-				if (codeChanged && !docChanged) {
-					// Auto-open related docs (.md/.txt) for each changed file
-					for (const file of changedFiles) {
-						const base = file.replace(/\.[^/.]+$/, '');
-						for (const ext of ['.md', '.txt']) {
-							const docPath = require('path').join(workspaceFolder, base + ext);
-							try {
-								await vscode.workspace.fs.stat(vscode.Uri.file(docPath));
-								const doc = await vscode.workspace.openTextDocument(docPath);
-								await vscode.window.showTextDocument(doc, { preview: false });
-							} catch {
-								// File does not exist, skip
-							}
-						}
+				console.log(`Workspace folder: ${workspaceFolder}`);
+				console.log(`Node cwd:`, process.cwd());
+				console.log(`Changed files in commit ${newCommitHash}:`, changedFiles);
+				console.log(`Code changed: ${codeChanged}, Docs changed: ${docChanged}`);
+
+				// Show exact changed lines using git diff -U0, but skip for first commit
+				exec(`git rev-list --parents -n 1 ${newCommitHash}`, { cwd: workspaceFolder }, (revErr: any, revStdout: any) => {
+					if (revErr) {
+						return;
+					}
+					const revParts = revStdout.trim().split(' ');
+					const isFirstCommit = revParts.length === 1;
+					if (isFirstCommit) {
+						// Do nothing for the first commit
+						return;
 					}
 
-					// Build a detailed message
-					const changedList = changedFiles.length > 5
-						? changedFiles.slice(0, 5).join('\n  ') + `\n  ...and ${changedFiles.length - 5} more`
-						: changedFiles.join('\n  ');
+					const diffCmd = `git show --no-color --format= --unified=0 ${newCommitHash}`;
+					exec(diffCmd, { cwd: workspaceFolder }, async (diffErr: any, diffStdout: any) => {
+						if (diffErr) {
+							console.error('Failed to get git diff:', diffErr);
+						}
+						if (!diffErr && diffStdout) {
+							const diffMsg = diffStdout.toString();
+							console.log('Git diff output:\n', diffMsg);
+							try {
+								const response = await llmService.trackedChat({
+									sessionId: 'naruhodocs-doc-drift',
+									systemMessage: `You are a Documentation Drift Detector AI. Your task is to analyze a set of code changes and the corresponding project documentation. You must identify any inconsistencies or points where the documentation no longer accurately reflects the code. Be precise and provide specific line numbers or sections of the documentation that need to be updated. Your output should be a clear, actionable report.`,
+									prompt: `
+									Given that the following code changes were made in commit ${newCommitHash}:\n\n${diffMsg}
+									\n\nBased on the code changes, look for current .md and .txt files in the workspace, retrieve their content of these documents, see whether any of them are likely to be affected by the code changes.
+									You may use retrieveFilenames, retrieveFileContent tools to help you. Actively use them without waiting for user confirmation.
+									Provide a concise list of files (with paths) that likely need documentation updates based on these changes and
+									explain why briefly for each file and what is the context to be updated in each file.
+									If there are no doc files likely affected, just say "No documentation drift detected". Do not make up any file names that do not exist.
+									\nRespond in plain text, NO markdown formatting. You may use dash (-) for represent bullet points
+									`,
+									temperatureOverride: 0.2
+								});
+								console.log('Doc drift analysis response:\n', response);
+								vscode.window.showInformationMessage(`NaruhoDocs: Documentation drift analysis for new git commit shown. You can turn off this feature in the settings.`, { modal: false });
+								const formattedMessage = `Documentation Drift Analysis for Commit ${newCommitHash}`;
+								vscode.window.showInformationMessage(formattedMessage, {
+									modal: true,
+									detail: response
+								});
+							} catch (e) {
+								console.error('Doc drift analysis failed:', e);
+							}
+						}
+					});
+				});
 
-					const author = parts.slice(2, parts.length - 3).join(' ');
+				// 1. Auto-open documentation for editing if code changed but docs did not
+				// if (codeChanged && !docChanged) {
+				// 	// Auto-open related docs (.md/.txt) for each changed file
+				// 	for (const file of changedFiles) {
+				// 		const base = file.replace(/\.[^/.]+$/, '');
+				// 		for (const ext of ['.md', '.txt']) {
+				// 			const docPath = require('path').join(workspaceFolder, base + ext);
+				// 			try {
+				// 				await vscode.workspace.fs.stat(vscode.Uri.file(docPath));
+				// 				const doc = await vscode.workspace.openTextDocument(docPath);
+				// 				await vscode.window.showTextDocument(doc, { preview: false });
+				// 			} catch {
+				// 				// File does not exist, skip
+				// 			}
+				// 		}
+				// 	}
 
-					vscode.window.showWarningMessage(
-						`⚠️ Code changed without documentation update!\n` +
-						`Commit: ${newCommitHash}\n` +
-						`Changed files:\n${changedList}\n` +
-						`Docs may be stale! Related docs opened for editing.`
-					);
-				}
+				// Build a detailed message
+				// 	const changedList = changedFiles.length > 5
+				// 		? changedFiles.slice(0, 5).join('\n  ') + `\n  ...and ${changedFiles.length - 5} more`
+				// 		: changedFiles.join('\n  ');
+
+				// 	const author = parts.slice(2, parts.length - 3).join(' ');
+
+				// 	vscode.window.showWarningMessage(
+				// 		`⚠️ Code changed without documentation update!\n` +
+				// 		`Commit: ${newCommitHash}\n` +
+				// 		`Changed files:\n${changedList}\n` +
+				// 		`Docs may be stale! Related docs opened for editing.`
+				// 	);
+				// }
 
 				// 2. Integrate with doc threads: post a message to the thread if code changes
-				if (codeChanged) {
-					for (const file of changedFiles) {
-						const uriStr = vscode.Uri.file(require('path').join(workspaceFolder, file)).toString();
-						if (threadMap.has(uriStr)) {
-							provider.sendMessageToThread(uriStr, `Heads up: ${file} was just changed in commit ${newCommitHash}. Please review documentation for drift.`);
-						}
-					}
-				}
+				// if (codeChanged) {
+				// 	for (const file of changedFiles) {
+				// 		const uriStr = vscode.Uri.file(require('path').join(workspaceFolder, file)).toString();
+				// 		if (threadMap.has(uriStr)) {
+				// 			provider.sendMessageToThread(uriStr, `Heads up: ${file} was just changed in commit ${newCommitHash}. Please review documentation for drift.`);
+				// 		}
+				// 	}
+				// }
 
 				// 3. Notify about dependent components (simple example: check for imports)
-				for (const file of changedFiles) {
-					if (file.endsWith('.js') || file.endsWith('.ts')) {
-						const filePath = require('path').join(workspaceFolder, file);
-						const fileContent = await vscode.workspace.fs.readFile(vscode.Uri.file(filePath)).then(buf => buf.toString(), () => '');
-						const importMatches = fileContent.match(/import\s+.*?from\s+['"](.*?)['"]/g) || [];
-						for (const match of importMatches) {
-							const dep = match.match(/['"](.*?)['"]/);
-							if (dep && dep[1]) {
-								vscode.window.showInformationMessage(`Dependency "${dep[1]}" in ${file} may be affected by recent changes.`);
-							}
-						}
-					}
-				}
+				// for (const file of changedFiles) {
+				// 	if (file.endsWith('.js') || file.endsWith('.ts')) {
+				// 		const filePath = require('path').join(workspaceFolder, file);
+				// 		const fileContent = await vscode.workspace.fs.readFile(vscode.Uri.file(filePath)).then(buf => buf.toString(), () => '');
+				// 		const importMatches = fileContent.match(/import\s+.*?from\s+['"](.*?)['"]/g) || [];
+				// 		for (const match of importMatches) {
+				// 			const dep = match.match(/['"](.*?)['"]/);
+				// 			if (dep && dep[1]) {
+				// 				vscode.window.showInformationMessage(`Dependency "${dep[1]}" in ${file} may be affected by recent changes.`);
+				// 			}
+				// 		}
+				// 	}
+				// }
 			});
 		} catch (e: any) {
 			console.error('Doc drift detection failed:', e.message);

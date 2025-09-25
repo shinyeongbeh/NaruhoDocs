@@ -164,6 +164,12 @@
           "default": true,
           "description": "Retrieval-Augmented Generation (RAG) provides enhanced searching so the AI can find and use the right information from your workspace.\n Please reload the window after changing this setting."
         }
+        ,
+        "naruhodocs.git.docDriftDetection": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable or disable Doc Drift detection based on Git commits. If disabled, the extension will not analyze documentation drift when commits are made."
+        }
       }
     },
     "viewsContainers": {
