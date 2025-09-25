@@ -5,7 +5,7 @@ import * as dotenv from 'dotenv';
 import * as path from 'path';
 import { SystemMessages } from './SystemMessages';
 import { LocalMemoryVectorStore } from './rag/vectorstore/memory';
-import { checkGrammar } from './external-tools/LanguageTool-integration';
+import { checkGrammar, runAISecondPass, GrammarIssue} from './external-tools/LanguageTool-integration';
 import { lintMarkdownDocument } from './external-tools/markdownLinter';
 import { LLMProviderManager } from './llm-providers/manager';
 import { ModelConfigManager } from './managers/ModelConfigManager.js';
@@ -576,45 +576,87 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 	context.subscriptions.push(grammarDiagnostics);
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('naruhodocs.checkGrammar', async () => {
-			const editor = vscode.window.activeTextEditor;
-			if (!editor) {
-				vscode.window.showInformationMessage('No active editor.');
-				return;
-			}
-			const document = editor.document;
-			const fileName = document.fileName.toLowerCase();
-			if (!(fileName.endsWith('.md') || fileName.endsWith('.txt'))) {
-				vscode.window.showInformationMessage('Grammar checking is only available for document files (.md, .txt).');
-				return;
-			}
-			const text = document.getText();
-			let issues: any[] = [];
-			try {
-				issues = await checkGrammar(text, 'en-US');
-			} catch (e: any) {
-				vscode.window.showErrorMessage('Grammar check failed: ' + e.message);
-				return;
-			}
-			// Clear previous diagnostics for this document
-			grammarDiagnostics.delete(document.uri);
+        vscode.commands.registerCommand('naruhodocs.checkGrammar', async () => {
+            const editor = vscode.window.activeTextEditor;
+            if (!editor) {
+                vscode.window.showInformationMessage('No active editor.');
+                return;
+            }
+            const document = editor.document;
+            const fileName = document.fileName.toLowerCase();
+            if (!(fileName.endsWith('.md') || fileName.endsWith('.txt'))) {
+                vscode.window.showInformationMessage('Grammar checking is only available for document files (.md, .txt).');
+                return;
+            }
 
-			if (issues.length === 0) {
-				vscode.window.showInformationMessage('No grammar issues found!');
-				return;
-			}
+            await vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: "Running AI-Powered Grammar Check...",
+                cancellable: false
+            }, async (progress) => {
+                progress.report({ increment: 0, message: "Running initial grammar check..." });
+                const text = document.getText();
+                let initialIssues: GrammarIssue[] = [];
+                try {
+                    initialIssues = await checkGrammar(text, 'en-US');
+                } catch (e: any) {
+                    vscode.window.showErrorMessage('Initial grammar check failed: ' + e.message);
+                    return;
+                }
 
-			const diagnostics: vscode.Diagnostic[] = issues.map(issue => {
-				const start = document.positionAt(issue.offset);
-				const end = document.positionAt(issue.offset + issue.length);
-				const range = new vscode.Range(start, end);
-				const message = `${issue.message}${issue.replacements.length ? ' Suggestion: ' + issue.replacements.join(', ') : ''}`;
-				return new vscode.Diagnostic(range, message, vscode.DiagnosticSeverity.Warning);
-			});
-			grammarDiagnostics.set(document.uri, diagnostics);
-			vscode.window.showInformationMessage(`Grammar issues found: ${issues.length}. See inline warnings.`);
-		})
-	);
+                if (initialIssues.length === 0) {
+                    grammarDiagnostics.delete(document.uri);
+                    vscode.window.showInformationMessage('No grammar issues found!');
+                    return;
+                }
+
+                progress.report({ increment: 40, message: "Refining issues with AI..." });
+                try {
+                    const aiFilteredJson = await runAISecondPass(llmService, text, initialIssues);
+                    let validMessages: Set<string>;
+                    try {
+                        validMessages = new Set(JSON.parse(aiFilteredJson));
+                    } catch (jsonError: any) {
+                        // If JSON parsing fails, show the raw AI output for debugging and fallback to initial issues.
+                        vscode.window.showErrorMessage(`AI refinement failed due to invalid JSON. Error: ${jsonError.message}. Raw AI Output: "${aiFilteredJson}"`);
+                        throw new Error('Invalid JSON response from AI'); // Re-throw to trigger the outer catch block
+                    }
+                    const refinedIssues = initialIssues.filter(issue => validMessages.has(issue.message));
+
+                    progress.report({ increment: 90, message: "Displaying refined issues..." });
+                    grammarDiagnostics.delete(document.uri);
+
+                    if (refinedIssues.length === 0) {
+                        vscode.window.showInformationMessage('AI review complete. No significant issues found!');
+                        return;
+                    }
+
+                    const diagnostics: vscode.Diagnostic[] = refinedIssues.map(issue => {
+                        const start = document.positionAt(issue.offset);
+                        const end = document.positionAt(issue.offset + issue.length);
+                        const range = new vscode.Range(start, end);
+                        const message = `${issue.message}${issue.replacements.length ? ' Suggestion: ' + issue.replacements.join(', ') : ''}`;
+                        return new vscode.Diagnostic(range, message, vscode.DiagnosticSeverity.Warning);
+                    });
+
+                    grammarDiagnostics.set(document.uri, diagnostics);
+                    vscode.window.showInformationMessage(`AI review complete. Found ${diagnostics.length} valid issue(s).`);
+
+                } catch (e: any) {
+                    vscode.window.showErrorMessage('AI refinement failed: ' + e.message);
+                    // Fallback to showing initial issues if AI fails
+                    const diagnostics: vscode.Diagnostic[] = initialIssues.map(issue => {
+                        const start = document.positionAt(issue.offset);
+                        const end = document.positionAt(issue.offset + issue.length);
+                        const range = new vscode.Range(start, end);
+                        const message = `${issue.message}${issue.replacements.length ? ' Suggestion: ' + issue.replacements.join(', ') : ''}`;
+                        return new vscode.Diagnostic(range, message, vscode.DiagnosticSeverity.Warning);
+                    });
+                    grammarDiagnostics.set(document.uri, diagnostics);
+                }
+            });
+        })
+    );
 
 	// Optionally clear diagnostics when document is closed
 	context.subscriptions.push(
