@@ -329,14 +329,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 							// Use AI to generate template content
 							let templateContent = '';
 							try {
-								const sys2 = `You are a markdown template generator. Your ONLY job is to create EMPTY SKELETON templates with placeholders.
+								const sys2 = `You are a markdown template generator. Your ONLY job is to create EMPTY SKELETON templates.
 
-								CRITICAL RULE: Generate ONLY templates with placeholders - NEVER write actual content.
-
-								TEMPLATE STYLE - Every section must be:
-								- Placeholder: [PLACEHOLDER_NAME]
-								- Comment: <!-- Instructions for user -->
-								- TODO: TODO: Add your content here
+								CRITICAL RULE: Generate ONLY templates - NEVER write actual content.
 
 								FORBIDDEN:
 								- Writing actual descriptions, code, or examples
@@ -350,7 +345,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 								templateContent = await this.llmService.trackedChat({
 									sessionId: 'chatview:template-generate',
 									systemMessage: sys2,
-									prompt: `Generate a documentation template for ${templateType} based on this project. Here are the relevant workspace files and contents:\n${filesAndContentsString}`,
+									// prompt: `Generate a documentation template for ${templateType} based on this project. Here are the relevant workspace files and contents:\n${filesAndContentsString}`,
+									prompt: `Generate a documentation template for ${templateType} based on this project. Return in markdown format`,
 									task: 'generate_doc',
 									forceNew: true,
 									temperatureOverride: 0.2
