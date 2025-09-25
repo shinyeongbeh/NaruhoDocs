@@ -7,6 +7,7 @@ import { ArchitectureAnalyzer } from './analyzers/ArchitectureAnalyzer';
 import { FolderStructureAnalyzer } from './analyzers/FolderStructureAnalyzer';
 import { DocumentRelationsAnalyzer } from './analyzers/DocumentRelationsAnalyzer';
 import { D3TreeRenderer, TreeNode } from './renderers/D3TreeRenderer';
+import { VisualizationViewProvider } from './VisualizationViewProvider';
 
 export interface VisualizationOption {
     id: string;
@@ -50,6 +51,7 @@ export class VisualizationProvider {
     ];
 
     private llmService: LLMService;
+    private visualizationView?: VisualizationViewProvider; // optional sidebar view reference
 
     constructor(
         private readonly context: vscode.ExtensionContext,
@@ -63,6 +65,11 @@ export class VisualizationProvider {
 
     public setChatProvider(chatProvider: any): void {
         this.chatProvider = chatProvider;
+    }
+
+    /** Set the dedicated visualization view (sidebar) so we can mirror results there */
+    public setVisualizationView(view: VisualizationViewProvider): void {
+        this.visualizationView = view;
     }
 
     public static getVisualizationOptions(): VisualizationOption[] {
@@ -246,6 +253,13 @@ export class VisualizationProvider {
             sender: 'Bot',
             message: visualizationMessage
         });
+
+        // Also show in dedicated visualization view if present
+        try {
+            this.visualizationView?.showVisualization(result);
+        } catch (e) {
+            console.warn('Failed to post visualization to view:', e);
+        }
 
         // IMPORTANT: Also add detailed analysis to the AI's conversation history
         this.addVisualizationToAIHistory(result);

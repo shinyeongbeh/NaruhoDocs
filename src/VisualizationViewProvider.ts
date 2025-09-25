@@ -5,6 +5,12 @@ export class VisualizationViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'naruhodocs.visualizationView';
 
     private _view?: vscode.WebviewView;
+    // Cache last visualization so we can restore after the user closes/reopens the sidebar
+    private _lastResult?: VisualizationResult;
+    // Whether the webview has signaled it's ready to accept messages
+    private _isReady: boolean = false;
+    // Queue messages if webview not ready yet
+    private _pendingMessages: any[] = [];
 
     constructor(
         private readonly _extensionUri: vscode.Uri,
@@ -18,6 +24,7 @@ export class VisualizationViewProvider implements vscode.WebviewViewProvider {
     ) {
         this._view = webviewView;
 
+            this._isReady = false;
         webviewView.webview.options = {
             // Allow scripts in the webview
             enableScripts: true,
@@ -28,37 +35,60 @@ export class VisualizationViewProvider implements vscode.WebviewViewProvider {
 
         webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
 
-        webviewView.webview.onDidReceiveMessage(
-            async (data) => {
-                switch (data.type) {
-                    case 'generateVisualization': {
-                        const result = await this.visualizationProvider.generateVisualization(data.visualizationType);
-                        this._view?.webview.postMessage({
-                            type: 'visualizationResult',
-                            result: result
-                        });
-                        break;
-                    }
-                    case 'exportVisualization': {
-                        await this.exportVisualization(data.content, data.format, data.title);
-                        break;
-                    }
+        webviewView.webview.onDidReceiveMessage(async (data) => {
+            switch (data.type) {
+                case 'generateVisualization': {
+                    const result = await this.visualizationProvider.generateVisualization(data.visualizationType);
+                    this._lastResult = result;
+                    this._postMessage({
+                        type: 'visualizationResult',
+                        result
+                    });
+                    break;
                 }
-            },
-            undefined,
-            []
-        );
+                case 'exportVisualization': {
+                    await this.exportVisualization(data.content, data.format, data.title);
+                    break;
+                }
+                case 'visualizationViewReady': {
+                    this._isReady = true;
+                    if (this._pendingMessages.length) {
+                        for (const msg of this._pendingMessages) {
+                            try { this._view?.webview.postMessage(msg); } catch { /* ignore */ }
+                        }
+                        this._pendingMessages = [];
+                    }
+                    if (this._lastResult) {
+                        this._postMessage({ type: 'visualizationResult', result: this._lastResult });
+                    }
+                    break;
+                }
+            }
+        });
+
+        // If we already have a cached result (e.g., user reopened view), attempt delayed replay
+        if (this._lastResult) {
+            setTimeout(() => {
+                if (this._isReady) {
+                    this._postMessage({ type: 'visualizationResult', result: this._lastResult });
+                }
+            }, 200);
+        }
     }
 
     public showVisualization(result: VisualizationResult) {
-        if (this._view) {
-            this._view.webview.postMessage({
-                type: 'visualizationResult',
-                result: result
-            });
-            
-            // Make the visualization view visible
-            this._view.show?.(true);
+        this._lastResult = result;
+        this._postMessage({ type: 'visualizationResult', result });
+        this._view?.show?.(true);
+    }
+
+    /** Post a message, queueing if webview not yet ready */
+    private _postMessage(message: any) {
+        if (!this._view) { return; }
+        if (this._isReady) {
+            try { this._view.webview.postMessage(message); } catch { /* ignore */ }
+        } else {
+            this._pendingMessages.push(message);
         }
     }
 
@@ -152,6 +182,7 @@ export class VisualizationViewProvider implements vscode.WebviewViewProvider {
 
 				<script nonce="${nonce}" src="${mermaidUri}"></script>
 				<script nonce="${nonce}" src="${scriptUri}"></script>
+                <script nonce="${nonce}">try{const vscode=acquireVsCodeApi();vscode.postMessage({type:'visualizationViewReady'});}catch{}</script>
 			</body>
 			</html>`;
     }

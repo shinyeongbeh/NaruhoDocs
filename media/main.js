@@ -4,6 +4,13 @@
 // It cannot access the main VS Code APIs directly.
 
 (function () {
+    /**
+     * @typedef {{sender:string,message:string}} NaruhoHistoryEntry
+     */
+    /** @type {Record<string, NaruhoHistoryEntry[]> | undefined} */
+    // @ts-ignore augment window
+    window.__naruhodocsAllHistories;
+
     /** @type {string | undefined} */
     let activeThreadId = undefined;
     /** @type {Array<any>} */
@@ -20,17 +27,49 @@
 +     * Hoisted function so early handler can call it without TS error.
 +     * @param {Array<{sender?: string, message?: string}>} history
 +     */
+    // Track a simple hash of the currently rendered history to avoid unnecessary full re-renders
+    let lastHistorySignature = '';
+    /** Build a stable signature for a history array */
+    /** @param {Array<{sender?:string,message?:string}>} history */
+    function signatureFor(history) {
+        try {
+            if (!Array.isArray(history)) { return 'na'; }
+            return history.map(h => (h.sender||'') + '::' + (h.message||'')).join('\u0001');
+        } catch { return 'err'; }
+    }
+    /**
+     * Flicker-free atomic replacement of chat history using an off-DOM buffer.
+     * Applies a fade transition only when content actually changes.
+     */
+    /** @param {Array<{sender?:string,message?:string}>} history */
     function setFullHistory(history) {
-        if (chatMessages) { chatMessages.innerHTML = ''; }
+        if (!chatMessages) { return; }
+        const sig = signatureFor(history);
+        if (sig === lastHistorySignature) {
+            // Skip redundant render
+            return;
+        }
+        lastHistorySignature = sig;
+        // Off-DOM construction
+        const frag = document.createDocumentFragment();
         if (Array.isArray(history)) {
             history.forEach(function (entry) {
-                if (entry && typeof entry === 'object') {
-                    addMessage(entry.sender || 'Bot', entry.message || '');
-                }
+                if (!entry || typeof entry !== 'object') { return; }
+                const messageElement = buildMessageElement(entry.sender || 'Bot', entry.message || '');
+                frag.appendChild(messageElement);
             });
         }
-        try { vscode.setState(null); } catch (e) { /* ignore */ }
-        persistState();
+        // Use a temporary wrapper to allow fade-out/in without flashing empty state
+        chatMessages.style.opacity = '0';
+        // Microtask to allow CSS opacity transition (if defined in CSS) before DOM swap
+        setTimeout(() => {
+            chatMessages.innerHTML = '';
+            chatMessages.appendChild(frag);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            requestAnimationFrame(() => { chatMessages.style.opacity = '1'; });
+            try { vscode.setState(null); } catch { /* ignore */ }
+            persistState();
+        }, 0);
     }
     
     (function registerEarlyHandlers() {
@@ -41,6 +80,23 @@
                 activeThreadId = msg.activeThreadId;
                 // renderThreadListMenu is a hoisted function — safe to call
                 try { renderThreadListMenu(); } catch (err) { /* ignore until rest of UI attaches */ }
+            } else if (msg.type === 'allThreadHistories') {
+                // Cache of all histories by thread id for instant reuse
+                try {
+                    /** @type {Record<string, NaruhoHistoryEntry[]>} */
+                    // @ts-ignore
+                    const store = (window.__naruhodocsAllHistories = window.__naruhodocsAllHistories || {});
+                    if (msg.histories && typeof msg.histories === 'object') {
+                        Object.keys(msg.histories).forEach(function (k) {
+                            const arr = msg.histories[k];
+                            if (Array.isArray(arr)) { store[k] = arr; }
+                        });
+                    }
+                    if (activeThreadId && chatMessages && !chatMessages.innerHTML.trim() && store[activeThreadId]) {
+                        chatMessages.innerHTML = '';
+                        store[activeThreadId].forEach(function (entry) { if (entry) { addMessage(entry.sender || 'Bot', entry.message || ''); } });
+                    }
+                } catch (err) { console.warn('[NaruhoDocs] Failed to apply allThreadHistories:', err); }
             } else if (msg.type === 'toggleGeneralTabUI') {
                 const gb = document.getElementById('general-buttons');
                 if (gb) { gb.style.display = msg.visible ? 'flex' : 'none'; }
@@ -48,14 +104,46 @@
                 const cm = document.getElementById('chat-messages');
                 if (cm) { cm.innerHTML = ''; }
             } else if (msg.type === 'setFullHistory') {
-                console.debug('[NaruhoDocs] setFullHistory received (early) length=', (msg.history || []).length);
-                if (typeof showHistory === 'function') { showHistory(msg.history); }
+                // Handle normalized history objects early (sender/message) to avoid losing general thread on fast loads
+                const hist = Array.isArray(msg.history) ? msg.history : [];
+                console.debug('[NaruhoDocs] setFullHistory received (early) length=', hist.length);
+                const chatEl = document.getElementById('chat-messages');
+                if (hist.length && (hist[0].sender || hist[0].message)) {
+                    setFullHistory(hist);
+                    try {
+                        /** @type {Record<string, NaruhoHistoryEntry[]>} */
+                        // @ts-ignore
+                        const store = (window.__naruhodocsAllHistories = window.__naruhodocsAllHistories || {});
+                        if (activeThreadId) { store[activeThreadId] = hist.slice(); }
+                    } catch { /* ignore */ }
+                } else if (typeof showHistory === 'function') {
+                    // Fallback to legacy raw format
+                    showHistory(hist);
+                }
             }
         }, false);
 
         // Announce ready so extension can safely send restored history / thread list
+        /** @returns {string} */
+        function computeDisplayedSignature() {
+            if (!chatMessages) { return ''; }
+            try {
+                /** @type {string[]} */
+                const parts = [];
+                const nodes = chatMessages.querySelectorAll('.message');
+                nodes.forEach(function (el) {
+                    let sender = 'Bot';
+                    if (el.classList.contains('user')) { sender = 'You'; }
+                    else if (el.classList.contains('system')) { sender = 'System'; }
+                    const text = el.textContent || '';
+                    parts.push(sender + '::' + text);
+                });
+                return parts.join('\u0001');
+            } catch { return ''; }
+        }
         try {
-            vscode.postMessage({ type: 'chatViewReady' });
+            const historySignature = computeDisplayedSignature();
+            vscode.postMessage({ type: 'chatViewReady', historySignature });
         } catch (e) {
             console.warn('[NaruhoDocs] Failed to post chatViewReady early:', e);
         }
@@ -76,6 +164,15 @@
     if (oldState.activeDocName && currentDocName) {
         currentDocName.textContent = oldState.activeDocName;
     }
+    // Restore previously rendered chat HTML immediately to avoid blank UI if
+    // setFullHistory races with early clearMessages on sidebar reopen.
+    if (oldState.chatHTML && typeof oldState.chatHTML === 'string' && chatMessages && !chatMessages.innerHTML.trim()) {
+        try {
+            chatMessages.innerHTML = oldState.chatHTML;
+        } catch (e) {
+            console.warn('[NaruhoDocs] Failed to restore cached chatHTML:', e);
+        }
+    }
     if (oldState.threads) {
         threads = oldState.threads;
     }
@@ -91,6 +188,19 @@
     }
 
     renderThreadListMenu();
+
+    // Fallback: after a short delay, if active thread has cached history and UI is empty, render it.
+    setTimeout(() => {
+        try {
+            if (chatMessages && !chatMessages.innerHTML.trim() && activeThreadId) {
+                // @ts-ignore
+                const store = window.__naruhodocsAllHistories;
+                if (store && store[activeThreadId] && store[activeThreadId].length) {
+                    store[activeThreadId].forEach(/** @param {NaruhoHistoryEntry} entry */function (entry) { if (entry) { addMessage(entry.sender || 'Bot', entry.message || ''); } });
+                }
+            }
+        } catch (e) { /* ignore */ }
+    }, 150);
 
     window.addEventListener('DOMContentLoaded', () => {
         const clearHistoryBtn = document.getElementById('clear-history');
@@ -971,26 +1081,7 @@
     /** @param {string} sender @param {string} message */
     function addMessage(sender, message) {
         if (chatMessages) {
-            const messageElement = document.createElement('div');
-            messageElement.classList.add('message');
-            if (sender === 'You') {
-                messageElement.classList.add('user');
-            } else if (sender === 'System') {
-                messageElement.classList.add('system');
-            } else {
-                messageElement.classList.add('bot');
-            }
-            // Special formatting for provider change system messages
-            const isProviderChange = sender === 'System' && /^Provider changed to /i.test(message.trim());
-            if (isProviderChange) {
-                // Plain text, rely on CSS ::before/::after for dividers
-                const span = document.createElement('span');
-                span.textContent = message.trim();
-                messageElement.appendChild(span);
-            } else {
-                const parsedMessage = md.render(message);
-                messageElement.innerHTML = parsedMessage;
-            }
+            const messageElement = buildMessageElement(sender, message);
 
             // Process Mermaid diagrams
             if (typeof mermaidLib !== 'undefined') {
@@ -1134,22 +1225,39 @@
         persistState();
     }
 
+    /**
+     * Build a chat message DOM element (shared by addMessage & setFullHistory for flicker-free rendering)
+     * @param {string} sender
+     * @param {string} message
+     */
+    function buildMessageElement(sender, message) {
+        const messageElement = document.createElement('div');
+        messageElement.classList.add('message');
+        if (sender === 'You') {
+            messageElement.classList.add('user');
+        } else if (sender === 'System') {
+            messageElement.classList.add('system');
+        } else {
+            messageElement.classList.add('bot');
+        }
+        const isProviderChange = sender === 'System' && /^Provider changed to /i.test(message.trim());
+        if (isProviderChange) {
+            const span = document.createElement('span');
+            span.textContent = message.trim();
+            messageElement.appendChild(span);
+        } else {
+            const parsedMessage = md.render(message);
+            messageElement.innerHTML = parsedMessage;
+        }
+        return messageElement;
+    }
+
     // ✅ single unified listener
     window.addEventListener('message', event => {
         const message = event.data;
         switch (message.type) {
             case 'setFullHistory':
-                // Atomically replace chat messages with provided normalized history
-                if (chatMessages) { chatMessages.innerHTML = ''; }
-                if (Array.isArray(message.history)) {
-                    message.history.forEach(/** @param {{sender?: string, message?: string}} entry */(entry) => {
-                        if (entry && typeof entry === 'object') {
-                            addMessage(entry.sender || 'Bot', entry.message || '');
-                        }
-                    });
-                }
-                vscode.setState(null);
-                persistState();
+                setFullHistory(message.history);
                 break;
             case 'addMessage':
                 addMessage(message.sender, message.message);

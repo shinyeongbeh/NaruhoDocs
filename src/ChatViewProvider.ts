@@ -21,6 +21,27 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 	private didDevCleanupOnce: boolean = false;
 	private fileWatcher?: vscode.FileSystemWatcher;
 	private isInitializing: boolean = true;
+	// Track last sent normalized history signature per thread to suppress redundant redraws
+	private lastSentHistorySignatures: Map<string, string> = new Map();
+
+	// Compute a simple signature of a session's current normalized history
+	private computeHistorySignature(session: ChatSession): string {
+		try {
+			const raw = session.getHistory();
+			return raw.map((msg: any) => {
+				let role: string | undefined = msg.type || (typeof msg._getType === 'function' ? msg._getType() : undefined);
+				if (!role || role === 'unknown') {
+					const ctor = msg.constructor?.name?.toLowerCase?.() || '';
+					if (ctor.includes('human')) { role = 'human'; }
+					else if (ctor.includes('ai')) { role = 'ai'; }
+				}
+				if (role === 'user') { role = 'human'; }
+				if (role === 'assistant' || role === 'bot') { role = 'ai'; }
+				const text = typeof msg.content === 'string' ? msg.content : msg.text || JSON.stringify(msg.content);
+				return (role || 'unknown') + '::' + text;
+			}).join('\u0001');
+		} catch { return ''; }
+	}
 
 	public static readonly viewType = 'naruhodocs.chatView';
 
@@ -144,7 +165,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 			if (webviewView.visible) {
 				setTimeout(() => {
 					try { this._postThreadList(); } catch (e) { console.warn('[NaruhoDocs] postThreadList on visibility:', e); }
-					try { this._sendFullHistory(); } catch (e) { console.warn('[NaruhoDocs] sendFullHistory on visibility:', e); }
+					try {
+						const activeId = this.threadManager.getActiveThreadId();
+						if (activeId) {
+							const session = this.threadManager.getSession(activeId);
+							if (session) {
+								const sig = this.computeHistorySignature(session);
+								const last = this.lastSentHistorySignatures.get(activeId);
+								if (sig !== last) { this._sendFullHistory(activeId, sig); }
+							}
+						}
+					} catch (e) { console.warn('[NaruhoDocs] conditional sendFullHistory on visibility failed:', e); }
 				}, 200);
 			}
 		});
@@ -165,7 +196,34 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 				return;
 			}
 			if (data.type === 'chatViewReady') {
+				const webviewSignature: string | undefined = data.historySignature;
 				(webviewView as any)._naruhodocsReady = true;
+
+				const sendAllHistories = () => {
+					try {
+						const all: Record<string, Array<{ sender: string; message: string }>> = {};
+						for (const [id, session] of this.threadManager.getSessions()) {
+							const raw = session.getHistory();
+							const normalized = raw.map((msg: any) => {
+								let role: string | undefined = msg.type || (typeof msg._getType === 'function' ? msg._getType() : undefined);
+								if (!role || role === 'unknown') {
+									const ctor = msg.constructor?.name?.toLowerCase?.() || '';
+									if (ctor.includes('human')) { role = 'human'; }
+									else if (ctor.includes('ai')) { role = 'ai'; }
+								}
+								if (role === 'user') { role = 'human'; }
+								if (role === 'assistant' || role === 'bot') { role = 'ai'; }
+								const sender = role === 'human' ? 'You' : 'Bot';
+								const text = typeof msg.content === 'string' ? msg.content : msg.text || JSON.stringify(msg.content);
+								return { sender, message: text };
+							});
+							all[id] = normalized;
+						}
+						this._view?.webview.postMessage({ type: 'allThreadHistories', histories: all });
+					} catch (e) {
+						console.warn('[NaruhoDocs] Failed to send allThreadHistories:', e);
+					}
+				};
 
 				// This logic should only run ONCE when the extension first starts
 				if (this.isInitializing) {
@@ -185,11 +243,23 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 					await new Promise(resolve => setTimeout(resolve, 100));
 					try {
 						this._postThreadList();
-						this._view?.webview.postMessage({ type: 'clearMessages' });
+						// Avoid clearing messages; cached HTML may already be present.
 						this._sendFullHistory(finalActiveId);
+						sendAllHistories();
 					} catch (e) {
 						console.warn('[NaruhoDocs] Failed to populate restored history on init:', e);
 					}
+				} else {
+					// Subsequent webview (re)creation after sidebar close/reopen.
+					// Always re-send thread list and history so general thread is not blank if initial
+					// setFullHistory was missed due to timing.
+					const activeId = this.threadManager.getActiveThreadId() || 'naruhodocs-general-thread';
+					setTimeout(() => {
+						try { this._postThreadList(); } catch (e) { console.warn('[NaruhoDocs] postThreadList on re-ready failed:', e); }
+						// Do not clear existing messages; just refresh active thread history.
+						try { this._sendFullHistory(activeId); } catch (e) { console.warn('[NaruhoDocs] sendFullHistory on re-ready failed:', e); }
+						try { sendAllHistories(); } catch (e) { /* ignore */ }
+					}, 60);
 				}
 				return;
 			}
@@ -266,48 +336,40 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 				}
 				case 'sendMessage': {
 					const userMessage = data.value as string;
-
-					const activeThreadId = this.threadManager.getActiveThreadId();
+					let activeThreadId = this.threadManager.getActiveThreadId();
 					if (!activeThreadId) {
-						this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: 'Error: No active thread selected.' });
-						break;
-					}
-					const session = this.threadManager.getSession(activeThreadId);
-
-					try {
-						if (!session) { throw new Error('No active thread'); }
-						const activeThreadId = this.threadManager.getActiveThreadId();
-						if (!activeThreadId) {
-							throw new Error("Could not determine active thread for chat.");
+						// Graceful fallback: auto-initialize general thread if somehow missing
+						try {
+							await this.threadManager.initializeGeneralThread();
+							activeThreadId = this.threadManager.getActiveThreadId();
+						} catch (e) {
+							this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: 'Error: Unable to initialize general thread.' });
+							break;
 						}
-						const currentHistory = session.getHistory();
-						const sessionSystemMessage = this.threadManager.getSystemMessage(activeThreadId || 'No system message');
-						const historyPreview = currentHistory.map((msg: any, index: any) => {
-							const msgType = (msg as any).type || 'unknown';
-							const msgContent = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
-							const truncatedContent = msgContent.length > 200 ? msgContent.substring(0, 200) + '...' : msgContent;
-							return `  [${index}] ${msgType}: ${truncatedContent}`;
-						}).join('\n');
-
-						// User message sent verbose log removed
-
+						if (!activeThreadId) {
+							this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: 'Error: No active thread available.' });
+							break;
+						}
+						// Also refresh thread list and history so UI catches up
+						try { this._postThreadList(); } catch { /* ignore */ }
+						try { this._sendFullHistory(activeThreadId); } catch { /* ignore */ }
+					}
+					const activeSession = this.threadManager.getSession(activeThreadId);
+					try {
+						if (!activeSession) { throw new Error('No active thread'); }
+						const systemMsg = this.threadManager.getSystemMessage(activeThreadId);
 						const botResponse = await this.llmService.trackedChat({
-							sessionId: activeThreadId!,
-							systemMessage: sessionSystemMessage || 'No system message',
+							sessionId: activeThreadId,
+							systemMessage: systemMsg || SystemMessages.GENERAL_PURPOSE,
 							prompt: userMessage,
 							task: 'chat'
 						});
-
-						// Manually add the new exchange to the session's history object before saving
-						const history = session.getHistory();
-						history.push(new HumanMessage(userMessage));
-						history.push(new AIMessage(botResponse));
-
+						// Append to in-memory history
+						const hist = activeSession.getHistory();
+						hist.push(new HumanMessage(userMessage));
+						hist.push(new AIMessage(botResponse));
 						this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: botResponse });
-						// Save history after message
-						if (activeThreadId && session) {
-							await this.threadManager.saveThreadHistory(activeThreadId);
-						}
+						await this.threadManager.saveThreadHistory(activeThreadId);
 					} catch (error: any) {
 						this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: `Error: ${error.message || 'Unable to connect to LLM.'}` });
 					}
@@ -601,7 +663,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 	 * Normalize and send entire history for the active thread in one atomic message to avoid
 	 * flicker and race conditions with iterative addMessage calls after webview recreation.
 	 */
-	private _sendFullHistory(sessionId?: string) {
+	private _sendFullHistory(sessionId?: string, precomputedSignature?: string) {
 		if (!this._view) { return; }
 		const activeId = sessionId || this.threadManager.getActiveThreadId();
 		if (!activeId) { return; }
@@ -663,6 +725,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 				return;
 			}
 			this._view.webview.postMessage({ type: 'setFullHistory', history: normalized });
+			// Record signature so we can suppress redundant redraws later
+			try {
+				const sig = precomputedSignature || this.computeHistorySignature(session);
+				this.lastSentHistorySignatures.set(activeId, sig);
+			} catch { /* ignore */ }
 		} catch (e) {
 			console.warn('Failed to send full history:', e);
 		}
