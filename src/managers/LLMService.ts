@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { LLMProviderManager } from '../llm-providers/manager';
 import { ModelConfigManager } from './ModelConfigManager.js';
 import { ChatSession, createChat } from '../langchain-backend/llm';
+import { ThreadManager } from './ThreadManager';
 import { BaseMessage } from '@langchain/core/messages';
 
 /**
@@ -15,6 +16,8 @@ export class LLMService {
     private sessionProviders: Map<string, string> = new Map();
     private sessionSystemMessages: Map<string, string> = new Map();
     private sessionModelHints: Map<string, string | undefined> = new Map();
+    private context!: vscode.ExtensionContext;
+    private threadManager?: ThreadManager;
     // sessionModelHints stores the model name chosen at session creation time so
     // logs remain historically accurate even if the user later changes model settings.
     // We intentionally DO NOT retroactively update existing sessions when settings change.
@@ -32,6 +35,7 @@ export class LLMService {
         read_files: 0,
         analyze: 0,
         translate: 0,
+        grammar_check: 0,
         generate_doc: 0,
         visualization_context: 0
     };
@@ -43,12 +47,40 @@ export class LLMService {
         'read_files': { temperature: 0, modelHint: 'gemini-2.0-flash' },
         'analyze': { temperature: 0.1 },
         'translate': { temperature: 0 },
+        'grammar_check': { temperature: 0 },
         'generate_doc': { temperature: 0.2 },
         'visualization_context': { temperature: 0 },
     };
 
     private constructor(private providerManager: LLMProviderManager) {}
 
+    public initializePersistence(context: vscode.ExtensionContext): void {
+        this.context = context;
+    }
+
+    public setThreadManager(manager: ThreadManager): void {
+        this.threadManager = manager;
+    }
+
+    public async saveState(): Promise<void> {
+        if (!this.context) { return; }
+    
+        if (this.threadManager) {
+            const sessions = this.threadManager.getSessions();
+            const savePromises: Promise<void>[] = [];
+            for (const sessionId of sessions.keys()) {
+                savePromises.push(this.threadManager.saveThreadHistory(sessionId));
+            }
+            if (savePromises.length > 0) {
+                await Promise.all(savePromises);
+            }
+            const lastActiveId = this.threadManager.getActiveThreadId();
+            if (lastActiveId) {
+                await this.context.globalState.update('lastActiveThreadId', lastActiveId);
+            }
+        }
+    }
+    
     public static getOrCreate(providerManager: LLMProviderManager): LLMService {
         if (!this.instance) {
             this.instance = new LLMService(providerManager);
@@ -104,6 +136,8 @@ export class LLMService {
                 return this.handleAnalyze(req);
             case 'translate':
                 return this.handleTranslate(req);
+            case 'grammar_check':
+                return this.handleGrammarCheck(req);
             case 'generate_doc':
                 return this.handleGenerateDoc(req);
             case 'visualization_context':
@@ -152,6 +186,7 @@ export class LLMService {
                     read_files: 'naruhodocs.llm.models.readFiles',
                     analyze: 'naruhodocs.llm.models.analyze',
                     translate: 'naruhodocs.llm.models.translate',
+                    grammar_check: 'naruhodocs.llm.models.grammarCheck',
                     generate_doc: 'naruhodocs.llm.models.generateDoc',
                     visualization_context: 'naruhodocs.llm.models.visualizationContext'
                 };
@@ -238,75 +273,8 @@ export class LLMService {
     }
 
     // ---- Persistence ----
-    private persistenceInitialized = false;
-    private context: vscode.ExtensionContext | undefined;
-    public initializePersistence(context: vscode.ExtensionContext) {
-        this.context = context;
-        this.persistenceInitialized = true;
-    }
-
-    public async saveState() {
-        if (!this.persistenceInitialized || !this.context) { return; }
-        // Serialize sessions: we only have access via getHistory()/system message (not directly stored per session). We capture limited history.
-        const snapshots: Record<string, { systemMessage?: string; history: Array<{ role: string; content: string }> }> = {};
-        for (const [key, session] of this.sessionCache.entries()) {
-            try {
-                const rawHistory = session.getHistory();
-                // We don't have direct system message accessor; store none. Future: extend ChatSession.
-                snapshots[key] = {
-                    systemMessage: undefined,
-                    history: rawHistory.slice(-12).map(m => ({ role: (m as any).type, content: (m as any).text }))
-                };
-            } catch (e) {
-                console.warn('[LLMService] Failed to snapshot session', key, e);
-            }
-        }
-        const stats = this.getStats();
-        await this.context.workspaceState.update('llmService.sessionSnapshots', snapshots);
-        await this.context.workspaceState.update('llmService.statsSnapshot', stats);
-        await this.context.workspaceState.update('llmService.sessionProviders', Array.from(this.sessionProviders.entries()));
-    }
-
-    public async restoreState() {
-        if (!this.persistenceInitialized || !this.context) { return; }
-        const snapshots = this.context.workspaceState.get<Record<string, { systemMessage?: string; history: Array<{ role: string; content: string }> }>>('llmService.sessionSnapshots');
-        if (snapshots) {
-            for (const key of Object.keys(snapshots)) {
-                const snap = snapshots[key];
-                try {
-                    const session = await this.getSession(key, snap.systemMessage || 'You are a helpful assistant.', { forceNew: true });
-                    // Rebuild BaseMessage[] minimal structure
-                    const rebuild: BaseMessage[] = snap.history.map(h => ({
-                        _getType() { return h.role; },
-                        get type() { return h.role; },
-                        get lc_namespace() { return []; },
-                        get lc_serializable() { return true; },
-                        content: h.content,
-                        get text() { return h.content; }
-                    } as any));
-                    session.setHistory(rebuild);
-                } catch (e) {
-                    console.warn('[LLMService] Failed to restore session', key, e);
-                }
-            }
-        }
-    const stats = this.context.workspaceState.get<any>('llmService.statsSnapshot');
-        if (stats && stats.day === this.dayStamp) {
-            // Only restore if same day
-            this.requestCount = stats.requests || 0;
-            this.estimatedInputTokens = stats.estimatedInputTokens || 0;
-            this.estimatedOutputTokens = stats.estimatedOutputTokens || 0;
-            if (stats.perTask) {
-                (Object.keys(this.perTaskCounts) as LLMTaskType[]).forEach(k => {
-                    this.perTaskCounts[k] = stats.perTask[k] || 0;
-                });
-            }
-        }
-        const providerPairs = this.context?.workspaceState.get<[string, string][]>('llmService.sessionProviders');
-        if (providerPairs) {
-            this.sessionProviders = new Map(providerPairs);
-        }
-    }
+    // The old persistence methods (saveState, restoreState) are now replaced by the new saveState method above.
+    // The restoration logic is handled by the ThreadManager and ChatViewProvider.
 
     // ---- Handlers ----
     private async handleChat(req: ChatRequest): Promise<LLMResponse> {
@@ -354,6 +322,14 @@ export class LLMService {
         const meta = { targetLanguage: req.targetLanguage };
         const answer = await this.invokeTracked(session, prompt, 'translate', req.content.length, meta);
         return { type: 'translate', content: answer, meta: { targetLanguage: req.targetLanguage, provider: this.sessionProviders.get(`translate:${req.targetLanguage}`) } };
+    }
+
+    private async handleGrammarCheck(req: GrammarCheckRequest): Promise<LLMResponse> {
+        const systemMessage = req.systemMessage || 'You are an AI data filter. Your sole purpose is to return a JSON array.';
+        const session = await this.getSession(req.sessionId || 'grammar_check', systemMessage, { taskType: 'grammar_check' });
+        // This handler directly uses the prompt from the request, without modification.
+        const answer = await this.invokeTracked(session, req.prompt, 'grammar_check', req.prompt.length, { sessionId: req.sessionId });
+        return { type: 'grammar_check', content: answer, meta: { provider: this.sessionProviders.get(req.sessionId || 'grammar_check') } };
     }
 
     private async handleGenerateDoc(req: GenerateDocRequest): Promise<LLMResponse> {
@@ -518,7 +494,7 @@ export class LLMService {
 }
 
 // ---- Types ----
-export type LLMTaskType = 'chat' | 'summarize' | 'read_files' | 'analyze' | 'translate' | 'generate_doc' | 'visualization_context';
+export type LLMTaskType = 'chat' | 'summarize' | 'read_files' | 'analyze' | 'translate' | 'grammar_check' | 'generate_doc' | 'visualization_context';
 
 export interface BaseLLMRequest { type: LLMTaskType; sessionId?: string; systemMessage?: string; }
 export interface ChatRequest extends BaseLLMRequest { type: 'chat'; prompt: string; }
@@ -526,10 +502,11 @@ export interface SummarizeRequest extends BaseLLMRequest { type: 'summarize'; co
 export interface ReadFilesRequest extends BaseLLMRequest { type: 'read_files'; files: Array<{ path: string; content: string }>; prompt?: string; }
 export interface AnalyzeRequest extends BaseLLMRequest { type: 'analyze'; analysisGoal: string; context: string; }
 export interface TranslateRequest extends BaseLLMRequest { type: 'translate'; content: string; targetLanguage: string; }
+export interface GrammarCheckRequest extends BaseLLMRequest { type: 'grammar_check'; prompt: string; }
 export interface GenerateDocRequest extends BaseLLMRequest { type: 'generate_doc'; title: string; sourceContent: string; purpose?: string; tone?: string; }
 export interface VisualizationContextRequest extends BaseLLMRequest { type: 'visualization_context'; contextType: string; userPrompt: string; botResponse: string; }
 
-export type LLMRequest = ChatRequest | SummarizeRequest | ReadFilesRequest | AnalyzeRequest | TranslateRequest | GenerateDocRequest | VisualizationContextRequest;
+export type LLMRequest = ChatRequest | SummarizeRequest | ReadFilesRequest | AnalyzeRequest | TranslateRequest | GrammarCheckRequest | GenerateDocRequest | VisualizationContextRequest;
 
 export interface LLMResponse { type: LLMTaskType; content: string; meta?: Record<string, any>; }
 

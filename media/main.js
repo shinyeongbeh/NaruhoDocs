@@ -15,6 +15,51 @@
     const mermaidLib = window.mermaid;
     // @ts-ignore: acquireVsCodeApi is provided by VS Code webview
     const vscode = acquireVsCodeApi();
+    /**
++     * Atomically replace the chat messages with normalized history.
++     * Hoisted function so early handler can call it without TS error.
++     * @param {Array<{sender?: string, message?: string}>} history
++     */
+    function setFullHistory(history) {
+        if (chatMessages) { chatMessages.innerHTML = ''; }
+        if (Array.isArray(history)) {
+            history.forEach(function (entry) {
+                if (entry && typeof entry === 'object') {
+                    addMessage(entry.sender || 'Bot', entry.message || '');
+                }
+            });
+        }
+        try { vscode.setState(null); } catch (e) { /* ignore */ }
+        persistState();
+    }
+    
+    (function registerEarlyHandlers() {
+        window.addEventListener('message', (e) => {
+            const msg = e.data || {};
+            if (msg.type === 'threadList') {
+                threads = msg.threads || [];
+                activeThreadId = msg.activeThreadId;
+                // renderThreadListMenu is a hoisted function — safe to call
+                try { renderThreadListMenu(); } catch (err) { /* ignore until rest of UI attaches */ }
+            } else if (msg.type === 'toggleGeneralTabUI') {
+                const gb = document.getElementById('general-buttons');
+                if (gb) { gb.style.display = msg.visible ? 'flex' : 'none'; }
+            } else if (msg.type === 'clearMessages') {
+                const cm = document.getElementById('chat-messages');
+                if (cm) { cm.innerHTML = ''; }
+            } else if (msg.type === 'setFullHistory') {
+                console.debug('[NaruhoDocs] setFullHistory received (early) length=', (msg.history || []).length);
+                if (typeof showHistory === 'function') { showHistory(msg.history); }
+            }
+        }, false);
+
+        // Announce ready so extension can safely send restored history / thread list
+        try {
+            vscode.postMessage({ type: 'chatViewReady' });
+        } catch (e) {
+            console.warn('[NaruhoDocs] Failed to post chatViewReady early:', e);
+        }
+    })();
 
     const chatMessages = document.getElementById('chat-messages');
     const chatInput = document.getElementById('chat-input'); // HTMLTextAreaElement
@@ -28,9 +73,6 @@
 
     const oldState = vscode.getState() || {};
 
-    if (oldState.chatHTML && chatMessages) {
-        chatMessages.innerHTML = oldState.chatHTML;
-    }
     if (oldState.activeDocName && currentDocName) {
         currentDocName.textContent = oldState.activeDocName;
     }
@@ -49,6 +91,68 @@
     }
 
     renderThreadListMenu();
+
+    window.addEventListener('DOMContentLoaded', () => {
+        const clearHistoryBtn = document.getElementById('clear-history');
+        if (clearHistoryBtn) {
+            clearHistoryBtn.onclick = () => {
+                showClearHistoryConfirm();
+            };
+        }
+
+        const refreshChatBtn = document.getElementById('refresh-vectordb');
+        if (refreshChatBtn) {
+                refreshChatBtn.onclick = () => {
+                    vscode.postMessage({ type: 'vscodeReloadWindow' });
+                };
+        }
+    });
+
+    function showClearHistoryConfirm() {
+        // Remove any existing modal
+        let oldModal = document.getElementById('clear-history-modal');
+        if (oldModal) {
+            oldModal.remove();
+        }
+
+        // Create modal
+        const modal = document.createElement('div');
+        modal.id = 'clear-history-modal';
+        modal.style.cssText = `
+        position: fixed;
+        top: 0; left: 0; width: 100vw; height: 100vh;
+        display: flex; align-items: center; justify-content: center;
+        background: rgba(0,0,0,0.5); z-index: 9999;
+    `;
+
+        const box = document.createElement('div');
+        box.style.cssText = `
+        background: #222; color: #fff; padding: 32px 24px; border-radius: 10px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.3); text-align: center; min-width: 300px;
+    `;
+        box.innerHTML = `<div style="font-size:18px; margin-bottom:16px;">Are you sure you want to clear all chat history?</div>`;
+
+        // Use save-btn class for both buttons
+        const confirmBtn = document.createElement('button');
+        confirmBtn.textContent = 'Yes';
+        confirmBtn.className = 'clearHistory-btn';
+        confirmBtn.onclick = () => {
+            vscode.postMessage({ type: 'clearHistory' });
+            modal.remove();
+        };
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.className = 'clearHistory-btn cancel';
+        cancelBtn.onclick = () => {
+            modal.remove();
+        };
+
+        box.appendChild(confirmBtn);
+        box.appendChild(cancelBtn);
+        modal.appendChild(box);
+        document.body.appendChild(modal);
+    }
 
     function sendMessage() {
         if (chatInput && (chatInput instanceof HTMLTextAreaElement) && chatInput.value) {
@@ -124,7 +228,7 @@
                 chatInputContainer.parentElement.insertBefore(chatModeButtons, chatInputContainer);
             }
         }
-    if (typeof activeThreadId === 'string' && activeThreadId !== 'naruhodocs-general-thread') {
+        if (typeof activeThreadId === 'string' && activeThreadId !== 'naruhodocs-general-thread') {
             chatModeButtons.innerHTML = '';
             // Create custom slide switch for mode selection
             const switchLabel = document.createElement('label');
@@ -331,8 +435,8 @@
             window.addEventListener('message', handleAISuggestedDocs);
         }
 
-    /** @param {HTMLElement} modal */
-    function showCustomDocPrompt(modal) {
+        /** @param {HTMLElement} modal */
+        function showCustomDocPrompt(modal) {
             // Remove previous prompt if any
             let oldPrompt = document.getElementById('custom-doc-prompt');
             if (oldPrompt) { oldPrompt.remove(); }
@@ -439,8 +543,7 @@
                         btn.textContent = suggestion.displayName;
                         btn.title = suggestion.description || '';
                         btn.addEventListener('click', () => {
-                            addMessage('You', `Generate a ${suggestion.displayName} template.`);
-                            vscode.postMessage({ type: 'sendMessage', value: `Generate a ${suggestion.displayName} template.` });
+                            vscode.postMessage({ type: 'generateTemplate', templateType: suggestion.displayName });
                             modal.remove();
                         });
                         box.appendChild(btn);
@@ -458,8 +561,8 @@
             window.addEventListener('message', handleAISuggestedDocs);
         }
 
-    /** @param {any} modal */
-    function showCustomTemplatePrompt(modal) {
+        /** @param {any} modal */
+        function showCustomTemplatePrompt(modal) {
             let oldPrompt = document.getElementById('custom-doc-prompt');
             if (oldPrompt) { oldPrompt.remove(); }
 
@@ -480,8 +583,7 @@
                 if (input.value.trim()) {
                     // Always send a canonical template request for custom input
                     const templateType = input.value.trim();
-                    addMessage('You', `Generate a ${templateType} template.`);
-                    vscode.postMessage({ type: 'sendMessage', value: `Generate a ${templateType} template.` });
+                    vscode.postMessage({ type: 'generateTemplate', templateType: templateType });
                     if (modal) { modal.remove(); }
                 }
             });
@@ -607,7 +709,7 @@
 
     // Initialize Mermaid if available
     if (typeof mermaidLib !== 'undefined') {
-        mermaidLib.initialize({ 
+        mermaidLib.initialize({
             startOnLoad: false,
             theme: 'dark',
             themeVariables: {
@@ -651,61 +753,19 @@
         // Create modal overlay - full VS Code window
         const modal = document.createElement('div');
         modal.id = 'diagram-modal';
-        modal.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            background: rgba(0, 0, 0, 0.95);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 999999;
-            backdrop-filter: blur(8px);
-        `;
+        modal.className = 'diagram-modal'; // Use class instead of inline style
 
-        // Create modal content - larger size for full window
         const modalContent = document.createElement('div');
-        modalContent.style.cssText = `
-            background: var(--vscode-editor-background);
-            border-radius: 12px;
-            padding: 30px;
-            max-width: 95vw;
-            max-height: 95vh;
-            overflow: auto;
-            position: relative;
-            border: 2px solid var(--vscode-panel-border);
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-            min-width: 80vw;
-            min-height: 70vh;
-        `;
+        modalContent.className = 'diagram-modal-content';
 
-        // Create modal header with controls
         const modalHeader = document.createElement('div');
-        modalHeader.style.cssText = `
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-            padding-bottom: 10px;
-            border-bottom: 1px solid var(--vscode-panel-border);
-        `;
+        modalHeader.className = 'diagram-modal-header';
 
         const modalTitle = document.createElement('h3');
-        modalTitle.textContent = 'Diagram View';
-        modalTitle.style.cssText = `
-            margin: 0;
-            color: var(--vscode-foreground);
-            font-size: 16px;
-        `;
+        modalTitle.className = 'diagram-modal-title';
 
         const modalControls = document.createElement('div');
-        modalControls.style.cssText = `
-            display: flex;
-            gap: 10px;
-            align-items: center;
-        `;
+        modalControls.className = 'diagram-modal-controls';
 
         // Zoom controls
         const zoomOutBtn = createModalButton('🔍-', 'Zoom out');
@@ -753,11 +813,11 @@
                             transform-origin: center;
                             transition: transform 0.3s ease;
                         `;
-                        
+
                         // Set up zoom functionality
                         let currentZoom = 1;
                         const zoomStep = 0.2;
-                        
+
                         /** @param {number} newZoom */
                         function updateZoom(newZoom) {
                             currentZoom = Math.max(0.5, Math.min(3, newZoom));
@@ -766,14 +826,14 @@
                             }
                             zoomResetBtn.textContent = `${Math.round(currentZoom * 100)}%`;
                         }
-                        
+
                         zoomInBtn.onclick = () => updateZoom(currentZoom + zoomStep);
                         zoomOutBtn.onclick = () => updateZoom(currentZoom - zoomStep);
                         zoomResetBtn.onclick = () => updateZoom(1);
-                        
+
                         // Export functionality
                         exportBtn.onclick = () => exportDiagram(svgElement, diagramId);
-                        
+
                         // Fullscreen functionality
                         fullscreenBtn.onclick = () => {
                             if (document.fullscreenElement) {
@@ -804,8 +864,8 @@
         };
 
         // Keyboard shortcuts
-    /** @param {KeyboardEvent} e */
-    function handleKeyDown(e) {
+        /** @param {KeyboardEvent} e */
+        function handleKeyDown(e) {
             if (e.key === 'Escape') {
                 closeModal();
             } else if (e.key === '+' || e.key === '=') {
@@ -858,11 +918,11 @@
         try {
             // Clone the SVG to avoid modifying the original
             const clonedSvg = svgElement.cloneNode(true);
-            
+
             // Get SVG source
             const svgData = new XMLSerializer().serializeToString(clonedSvg);
             const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
-            
+
             // Create download link
             const downloadLink = document.createElement('a');
             downloadLink.href = URL.createObjectURL(svgBlob);
@@ -872,10 +932,10 @@
             downloadLink.click();
             document.body.removeChild(downloadLink);
             URL.revokeObjectURL(downloadLink.href);
-            
+
             // Show success message with location info
             showToast(`Diagram exported as ${fileName} to your Downloads folder`, 'success');
-            
+
             // Also send message to VS Code to show notification
             if (typeof vscode !== 'undefined') {
                 vscode.postMessage({
@@ -890,26 +950,16 @@
         }
     }
 
-    // Function to show toast notifications
-    /** @param {string} message @param {'info'|'error'|'success'} [type='info'] */
+    // For toast notifications:
+    /**
+     * @param {string} message
+     * @param {'info'|'success'|'error'} [type]
+     */
     function showToast(message, type = 'info') {
         const toast = document.createElement('div');
-        toast.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            padding: 12px 16px;
-            border-radius: 6px;
-            color: white;
-            font-size: 14px;
-            z-index: 10001;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-            transition: opacity 0.3s ease;
-            background: ${type === 'success' ? '#4caf50' : type === 'error' ? '#f44336' : '#2196f3'};
-        `;
+        toast.className = `toast-notification toast-${type}`;
         toast.textContent = message;
         document.body.appendChild(toast);
-        
         setTimeout(() => {
             toast.style.opacity = '0';
             setTimeout(() => {
@@ -917,8 +967,6 @@
             }, 300);
         }, 3000);
     }
-
-    // --- remove the first duplicate window.addEventListener(...) block above ---
 
     /** @param {string} sender @param {string} message */
     function addMessage(sender, message) {
@@ -951,7 +999,7 @@
                     try {
                         const mermaidCode = block.textContent;
                         const diagramId = `mermaid-${Date.now()}-${index}`;
-                        
+
                         // Create a container for the Mermaid diagram
                         const diagramContainer = document.createElement('div');
                         diagramContainer.className = 'mermaid-diagram-container';
@@ -962,7 +1010,7 @@
                         diagramContainer.style.borderRadius = '4px';
                         diagramContainer.style.backgroundColor = 'var(--vscode-editor-background)';
                         diagramContainer.style.position = 'relative';
-                        
+
                         // Create diagram controls
                         const controlsContainer = document.createElement('div');
                         controlsContainer.className = 'diagram-controls';
@@ -973,7 +1021,7 @@
                         controlsContainer.style.gap = '5px';
                         controlsContainer.style.opacity = '0.7';
                         controlsContainer.style.transition = 'opacity 0.2s';
-                        
+
                         // Enlarge button
                         const enlargeBtn = document.createElement('button');
                         enlargeBtn.className = 'diagram-control-btn';
@@ -990,18 +1038,18 @@
                             font-weight: 500;
                             transition: all 0.2s ease;
                         `;
-                        
+
                         // Export button
                         const exportBtn = document.createElement('button');
                         exportBtn.className = 'diagram-control-btn';
                         exportBtn.innerHTML = 'Export';
                         exportBtn.title = 'Export diagram';
                         exportBtn.style.cssText = enlargeBtn.style.cssText;
-                        
+
                         controlsContainer.appendChild(enlargeBtn);
                         controlsContainer.appendChild(exportBtn);
                         diagramContainer.appendChild(controlsContainer);
-                        
+
                         // Add hover effects to buttons
                         [enlargeBtn, exportBtn].forEach(btn => {
                             btn.addEventListener('mouseenter', () => {
@@ -1013,7 +1061,7 @@
                                 btn.style.transform = 'translateY(0)';
                             });
                         });
-                        
+
                         // Show controls on hover
                         diagramContainer.addEventListener('mouseenter', () => {
                             controlsContainer.style.opacity = '1';
@@ -1021,41 +1069,41 @@
                         diagramContainer.addEventListener('mouseleave', () => {
                             controlsContainer.style.opacity = '0.7';
                         });
-                        
+
                         // Replace the code block with the diagram container
                         const preElement = block.parentElement;
                         if (preElement && preElement.tagName === 'PRE' && preElement.parentElement) {
                             preElement.parentElement.replaceChild(diagramContainer, preElement);
                         }
-                        
+
                         // Render the Mermaid diagram
                         if (typeof mermaidLib !== 'undefined') {
                             const { svg } = await mermaidLib.render(diagramId, mermaidCode);
-                            
+
                             // Create diagram content container
                             const diagramContent = document.createElement('div');
                             diagramContent.className = 'diagram-content';
                             diagramContent.innerHTML = svg;
                             diagramContainer.appendChild(diagramContent);
-                            
+
                             // Add click handlers for interactivity
                             const svgElement = diagramContent.querySelector('svg');
                             if (svgElement) {
                                 svgElement.style.cursor = 'pointer';
                                 svgElement.style.maxWidth = '100%';
                                 svgElement.style.height = 'auto';
-                                
+
                                 // Click to enlarge
                                 svgElement.addEventListener('click', () => {
                                     openDiagramModal(mermaidCode, diagramId);
                                 });
-                                
+
                                 // Enlarge button handler
                                 enlargeBtn.addEventListener('click', (e) => {
                                     e.stopPropagation();
                                     openDiagramModal(mermaidCode, diagramId);
                                 });
-                                
+
                                 // Export button handler
                                 exportBtn.addEventListener('click', (e) => {
                                     e.stopPropagation();
@@ -1094,12 +1142,13 @@
                 // Atomically replace chat messages with provided normalized history
                 if (chatMessages) { chatMessages.innerHTML = ''; }
                 if (Array.isArray(message.history)) {
-                    message.history.forEach(/** @param {{sender?: string, message?: string}} entry */ (entry) => {
+                    message.history.forEach(/** @param {{sender?: string, message?: string}} entry */(entry) => {
                         if (entry && typeof entry === 'object') {
                             addMessage(entry.sender || 'Bot', entry.message || '');
                         }
                     });
                 }
+                vscode.setState(null);
                 persistState();
                 break;
             case 'addMessage':
@@ -1178,57 +1227,62 @@
                     chatMessages.scrollTop = chatMessages.scrollHeight;
                 }
                 break;
-            case 'showSaveTemplateButtons':
-                if (chatMessages) {
-                    // If the template is a 'not needed' message, do not show save modal
-                    if (typeof message.template === 'string' && message.template.trim().toLowerCase().startsWith('this project does not require')) {
-                        // Do not show save modal
-                        break;
-                    }
-                    const prev = document.getElementById('save-template-btn-container');
-                    if (prev) {
-                        prev.remove();
-                    }
+            // case 'showSaveTemplateButtons':
+            //     if (chatMessages) {
+            //         // If the template is a 'not needed' message, do not show save modal
+            //         if (typeof message.template === 'string' && message.template.trim().toLowerCase().startsWith('this project does not require')) {
+            //             // Do not show save modal
+            //             break;
+            //         }
+            //         const prev = document.getElementById('save-template-btn-container');
+            //         if (prev) {
+            //             prev.remove();
+            //         }
 
-                    const btnContainer = document.createElement('div');
-                    btnContainer.id = 'save-template-btn-container';
-                    btnContainer.className = 'button-group';
+            //         const btnContainer = document.createElement('div');
+            //         btnContainer.id = 'save-template-btn-container';
+            //         btnContainer.className = 'button-group';
 
-                    const labelDiv = document.createElement('div');
-                    labelDiv.textContent = 'Save template as new file?';
-                    labelDiv.className = 'button-group-label';
-                    btnContainer.appendChild(labelDiv);
+            //         const labelDiv = document.createElement('div');
+            //         labelDiv.textContent = 'Save template as new file?';
+            //         labelDiv.className = 'button-group-label';
+            //         btnContainer.appendChild(labelDiv);
 
-                    const yesBtn = document.createElement('button');
-                    yesBtn.textContent = 'Yes';
-                    yesBtn.className = 'save-btn';
-                    yesBtn.onclick = () => {
-                        vscode.postMessage({
-                            type: 'createAndSaveTemplateFile',
-                            text: message.template,
-                            uri: message.sessionId,
-                            docType: message.docType || message.templateType || 'README'
-                        });
+            //         const yesBtn = document.createElement('button');
+            //         yesBtn.textContent = 'Yes';
+            //         yesBtn.className = 'save-btn';
+            //         yesBtn.onclick = () => {
+            //             vscode.postMessage({
+            //                 type: 'createAndSaveTemplateFile',
+            //                 text: message.template,
+            //                 uri: message.sessionId,
+            //                 docType: message.docType || message.templateType || 'README'
+            //             });
 
-                        // Notify extension that webview is fully initialized and ready to accept history
-                        try {
-                            vscode.postMessage({ type: 'chatViewReady' });
-                        } catch (e) {
-                            console.warn('[NaruhoDocs] Failed to post chatViewReady:', e);
-                        }
-                        btnContainer.remove();
-                    };
+            //             // Notify extension that webview is fully initialized and ready to accept history
+            //             try {
+            //                 vscode.postMessage({ type: 'chatViewReady' });
+            //             } catch (e) {
+            //                 console.warn('[NaruhoDocs] Failed to post chatViewReady:', e);
+            //             }
+            //             btnContainer.remove();
+            //         };
 
-                    const noBtn = document.createElement('button');
-                    noBtn.textContent = 'No';
-                    noBtn.className = 'save-btn';
-                    noBtn.onclick = () => { btnContainer.remove(); };
+            //         const noBtn = document.createElement('button');
+            //         noBtn.textContent = 'No';
+            //         noBtn.className = 'save-btn';
+            //         noBtn.onclick = () => { btnContainer.remove(); };
 
-                    btnContainer.appendChild(yesBtn);
-                    btnContainer.appendChild(noBtn);
-                    chatMessages.appendChild(btnContainer);
-                    chatMessages.scrollTop = chatMessages.scrollHeight;
-                }
+            //         btnContainer.appendChild(yesBtn);
+            //         btnContainer.appendChild(noBtn);
+            //         chatMessages.appendChild(btnContainer);
+            //         chatMessages.scrollTop = chatMessages.scrollHeight;
+            //     }
+            //     break;
+            case 'historyCleared':
+                clearMessages();
+                // Optionally show a toast notification
+                showToast('Chat history cleared.', 'success');
                 break;
         }
     });

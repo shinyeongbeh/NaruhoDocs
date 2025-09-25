@@ -9,13 +9,13 @@ export class ThreadManager {
     private activeThreadId?: string;
     private threadTitles: Map<string, string> = new Map(); // sessionId -> document title
     private systemMessages: Map<string, string> = new Map(); // sessionId -> system message (for rehydration)
-    
+
     constructor(
         private context: vscode.ExtensionContext,
         private apiKey?: string,
         private llmManager?: LLMProviderManager,
         private onThreadListChange?: () => void
-    ) {}
+    ) { }
 
     private get llmService(): LLMService | undefined {
         if (!this.llmManager) { return undefined; }
@@ -58,14 +58,18 @@ export class ThreadManager {
         const sysMessage = SystemMessages.GENERAL_PURPOSE;
         this.systemMessages.set(generalThreadId, sysMessage);
 
-        // Use LLM manager if available, fallback to direct createChat
+        // If a session was already restored from history, do not create a new one.
+        if (this.sessions.has(generalThreadId)) {
+            return;
+        }
+
+        // If no session exists, create a new one.
         if (this.llmService) {
             try {
-                const session = await this.llmService.getSession(generalThreadId, sysMessage, { taskType: 'chat' });
+                const session = await this.llmService.getSession(generalThreadId, sysMessage, { taskType: 'chat', forceNew: true });
                 this.sessions.set(generalThreadId, session);
                 this.threadTitles.set(generalThreadId, generalThreadTitle);
                 this.activeThreadId = generalThreadId;
-                // General thread initialized via LLMService
                 return;
             } catch (error) {
                 console.error('LLMService general thread creation failed, falling back:', error);
@@ -121,6 +125,10 @@ export class ThreadManager {
     // Switch active thread
     public setActiveThread(sessionId: string): void {
         if (this.sessions.has(sessionId)) {
+            // Before switching, save the history of the current (outgoing) thread.
+            if (this.activeThreadId) {
+                this.saveThreadHistory(this.activeThreadId);
+            }
             this.activeThreadId = sessionId;
             this.onThreadListChange?.();
         }
@@ -163,9 +171,39 @@ export class ThreadManager {
         return this.threadTitles;
     }
 
+    private threadManager?: ThreadManager; // Ensure this property exists
+
+    public setThreadManager(manager: ThreadManager): void {
+        this.threadManager = manager;
+    }
+
+    public async saveState(): Promise<void> {
+        const sessions = this.getSessions();
+        const savePromises: Promise<void>[] = [];
+        for (const sessionId of sessions.keys()) {
+            savePromises.push(this.saveThreadHistory(sessionId));
+        }
+        if (savePromises.length > 0) {
+            await Promise.all(savePromises);
+            // console.log(`[NaruhoDocs] Saved state for ${savePromises.length} threads.`);
+        }
+        // Also persist the last active thread ID
+        const lastActiveId = this.getActiveThreadId();
+        if (lastActiveId) {
+            await this.context.globalState.update('lastActiveThreadId', lastActiveId);
+        }
+    }
+
     // Get all sessions
     public getSessions(): Map<string, ChatSession> {
         return this.sessions;
+    }
+
+    public getSystemMessage(sessionId: string): string | undefined {
+        if(!this.systemMessages.has(sessionId)){
+            throw new Error(`No system message found for sessionId: ${sessionId}`);
+        }
+        return this.systemMessages.get(sessionId);
     }
 
     // Remove a thread
@@ -212,6 +250,9 @@ export class ThreadManager {
         for (const key of keys) {
             if (key.startsWith('thread-history-')) {
                 const sessionId = key.replace('thread-history-', '');
+                // if (sessionId === 'naruhodocs-general-thread') {
+                //     continue;
+                // }
                 let documentText = '';
                 try {
                     const uri = vscode.Uri.parse(sessionId);
@@ -263,7 +304,7 @@ export class ThreadManager {
     }
 
     // Get thread list data for UI
-    public getThreadListData(): { threads: Array<{id: string, title: string}>, activeThreadId: string | undefined } {
+    public getThreadListData(): { threads: Array<{ id: string, title: string }>, activeThreadId: string | undefined } {
         const threads = Array.from(this.threadTitles.entries()).map(([id, title]) => ({ id, title }));
         return { threads, activeThreadId: this.activeThreadId };
     }
@@ -305,5 +346,28 @@ export class ThreadManager {
             this.activeThreadId = 'naruhodocs-general-thread';
         }
         this.onThreadListChange?.();
+    }
+    
+    public static async clearAllThreadHistoryOnce(context: vscode.ExtensionContext): Promise<void> {
+        console.log('Clearing all thread history...');
+        const keys = context.workspaceState.keys();
+        let cleared = 0;
+        for (const key of keys) {
+            if (typeof key === 'string' && key.startsWith('thread-history-')) {
+                await context.workspaceState.update(key, undefined);
+                cleared++;
+            }
+        }
+        console.log(`Cleared ${cleared} thread histories`);
+
+        // Close all open tabs/editors
+        try {
+            await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+            console.log('Closed all open tabs');
+        } catch (error) {
+            console.warn('Failed to close tabs:', error);
+        }
+
+        console.log('All thread history and tabs cleared');
     }
 }

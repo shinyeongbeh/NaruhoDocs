@@ -17,6 +17,11 @@
   "contributes": {
     "commands": [
       {
+        "command": "naruhodocs.changeEmbeddingProvider",
+        "title": "Change Embedding Model Provider (for document search - RAG)",
+        "category": "NaruhoDocs"
+      },
+      {
         "command": "naruhodocs.start",
         "title": "Start NaruhoDocs"
       },
@@ -73,6 +78,11 @@
         "command": "naruhodocs.changeProvider",
         "title": "Change LLM Provider",
         "category": "NaruhoDocs"
+      },
+      {
+        "command": "naruhodocs.clearAllThreadHistory",
+        "title": "Clear All Thread History",
+        "category": "NaruhoDocs"
       }
     ],
     "configuration": {
@@ -99,6 +109,26 @@
           "description": "API key for BYOK mode (stored securely)",
           "when": "config.naruhodocs.llm.provider == 'byok'"
         },
+        "naruhodocs.embedding.provider": {
+          "type": "string",
+          "enum": [
+            "local",
+            "cloudHuggingface",
+            "builtInHFApi"
+          ],
+          "enumDescriptions": [
+            "Local (Ollama/LM Studio): Use local embedding models via Ollama / LM Studio",
+            "Cloud (Hugging Face Inference Provider): Use HuggingFace cloud embeddings",
+            "Built-in Hugging Face by NaruhoDocs: Use Hugging Face cloud embeddings without the need of you getting API key."
+          ],
+          "default": "local",
+          "description": "Embedding model provider to use for document search (RAG). If you do not want a RAG functionality, you can disable RAG in the settings."
+        },
+         "naruhodocs.huggingface.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "HuggingFace Inference API key for cloud embeddings."
+        },
         "naruhodocs.visualization.defaultLibrary": {
           "type": "string",
           "enum": [
@@ -123,12 +153,22 @@
           "type": "number",
           "default": 1000,
           "description": "Maximum number of files to analyze for large projects"
-        }
-        ,
+        },
         "naruhodocs.logging.verbose": {
           "type": "boolean",
           "default": false,
           "description": "Enable verbose LLM request/response logging in dedicated output channel"
+        },
+        "naruhodocs.rag.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Retrieval-Augmented Generation (RAG) provides enhanced searching so the AI can find and use the right information from your workspace.\n Please reload the window after changing this setting."
+        }
+        ,
+        "naruhodocs.git.docDriftDetection": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable or disable Doc Drift detection based on Git commits. If disabled, the extension will not analyze documentation drift when commits are made."
         }
       }
     },
@@ -189,17 +229,17 @@
     "@langchain/core": "^0.3.77",
     "@langchain/google-genai": "^0.2.18",
     "@langchain/langgraph": "^0.4.9",
+    "@langchain/ollama": "^0.2.4",
     "@langchain/openai": "^0.6.13",
     "dotenv": "^16.4.5",
     "langchain": "^0.3.34",
     "markdown-it": "^14.1.0",
     "mermaid": "^11.11.0",
     "node-fetch": "^3.3.2",
+    "sqlite3": "^5.1.7",
     "watch": "^1.0.2"
   },
-    "overrides": 
-  {
-    "exec-sh":"^0.3.4"
+  "overrides": {
+    "exec-sh": "^0.3.4"
   }
-
 }

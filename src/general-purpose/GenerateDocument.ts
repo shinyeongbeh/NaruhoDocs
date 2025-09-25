@@ -1,14 +1,11 @@
 import * as vscode from 'vscode';
-import { ChatSession, createChat } from '../langchain-backend/llm';
 import { RetrieveWorkspaceFilenamesTool, RetrieveFileContentTool } from '../langchain-backend/features';
-export async function generateDocument(data: { docType: any; fileName?: any }): Promise<{ type: String; sender: String; message: String }> {
-  // public docGeneratorAI = createChat({maxHistoryMessages:30, systemMessage: this.sysTemp});
-  const docGeneratorAI = createChat({ maxHistoryMessages: 30 });
-
+import { LLMService } from '../managers/LLMService';
+export async function generateDocument(llmService: LLMService, data: { docType: any; fileName?: any }): Promise<{ type: String; sender: String; message: String }> {
   // Suggest filename with AI if not provided
   let aiFilename = '';
   if (!data.fileName || typeof data.fileName !== 'string' || data.fileName.trim() === '') {
-    aiFilename = await suggestFilename(data.docType, docGeneratorAI);
+    aiFilename = await suggestFilename(data.docType, llmService);
   }
 
   // Validate the suggested or provided filename
@@ -39,13 +36,17 @@ export async function generateDocument(data: { docType: any; fileName?: any }): 
       // Ask AI which files are relevant for documentation
       const sys = `You are an AI assistant that helps users create project documentation files based on the project files and contents. \nThe output should be in markdown format. Do not include code fences or explanations, just the documentation. \nFirst, select ALL the relevant files from this list for generating documentation for ${fileName}. You need to select as many files as needed but be concise.\nAlways include project metadata and README/config files if available. Return only a JSON array of file paths, no explanation.`;
       let relevantFiles = [];
-      docGeneratorAI.setCustomSystemMessage(sys);
       try {
-        const aiResponse = await docGeneratorAI.chat(
-          `Here is the list of files in the workspace:\n${fileList.join('\n')}\n\nWhich files are most relevant for generating documentation for ${fileName}? Always include project metadata and README/config files if available. Return only a JSON array of file paths.`
-        );
+        const prompt = `Here is the list of files in the workspace:\n${fileList.join('\n')}\n\nWhich files are most relevant for generating documentation for ${fileName}? Always include project metadata and README/config files if available. Return only a JSON array of file paths.`;
+        const aiSuggestRelatedFile = await llmService.trackedChat({
+          sessionId: 'read_files',
+          systemMessage: sys,
+          prompt: prompt,
+          task: 'read_files',
+          forceNew: true
+        });
         // Try to parse the AI response as JSON array
-        const match = aiResponse?.match(/\[.*\]/s);
+        const match = aiSuggestRelatedFile?.match(/\[.*\]/s);
         if (match) {
           relevantFiles = JSON.parse(match[0]);
         }
@@ -66,7 +67,7 @@ export async function generateDocument(data: { docType: any; fileName?: any }): 
       }
 
       // Generate the documentation using the general thread session
-      let aiContent = '';
+      let aiGeneratedDoc = '';
       try {
         const sys2 = `\nYou are an impeccable and meticulous technical documentation specialist. 
                 Your purpose is to produce clear, accurate, and professional technical documents based on the given content.
@@ -89,19 +90,25 @@ export async function generateDocument(data: { docType: any; fileName?: any }): 
                 Do not include code fences, explanations, or conversational text.`;
 
         const filesAndContentsString = filesAndContents.map(f => `File: ${f.path}\n${f.content}`).join('\n\n');
-        docGeneratorAI.setCustomSystemMessage(sys2);
-        aiContent = await docGeneratorAI.chat(`Generate a starter documentation for ${fileName} based on this project. Refer to the relevant workspace files and contents:\n${filesAndContentsString}. If you are unable to generate the file based on information given, do not make up generic content yourself`) || '';
-  // AI doc generation response captured
-        aiContent = aiContent.replace(/^```markdown\s*/i, '').replace(/^\*\*\*markdown\s*/i, '').replace(/```$/g, '').trim();
+        const prompt2 = (`Generate a starter documentation for ${fileName} based on this project. Refer to the relevant workspace files and contents:\n${filesAndContentsString}. If you are unable to generate the file based on information given, do not make up generic content yourself`) || '';;
+        aiGeneratedDoc = (await llmService.request({
+          type: 'generate_doc',
+          title: fileName,
+          sourceContent: filesAndContentsString,
+          systemMessage: sys2
+        })).content;
+
+        // AI doc generation response captured
+        aiGeneratedDoc = aiGeneratedDoc.replace(/^```markdown\s*/i, '').replace(/^\*\*\*markdown\s*/i, '').replace(/```$/g, '').trim();
       } catch (err) {
-        aiContent = `# ${data.docType}\n\nDescribe your documentation needs here.`;
+        aiGeneratedDoc = `# ${data.docType}\n\nDescribe your documentation needs here.`;
       }
       const fileUri = vscode.Uri.joinPath(wsUri, fileName);
       try {
-        await vscode.workspace.fs.writeFile(fileUri, Buffer.from(aiContent, 'utf8'));
+        await vscode.workspace.fs.writeFile(fileUri, Buffer.from(aiGeneratedDoc, 'utf8'));
         // Trigger a fresh scan to update modal choices
         await vscode.commands.executeCommand('naruhodocs.scanDocs');
-  // scanDocs triggered after doc creation
+        // scanDocs triggered after doc creation
 
         return { type: 'addMessage', sender: 'System', message: `Document created: ${fileUri.fsPath}` };
 
@@ -114,11 +121,14 @@ export async function generateDocument(data: { docType: any; fileName?: any }): 
     return { type: 'addMessage', sender: 'System', message: 'No workspace folder open.' };
   }
 }
-async function suggestFilename(docType: string, docGeneratorAI: ChatSession): Promise<string> {
+async function suggestFilename(docType: string, llmService: LLMService): Promise<string> {
   let aiFilename = '';
   // Attempting AI filename suggestion for docType: ${docType}
-  try {
-    aiFilename = await docGeneratorAI.chat(`Suggest a professional, concise, and conventional filename (with .md extension) for a documentation file of type: "${docType}". Only return the filename, no explanation.`) || '';
+  try {    
+    aiFilename = (await llmService.request({
+      type: 'chat', 
+      prompt: `Suggest a concise, filesystem-friendly filename (with .md extension) for a ${docType} documentation file. Respond with only the filename, no explanation.`,
+    })).content;
     aiFilename = aiFilename.trim().replace(/\s+/g, '_').toUpperCase();
   } catch (e) {
     aiFilename = '';
