@@ -766,6 +766,20 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
         })
     );
 
+	context.subscriptions.push(
+        vscode.commands.registerCommand('naruhodocs.ignoreAllIssues', async () => {
+            const editor = vscode.window.activeTextEditor;
+            if (editor) {
+                const docUri = editor.document.uri;
+                grammarDiagnostics.delete(docUri);
+                markdownDiagnostics.delete(docUri);
+                vscode.window.showInformationMessage('All current grammar and markdown issues have been ignored for this file.');
+            } else {
+                vscode.window.showInformationMessage('No active editor to clear issues from.');
+            }
+        })
+    );
+
 	// Lint on save for markdown files
 	context.subscriptions.push(
 		vscode.workspace.onDidSaveTextDocument(async (document) => {

@@ -32,6 +32,12 @@ export class SummaryCodeLensProvider implements vscode.CodeLensProvider {
             arguments: []
         }));
 
+        codeLenses.push(new vscode.CodeLens(range, {
+            command: 'naruhodocs.ignoreAllIssues',
+            title: '🚫 Ignore All Issues',
+            arguments: []
+        }));
+
         return codeLenses;
     }
 }
