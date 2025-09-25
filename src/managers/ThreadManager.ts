@@ -22,6 +22,34 @@ export class ThreadManager {
         return LLMService.getOrCreate(this.llmManager);
     }
 
+    /** Append contextual user+bot messages to a thread's history and persist. */
+    public async appendContext(sessionId: string, userMessage: string, botResponse: string): Promise<void> {
+        const session = this.sessions.get(sessionId);
+        if (!session) { return; }
+        try {
+            const current = session.getHistory();
+            const serialized = current.map((m: any) => {
+                const directType = (m as any).type || (typeof (m as any)._getType === 'function' ? (m as any)._getType() : undefined);
+                let role = directType || 'unknown';
+                if (role !== 'human' && role !== 'ai') {
+                    const ctor = m.constructor?.name?.toLowerCase?.() || '';
+                    if (ctor.includes('human')) { role = 'human'; }
+                    else if (ctor.includes('ai')) { role = 'ai'; }
+                }
+                if (role === 'user') { role = 'human'; }
+                if (role === 'assistant' || role === 'bot') { role = 'ai'; }
+                const text = (m as any).text || (typeof m.content === 'string' ? m.content : JSON.stringify(m.content));
+                return { type: role, text };
+            });
+            serialized.push({ type: 'human', text: userMessage });
+            serialized.push({ type: 'ai', text: botResponse });
+            session.setHistory(serialized as any);
+            await this.context.workspaceState.update(`thread-history-${sessionId}`, serialized);
+        } catch (e) {
+            console.warn('[ThreadManager] appendContext failed for', sessionId, e);
+        }
+    }
+
     // Initialize the general-purpose thread
     public async initializeGeneralThread(): Promise<void> {
         await this.llmManager?.initializeFromConfig();

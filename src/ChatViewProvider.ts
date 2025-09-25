@@ -633,9 +633,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		if (!session) { return; }
 		try {
 			const raw = session.getHistory();
-			if (this.context.extensionMode === vscode.ExtensionMode.Development) {
-				console.log('[NaruhoDocs][History] Raw history length:', raw.length, 'for session', activeId);
-			}
+			if (this._isVerbose()) { console.log('[NaruhoDocs][History] Raw history length:', raw.length, 'for session', activeId); }
 			const normalized = raw.map((msg: any) => {
 				let role: string | undefined = msg.type || (typeof msg._getType === 'function' ? msg._getType() : undefined);
 				if (!role || role === 'unknown') {
@@ -649,14 +647,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 				const text = typeof msg.content === 'string' ? msg.content : msg.text || JSON.stringify(msg.content);
 				return { sender, message: text };
 			});
-			if (this.context.extensionMode === vscode.ExtensionMode.Development) {
-				console.log('[NaruhoDocs][History] Normalized history length:', normalized.length);
-			}
+			if (this._isVerbose()) { console.log('[NaruhoDocs][History] Normalized history length:', normalized.length); }
 			// Fallback: if raw has items but normalized becomes empty (unexpected), replay manually
 			if (raw.length > 0 && normalized.length === 0) {
-				if (this.context.extensionMode === vscode.ExtensionMode.Development) {
-					console.warn('[NaruhoDocs][History] Normalized empty; falling back to manual replay');
-				}
+				if (this._isVerbose()) { console.warn('[NaruhoDocs][History] Normalized empty; falling back to manual replay'); }
 				this._view.webview.postMessage({ type: 'clearMessages' });
 				for (const msg of raw) {
 					let role: string | undefined = (msg as any).type || (typeof (msg as any)._getType === 'function' ? (msg as any)._getType() : undefined);
@@ -677,6 +671,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		} catch (e) {
 			console.warn('Failed to send full history:', e);
 		}
+	}
+
+	private _isVerbose(): boolean {
+		try {
+			if (this.context.extensionMode === vscode.ExtensionMode.Development) { return true; }
+			const cfg = vscode.workspace.getConfiguration('naruhodocs');
+			return !!cfg.get<boolean>('logging.verbose');
+		} catch { return false; }
 	}
 
 
@@ -771,55 +773,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 	 * This allows other components to add relevant context to the chat history
 	 */
 	public addContextToActiveSession(userMessage: string, botResponse: string): void {
-		try {
-			const activeThreadId = this.threadManager.getActiveThreadId();
-			// Adding context to active session verbose log removed
-			
-			if (!activeThreadId) {
-				console.warn('No active thread available to add context');
-				return;
-			}
-
-			const session = this.threadManager.getSession(activeThreadId);
-			if (!session) {
-				console.warn('No active session found to add context');
-				return;
-			}
-
-			// Get current history and build new history including the context
-			const currentHistory = session.getHistory();
-			// Current history length before adding context
-			
-			// Build the new history array with the added context
-			// Convert existing history to the format expected by setHistory
-			const existingHistoryFormatted = currentHistory.map((msg: any) => ({
-				type: msg instanceof HumanMessage ? 'human' : 'ai',
-				text: msg.content as string
-			}));
-			
-			// Add new context messages
-			const newContextMessages = [
-				{ type: 'human', text: userMessage },
-				{ type: 'ai', text: botResponse }
-			];
-			
-			const completeHistory = [...existingHistoryFormatted, ...newContextMessages];
-			
-			// Update the session history using the proper method
-			session.setHistory(completeHistory as any);
-			
-			// Verify the update worked
-			const updatedHistory = session.getHistory();
-			// Updated history length after adding context
-			
-			// Update the workspace state with the serialized history
-			this.context.workspaceState.update(`thread-history-${activeThreadId}`, completeHistory);
-			
-			// Successfully added context to AI session history
-			
-		} catch (error) {
-			console.error('Error adding context to active session:', error);
-		}
+		const activeThreadId = this.threadManager.getActiveThreadId();
+		if (!activeThreadId) { return; }
+		// Delegate to ThreadManager for centralized persistence
+		this.threadManager.appendContext(activeThreadId, userMessage, botResponse);
 	}
 
 	private openDiagramInFullWindow(mermaidCode: string, diagramId: string, title: string): void {
