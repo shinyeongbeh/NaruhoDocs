@@ -5,7 +5,7 @@ import * as dotenv from 'dotenv';
 import * as path from 'path';
 import { SystemMessages } from './SystemMessages';
 import { LocalMemoryVectorStore } from './rag/vectorstore/memory';
-import { checkGrammar, runAISecondPass, GrammarIssue} from './external-tools/LanguageTool-integration';
+import { checkGrammar, GrammarIssue} from './external-tools/LanguageTool-integration';
 import { lintMarkdownDocument } from './external-tools/markdownLinter';
 import { LLMProviderManager } from './llm-providers/manager';
 import { ModelConfigManager } from './managers/ModelConfigManager.js';
@@ -575,97 +575,128 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 	const grammarDiagnostics = vscode.languages.createDiagnosticCollection('naruhodocs-grammar');
 	context.subscriptions.push(grammarDiagnostics);
 
+	const runGrammarCheck = async (document: vscode.TextDocument) => {
+        const fileName = document.fileName.toLowerCase();
+        if (!(fileName.endsWith('.md') || fileName.endsWith('.txt'))) {
+            return; // Silently ignore non-doc files
+        }
+
+        try {
+            const text = document.getText();
+            const issues = await checkGrammar(text, 'en-US');
+            
+            if (issues.length === 0) {
+                grammarDiagnostics.delete(document.uri);
+                return;
+            }
+
+            const diagnostics: vscode.Diagnostic[] = issues.map(issue => {
+                const start = document.positionAt(issue.offset);
+                const end = document.positionAt(issue.offset + issue.length);
+                const range = new vscode.Range(start, end);
+                const message = `${issue.message}${issue.replacements.length ? ` (Suggestion: ${issue.replacements.join(', ')})` : ''}`;
+                const diagnostic = new vscode.Diagnostic(range, message, vscode.DiagnosticSeverity.Warning);
+                diagnostic.source = 'naruhodocs-grammar'; // Identify the source
+                // Store original issue data for the CodeActionProvider
+                (diagnostic as any)._naruhodocs = { issue };
+                return diagnostic;
+            });
+
+            grammarDiagnostics.set(document.uri, diagnostics);
+
+        } catch (e: any) {
+            vscode.window.showErrorMessage('Grammar check failed: ' + e.message);
+        }
+    };
+
 	context.subscriptions.push(
         vscode.commands.registerCommand('naruhodocs.checkGrammar', async () => {
             const editor = vscode.window.activeTextEditor;
-            if (!editor) {
-                vscode.window.showInformationMessage('No active editor.');
-                return;
+            if (editor) {
+                await runGrammarCheck(editor.document);
+                vscode.window.showInformationMessage('Grammar check complete.');
+            } else {
+                vscode.window.showInformationMessage('No active editor to check.');
             }
-            const document = editor.document;
-            const fileName = document.fileName.toLowerCase();
-            if (!(fileName.endsWith('.md') || fileName.endsWith('.txt'))) {
-                vscode.window.showInformationMessage('Grammar checking is only available for document files (.md, .txt).');
-                return;
-            }
-
-            await vscode.window.withProgress({
-                location: vscode.ProgressLocation.Notification,
-                title: "Running AI-Powered Grammar Check...",
-                cancellable: false
-            }, async (progress) => {
-                progress.report({ increment: 0, message: "Running initial grammar check..." });
-                const text = document.getText();
-                let initialIssues: GrammarIssue[] = [];
-                try {
-                    initialIssues = await checkGrammar(text, 'en-US');
-                } catch (e: any) {
-                    vscode.window.showErrorMessage('Initial grammar check failed: ' + e.message);
-                    return;
-                }
-
-                if (initialIssues.length === 0) {
-                    grammarDiagnostics.delete(document.uri);
-                    vscode.window.showInformationMessage('No grammar issues found!');
-                    return;
-                }
-
-                progress.report({ increment: 40, message: "Refining issues with AI..." });
-                try {
-                    const aiFilteredJson = await runAISecondPass(llmService, text, initialIssues);
-                    let validMessages: Set<string>;
-                    try {
-                        validMessages = new Set(JSON.parse(aiFilteredJson));
-                    } catch (jsonError: any) {
-                        // If JSON parsing fails, show the raw AI output for debugging and fallback to initial issues.
-                        vscode.window.showErrorMessage(`AI refinement failed due to invalid JSON. Error: ${jsonError.message}. Raw AI Output: "${aiFilteredJson}"`);
-                        throw new Error('Invalid JSON response from AI'); // Re-throw to trigger the outer catch block
-                    }
-                    const refinedIssues = initialIssues.filter(issue => validMessages.has(issue.message));
-
-                    progress.report({ increment: 90, message: "Displaying refined issues..." });
-                    grammarDiagnostics.delete(document.uri);
-
-                    if (refinedIssues.length === 0) {
-                        vscode.window.showInformationMessage('AI review complete. No significant issues found!');
-                        return;
-                    }
-
-                    const diagnostics: vscode.Diagnostic[] = refinedIssues.map(issue => {
-                        const start = document.positionAt(issue.offset);
-                        const end = document.positionAt(issue.offset + issue.length);
-                        const range = new vscode.Range(start, end);
-                        const message = `${issue.message}${issue.replacements.length ? ' Suggestion: ' + issue.replacements.join(', ') : ''}`;
-                        return new vscode.Diagnostic(range, message, vscode.DiagnosticSeverity.Warning);
-                    });
-
-                    grammarDiagnostics.set(document.uri, diagnostics);
-                    vscode.window.showInformationMessage(`AI review complete. Found ${diagnostics.length} valid issue(s).`);
-
-                } catch (e: any) {
-                    vscode.window.showErrorMessage('AI refinement failed: ' + e.message);
-                    // Fallback to showing initial issues if AI fails
-                    const diagnostics: vscode.Diagnostic[] = initialIssues.map(issue => {
-                        const start = document.positionAt(issue.offset);
-                        const end = document.positionAt(issue.offset + issue.length);
-                        const range = new vscode.Range(start, end);
-                        const message = `${issue.message}${issue.replacements.length ? ' Suggestion: ' + issue.replacements.join(', ') : ''}`;
-                        return new vscode.Diagnostic(range, message, vscode.DiagnosticSeverity.Warning);
-                    });
-                    grammarDiagnostics.set(document.uri, diagnostics);
-                }
-            });
         })
     );
 
-	// Optionally clear diagnostics when document is closed
+    context.subscriptions.push(
+        vscode.commands.registerCommand('naruhodocs.ignoreGrammarIssue', async (docUri: vscode.Uri, diagnostic: vscode.Diagnostic) => {
+            const currentDiagnostics = grammarDiagnostics.get(docUri) || [];
+            const newDiagnostics = currentDiagnostics.filter(d => d !== diagnostic);
+            grammarDiagnostics.set(docUri, newDiagnostics);
+        })
+    );
+
+    // New command to ignore all grammar issues of the same type (ruleId)
+    context.subscriptions.push(
+        vscode.commands.registerCommand('naruhodocs.ignoreAllGrammarIssuesOfType', async (docUri: vscode.Uri, ruleId: string) => {
+            const currentDiagnostics = grammarDiagnostics.get(docUri) || [];
+            if (!ruleId) { return; }
+
+            const newDiagnostics = currentDiagnostics.filter(d => {
+                const issueRuleId = (d as any)._naruhodocs?.issue?.ruleId;
+                return issueRuleId !== ruleId;
+            });
+
+            grammarDiagnostics.set(docUri, newDiagnostics);
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.languages.registerCodeActionsProvider(['markdown', 'plaintext'], {
+            provideCodeActions(document: vscode.TextDocument, range: vscode.Range | vscode.Selection, context: vscode.CodeActionContext, token: vscode.CancellationToken): vscode.ProviderResult<(vscode.Command | vscode.CodeAction)[]> {
+                const actions: vscode.CodeAction[] = [];
+                const relevantDiagnostics = context.diagnostics.filter(
+                    diag => diag.source === 'naruhodocs-grammar' && diag.range.intersection(range)
+                );
+
+                for (const diagnostic of relevantDiagnostics) {
+                    const issue = (diagnostic as any)._naruhodocs?.issue as GrammarIssue | undefined;
+
+                    const ignoreAction = new vscode.CodeAction('Ignore this issue', vscode.CodeActionKind.QuickFix);
+                    ignoreAction.command = {
+                        command: 'naruhodocs.ignoreGrammarIssue',
+                        title: 'Ignore Grammar Issue',
+                        arguments: [document.uri, diagnostic]
+                    };
+                    ignoreAction.diagnostics = [diagnostic];
+                    actions.push(ignoreAction);
+
+                    // Action to ignore all issues of the same type
+                    if (issue?.ruleId) {
+                        const ignoreAllAction = new vscode.CodeAction(`Ignore all issues of type '${issue.ruleId}'`, vscode.CodeActionKind.QuickFix);
+                        ignoreAllAction.command = {
+                            command: 'naruhodocs.ignoreAllGrammarIssuesOfType',
+                            title: `Ignore All '${issue.ruleId}' Issues`,
+                            arguments: [document.uri, issue.ruleId]
+                        };
+                        ignoreAllAction.diagnostics = [diagnostic];
+                        actions.push(ignoreAllAction);
+                    }
+                }
+                return actions;
+            }
+        })
+    );
+
+    // Optionally clear diagnostics when document is closed
 	context.subscriptions.push(
 		vscode.workspace.onDidCloseTextDocument(doc => {
 			grammarDiagnostics.delete(doc.uri);
 		})
 	);
 
-	// (Removed early general thread creation; now happens after provider init)
+	context.subscriptions.push(
+        vscode.workspace.onDidSaveTextDocument(async (document) => {
+            const config = vscode.workspace.getConfiguration('naruhodocs');
+            const checkOnSave = config.get<boolean>('grammar.checkOnSave', false);
+            if (checkOnSave) {
+                await runGrammarCheck(document);
+            }
+        })
+    );
 
 	// Markdownlint diagnostics
 	const markdownDiagnostics = vscode.languages.createDiagnosticCollection('naruhodocs-markdown');
