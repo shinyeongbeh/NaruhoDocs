@@ -700,7 +700,31 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 
 	// Markdownlint diagnostics
 	const markdownDiagnostics = vscode.languages.createDiagnosticCollection('naruhodocs-markdown');
-	context.subscriptions.push(markdownDiagnostics);
+    context.subscriptions.push(markdownDiagnostics);
+
+	const lintAndReport = async (document: vscode.TextDocument) => {
+		const errors = await lintMarkdownDocument(document);
+		if (!Array.isArray(errors)) {
+			markdownDiagnostics.set(document.uri, []);
+			return;
+		}
+		const diagnostics: vscode.Diagnostic[] = errors.map(error => {
+			const line = error.lineNumber - 1;
+			// Default to the full line if no column is specified
+			const startColumn = (error.errorRange ? error.errorRange[0] : 1) - 1;
+			const endColumn = error.errorRange ? startColumn + error.errorRange[1] : 100;
+			const range = new vscode.Range(line, startColumn, line, endColumn);
+			
+			const ruleName = error.ruleNames[0];
+			const message = `${error.ruleDescription} (${ruleName})`;
+			const diagnostic = new vscode.Diagnostic(range, message, vscode.DiagnosticSeverity.Warning);
+			diagnostic.source = 'naruhodocs-markdown';
+			// Attach rule name for the CodeActionProvider
+			(diagnostic as any)._naruhodocs = { ruleName: ruleName };
+			return diagnostic;
+		});
+		markdownDiagnostics.set(document.uri, diagnostics);
+	};
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand('naruhodocs.lintMarkdown', async () => {
@@ -719,6 +743,29 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 		})
 	);
 
+	context.subscriptions.push(
+        vscode.commands.registerCommand('naruhodocs.ignoreMarkdownIssue', async (docUri: vscode.Uri, diagnostic: vscode.Diagnostic) => {
+            const currentDiagnostics = markdownDiagnostics.get(docUri) || [];
+            const newDiagnostics = currentDiagnostics.filter(d => d !== diagnostic);
+            markdownDiagnostics.set(docUri, newDiagnostics);
+        })
+    );
+
+    // Command to ignore all markdown issues of the same type (ruleName)
+    context.subscriptions.push(
+        vscode.commands.registerCommand('naruhodocs.ignoreAllMarkdownRules', async (docUri: vscode.Uri, ruleName: string) => {
+            const currentDiagnostics = markdownDiagnostics.get(docUri) || [];
+            if (!ruleName) { return; }
+
+            const newDiagnostics = currentDiagnostics.filter(d => {
+                const issueRuleName = (d as any)._naruhodocs?.ruleName;
+                return issueRuleName !== ruleName;
+            });
+
+            markdownDiagnostics.set(docUri, newDiagnostics);
+        })
+    );
+
 	// Lint on save for markdown files
 	context.subscriptions.push(
 		vscode.workspace.onDidSaveTextDocument(async (document) => {
@@ -730,27 +777,44 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 
 	// Register a code action provider for markdownlint quick fixes (placeholder)
 	context.subscriptions.push(
-		vscode.languages.registerCodeActionsProvider('markdown', {
-			provideCodeActions(document, range, context, token) {
-				// Placeholder: In a real implementation, you would check diagnostics and offer fixes
-				// For now, just show a sample quick fix for demonstration
-				const fixes: vscode.CodeAction[] = [];
-				for (const diag of context.diagnostics) {
-					if ((diag as any).ruleName === 'MD009') { // Example: No trailing spaces
-						const fix = new vscode.CodeAction('Remove trailing spaces', vscode.CodeActionKind.QuickFix);
-						fix.edit = new vscode.WorkspaceEdit();
-						// Remove trailing spaces in the affected line
-						const line = document.lineAt(range.start.line);
-						const trimmed = line.text.replace(/\s+$/g, '');
-						fix.edit.replace(document.uri, line.range, trimmed);
-						fix.diagnostics = [diag];
-						fixes.push(fix);
-					}
-				}
-				return fixes;
-			}
-		})
-	);
+        vscode.languages.registerCodeActionsProvider('markdown', {
+            provideCodeActions(document: vscode.TextDocument, range: vscode.Range | vscode.Selection, context: vscode.CodeActionContext, token: vscode.CancellationToken): vscode.ProviderResult<(vscode.Command | vscode.CodeAction)[]> {
+                const actions: vscode.CodeAction[] = [];
+                const relevantDiagnostics = context.diagnostics.filter(
+                    diag => diag.source === 'naruhodocs-markdown' && diag.range.intersection(range)
+                );
+
+                for (const diagnostic of relevantDiagnostics) {
+                    const ruleName = (diagnostic as any)._naruhodocs?.ruleName as string | undefined;
+
+                    // Action to ignore the single issue
+                    const ignoreAction = new vscode.CodeAction('Ignore this issue', vscode.CodeActionKind.QuickFix);
+                    ignoreAction.command = {
+                        command: 'naruhodocs.ignoreMarkdownIssue',
+                        title: 'Ignore Markdown Issue',
+                        arguments: [document.uri, diagnostic]
+                    };
+                    ignoreAction.diagnostics = [diagnostic];
+                    actions.push(ignoreAction);
+
+                    // Action to ignore all issues of the same type
+                    if (ruleName) {
+                        const ignoreAllAction = new vscode.CodeAction(`Ignore all issues of type '${ruleName}'`, vscode.CodeActionKind.QuickFix);
+                        ignoreAllAction.command = {
+                            command: 'naruhodocs.ignoreAllMarkdownRules',
+                            title: `Ignore All '${ruleName}' Issues`,
+                            arguments: [document.uri, ruleName]
+                        };
+                        ignoreAllAction.diagnostics = [diagnostic];
+                        actions.push(ignoreAllAction);
+                    }
+                }
+                return actions;
+            }
+        }, {
+            providedCodeActionKinds: [vscode.CodeActionKind.QuickFix]
+        })
+    );
 	// Optionally clear markdownlint diagnostics when document is closed
 	context.subscriptions.push(
 		vscode.workspace.onDidCloseTextDocument(doc => {
@@ -764,40 +828,6 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 	lintStatusBar.tooltip = 'Markdownlint: No issues';
 	lintStatusBar.hide();
 	context.subscriptions.push(lintStatusBar);
-	// Helper to lint and show diagnostics (used by command and on save)
-	async function lintAndReport(document: vscode.TextDocument) {
-		if (!document.fileName.toLowerCase().endsWith('.md')) { return; }
-		let issues: any[] = [];
-		try {
-			issues = await lintMarkdownDocument(document) as any[];
-		} catch (e: any) {
-			vscode.window.showErrorMessage('Markdown lint failed: ' + e.message);
-			lintStatusBar.text = '$(error) Markdownlint';
-			lintStatusBar.tooltip = 'Markdownlint: Error';
-			lintStatusBar.show();
-			return;
-		}
-		markdownDiagnostics.delete(document.uri);
-		if (!issues || issues.length === 0) {
-			lintStatusBar.text = '$(check) Markdownlint';
-			lintStatusBar.tooltip = 'Markdownlint: No issues';
-			lintStatusBar.show();
-			return;
-		}
-		const diagnostics: vscode.Diagnostic[] = issues.map(issue => {
-			const start = new vscode.Position((issue.lineNumber || 1) - 1, 0);
-			const end = new vscode.Position((issue.lineNumber || 1) - 1, 1000);
-			const message = `${issue.ruleNames ? issue.ruleNames.join(', ') + ': ' : ''}${issue.ruleDescription || issue.ruleName}` + (issue.errorDetail ? ` [${issue.errorDetail}]` : '');
-			const diag = new vscode.Diagnostic(new vscode.Range(start, end), message, vscode.DiagnosticSeverity.Warning);
-			// Attach rule name for quick fix
-			(diag as any).ruleName = issue.ruleNames ? issue.ruleNames[0] : '';
-			return diag;
-		});
-		markdownDiagnostics.set(document.uri, diagnostics);
-		lintStatusBar.text = `$(alert) Markdownlint: ${issues.length} issue${issues.length > 1 ? 's' : ''}`;
-		lintStatusBar.tooltip = `Markdownlint: ${issues.length} issue${issues.length > 1 ? 's' : ''}`;
-		lintStatusBar.show();
-	}
 
 	const gitHeadWatcher = vscode.workspace.createFileSystemWatcher('**/.git/logs/HEAD');
 	context.subscriptions.push(gitHeadWatcher);
