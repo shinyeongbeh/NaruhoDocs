@@ -16,6 +16,11 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 ### Changed
 - Configuration changes to LLM settings now invalidate cached sessions to ensure updated models take effect.
 
+### Fixed
+- Visualization sidebar now persists the last rendered diagram across sidebar close/reopen via caching & readiness handshake.
+- General chat history now reliably replays after the chat view is closed and reopened (added explicit resend on subsequent `chatViewReady` events to avoid blank history in the general thread).
+- General thread history persistence: restored previously sent messages now hydrate underlying session (fixes empty raw history / flicker on reopen when only general thread affected).
+
 ### Planned
 - True token accounting via provider metadata.
 - Streaming responses for long generations.

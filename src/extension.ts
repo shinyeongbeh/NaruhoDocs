@@ -12,6 +12,7 @@ import { ModelConfigManager } from './managers/ModelConfigManager.js';
 import { LLMService } from './managers/LLMService';
 import { LocalProvider } from './llm-providers/local';
 import { VisualizationProvider } from './VisualizationProvider';
+import { VisualizationViewProvider } from './VisualizationViewProvider';
 import { buildVectorDB } from './rag/vectorstore/chunking_buildVectorDB';
 import { EmbeddingConfigManager } from './managers/EmbeddingConfigManager';
 import { HuggingFaceEmbeddings } from './rag/embeddings/huggingfaceCloud';
@@ -163,6 +164,14 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// Initialize Visualization Provider
 	const visualizationProvider = new VisualizationProvider(context, llmManager);
+
+	// Register the visualization sidebar view (if not already)
+	const visualizationViewProvider = new VisualizationViewProvider(context.extensionUri, visualizationProvider);
+	context.subscriptions.push(
+		vscode.window.registerWebviewViewProvider(VisualizationViewProvider.viewType, visualizationViewProvider)
+	);
+	// Link back so visualization provider can send results to view
+	visualizationProvider.setVisualizationView(visualizationViewProvider);
 
 	// Initialize the LLM provider and then create initial threads only after provider is ready
 	(async () => {
@@ -327,11 +336,29 @@ export function activate(context: vscode.ExtensionContext) {
 				systemMessage: 'You produce concise technical summaries with key points and clarity.'
 			});
 			// Show summary in a new ephemeral document
+			const summaryContent = `# Summary of ${path.basename(doc.fileName)}\n\n${resp.content}`;
 			const summaryDoc = await vscode.workspace.openTextDocument({
-				content: `# Summary of ${path.basename(doc.fileName)}\n\n${resp.content}`,
+				content: summaryContent,
 				language: 'markdown'
 			});
-			await vscode.window.showTextDocument(summaryDoc, { preview: true });
+			await vscode.window.showTextDocument(summaryDoc, { preview: true, viewColumn: vscode.ViewColumn.Beside });
+			// Provide save option similar to translation command
+			vscode.window.showInformationMessage('Summary ready. Save as new file?', 'Save').then(async sel => {
+				if (sel === 'Save') {
+					const ws = vscode.workspace.workspaceFolders?.[0];
+					if (ws) {
+						try {
+							const targetUri = vscode.Uri.joinPath(ws.uri, `${path.basename(doc.fileName).replace(/\.[^.]+$/, '')}.summary.md`);
+							await vscode.workspace.fs.writeFile(targetUri, Buffer.from(summaryContent, 'utf8'));
+							vscode.window.showInformationMessage(`Saved summary to ${targetUri.fsPath}`);
+						} catch (e) {
+							vscode.window.showErrorMessage('Failed to save summary: ' + (e instanceof Error ? e.message : String(e)));
+						}
+					} else {
+						vscode.window.showWarningMessage('No workspace folder available to save summary.');
+					}
+				}
+			});
 		})
 	);
 

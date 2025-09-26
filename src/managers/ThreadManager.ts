@@ -22,6 +22,34 @@ export class ThreadManager {
         return LLMService.getOrCreate(this.llmManager);
     }
 
+    /** Append contextual user+bot messages to a thread's history and persist. */
+    public async appendContext(sessionId: string, userMessage: string, botResponse: string): Promise<void> {
+        const session = this.sessions.get(sessionId);
+        if (!session) { return; }
+        try {
+            const current = session.getHistory();
+            const serialized = current.map((m: any) => {
+                const directType = (m as any).type || (typeof (m as any)._getType === 'function' ? (m as any)._getType() : undefined);
+                let role = directType || 'unknown';
+                if (role !== 'human' && role !== 'ai') {
+                    const ctor = m.constructor?.name?.toLowerCase?.() || '';
+                    if (ctor.includes('human')) { role = 'human'; }
+                    else if (ctor.includes('ai')) { role = 'ai'; }
+                }
+                if (role === 'user') { role = 'human'; }
+                if (role === 'assistant' || role === 'bot') { role = 'ai'; }
+                const text = (m as any).text || (typeof m.content === 'string' ? m.content : JSON.stringify(m.content));
+                return { type: role, text };
+            });
+            serialized.push({ type: 'human', text: userMessage });
+            serialized.push({ type: 'ai', text: botResponse });
+            session.setHistory(serialized as any);
+            await this.context.workspaceState.update(`thread-history-${sessionId}`, serialized);
+        } catch (e) {
+            console.warn('[ThreadManager] appendContext failed for', sessionId, e);
+        }
+    }
+
     // Initialize the general-purpose thread
     public async initializeGeneralThread(): Promise<void> {
         await this.llmManager?.initializeFromConfig();
@@ -32,6 +60,18 @@ export class ThreadManager {
 
         // If a session was already restored from history, do not create a new one.
         if (this.sessions.has(generalThreadId)) {
+            // Ensure title present (older persisted data may have missed it) and hydrate history if empty.
+            if (!this.threadTitles.has(generalThreadId)) {
+                this.threadTitles.set(generalThreadId, generalThreadTitle);
+            }
+            const existing = this.sessions.get(generalThreadId);
+            if (existing && existing.getHistory().length === 0) {
+                const savedHistory = this.context.workspaceState.get<any[]>(`thread-history-${generalThreadId}`) || [];
+                if (Array.isArray(savedHistory) && savedHistory.length > 0) {
+                    try { existing.setHistory(savedHistory as any); } catch {/* ignore */}
+                }
+            }
+            this.activeThreadId = this.activeThreadId || generalThreadId;
             return;
         }
 
@@ -222,9 +262,7 @@ export class ThreadManager {
         for (const key of keys) {
             if (key.startsWith('thread-history-')) {
                 const sessionId = key.replace('thread-history-', '');
-                // if (sessionId === 'naruhodocs-general-thread') {
-                //     continue;
-                // }
+                // Include general thread in restoration just like others; we'll ensure proper title & system message.
                 let documentText = '';
                 try {
                     const uri = vscode.Uri.parse(sessionId);
@@ -236,6 +274,26 @@ export class ThreadManager {
             }
         }
         await Promise.all(creationPromises);
+
+        // Post-pass: ensure general thread title/system message & hydrate if necessary
+        const generalId = 'naruhodocs-general-thread';
+        const savedGeneral = this.context.workspaceState.get<any[]>(`thread-history-${generalId}`);
+        if (this.sessions.has(generalId)) {
+            // Ensure canonical title & system message mapping
+            this.threadTitles.set(generalId, 'General Purpose');
+            this.systemMessages.set(generalId, SystemMessages.GENERAL_PURPOSE);
+            const sess = this.sessions.get(generalId);
+            if (sess && sess.getHistory().length === 0 && Array.isArray(savedGeneral) && savedGeneral.length > 0) {
+                try { sess.setHistory(savedGeneral as any); } catch { /* ignore */ }
+            }
+        } else if (Array.isArray(savedGeneral) && savedGeneral.length > 0) {
+            // Edge case: general thread history exists but session not created yet (e.g., provider init late). Create fallback session now.
+            const fallbackSession = createChat({ apiKey: this.apiKey, maxHistoryMessages: 40, systemMessage: SystemMessages.GENERAL_PURPOSE });
+            try { fallbackSession.setHistory(savedGeneral as any); } catch { /* ignore */ }
+            this.sessions.set(generalId, fallbackSession);
+            this.threadTitles.set(generalId, 'General Purpose');
+            this.systemMessages.set(generalId, SystemMessages.GENERAL_PURPOSE);
+        }
         this.onThreadListChange?.();
     }
 

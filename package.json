@@ -231,6 +231,7 @@
     "@langchain/langgraph": "^0.4.9",
     "@langchain/ollama": "^0.2.4",
     "@langchain/openai": "^0.6.13",
+    "@huggingface/inference": "^4.0.5",
     "dotenv": "^16.4.5",
     "langchain": "^0.3.34",
     "markdown-it": "^14.1.0",
@@ -240,6 +241,7 @@
     "watch": "^1.0.2"
   },
   "overrides": {
-    "exec-sh": "^0.3.4"
+    "exec-sh": "^0.3.4",
+    "merge": "^2.1.1"
   }
 }
