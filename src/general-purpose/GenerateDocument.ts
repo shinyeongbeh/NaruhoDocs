@@ -128,7 +128,19 @@ export async function generateDocument(llmService: LLMService, data: { docType: 
         if (sel === 'Save') {
           const ws = vscode.workspace.workspaceFolders?.[0];
           if (ws) {
-            const targetUri = vscode.Uri.joinPath(ws.uri, `${fileName.toUpperCase()}.md`);
+            // Check if /docs folder exists, if so save there, otherwise save to root
+            const docsUri = vscode.Uri.joinPath(ws.uri, 'docs');
+            let targetFolder = ws.uri;
+            try {
+              const docsStat = await vscode.workspace.fs.stat(docsUri);
+              if (docsStat.type === vscode.FileType.Directory) {
+                targetFolder = docsUri;
+              }
+            } catch {
+              // /docs doesn't exist, use root folder
+            }
+            
+            const targetUri = vscode.Uri.joinPath(targetFolder, `${fileName.toUpperCase()}.md`);
             await vscode.workspace.fs.writeFile(targetUri, Buffer.from(aiGeneratedDoc, 'utf8'));
             vscode.window.showInformationMessage(`Saved document to ${targetUri.fsPath}`);
           }

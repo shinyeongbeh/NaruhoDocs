@@ -368,7 +368,19 @@ export function activate(context: vscode.ExtensionContext) {
 					const ws = vscode.workspace.workspaceFolders?.[0];
 					if (ws) {
 						try {
-							const targetUri = vscode.Uri.joinPath(ws.uri, `${path.basename(doc.fileName).replace(/\.[^.]+$/, '')}.summary.md`);
+							// Check if /docs folder exists, if so save there, otherwise save to root
+							const docsUri = vscode.Uri.joinPath(ws.uri, 'docs');
+							let targetFolder = ws.uri;
+							try {
+								const docsStat = await vscode.workspace.fs.stat(docsUri);
+								if (docsStat.type === vscode.FileType.Directory) {
+									targetFolder = docsUri;
+								}
+							} catch {
+								// /docs doesn't exist, use root folder
+							}
+							
+							const targetUri = vscode.Uri.joinPath(targetFolder, `${path.basename(doc.fileName).replace(/\.[^.]+$/, '')}.summary.md`);
 							await vscode.workspace.fs.writeFile(targetUri, Buffer.from(summaryContent, 'utf8'));
 							vscode.window.showInformationMessage(`Saved summary to ${targetUri.fsPath}`);
 						} catch (e) {
@@ -434,7 +446,19 @@ export function activate(context: vscode.ExtensionContext) {
 				if (sel === 'Save') {
 					const ws = vscode.workspace.workspaceFolders?.[0];
 					if (ws) {
-						const targetUri = vscode.Uri.joinPath(ws.uri, `${path.basename(doc.fileName).replace(/\.[^.]+$/, '')}.${picked.toLowerCase()}.md`);
+						// Check if /docs folder exists, if so save there, otherwise save to root
+						const docsUri = vscode.Uri.joinPath(ws.uri, 'docs');
+						let targetFolder = ws.uri;
+						try {
+							const docsStat = await vscode.workspace.fs.stat(docsUri);
+							if (docsStat.type === vscode.FileType.Directory) {
+								targetFolder = docsUri;
+							}
+						} catch {
+							// /docs doesn't exist, use root folder
+						}
+						
+						const targetUri = vscode.Uri.joinPath(targetFolder, `${path.basename(doc.fileName).replace(/\.[^.]+$/, '')}.${picked.toLowerCase()}.md`);
 						await vscode.workspace.fs.writeFile(targetUri, Buffer.from(resp.content, 'utf8'));
 						vscode.window.showInformationMessage(`Saved translation to ${targetUri.fsPath}`);
 					}

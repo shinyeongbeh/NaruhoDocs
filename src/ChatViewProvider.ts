@@ -452,11 +452,23 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 					break;
 				}
 				case 'createFile': {
-					// Create a default file in the workspace root
+					// Create a default file in the workspace root or docs folder
 					const wsFolders = vscode.workspace.workspaceFolders;
 					if (wsFolders && wsFolders.length > 0) {
 						const wsUri = wsFolders[0].uri;
-						const fileUri = vscode.Uri.joinPath(wsUri, 'NaruhoDocsFile.txt');
+						// Check if /docs folder exists, if so save there, otherwise save to root
+						const docsUri = vscode.Uri.joinPath(wsUri, 'docs');
+						let targetFolder = wsUri;
+						try {
+							const docsStat = await vscode.workspace.fs.stat(docsUri);
+							if (docsStat.type === vscode.FileType.Directory) {
+								targetFolder = docsUri;
+							}
+						} catch {
+							// /docs doesn't exist, use root folder
+						}
+						
+						const fileUri = vscode.Uri.joinPath(targetFolder, 'NaruhoDocsFile.txt');
 						try {
 							await vscode.workspace.fs.writeFile(fileUri, new Uint8Array());
 							this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: `File created: ${fileUri.fsPath}` });
@@ -544,11 +556,23 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 					}
 
 					if (uri === generalThreadId || !uri) {
-						// Save in workspace root
+						// Save in workspace root or docs folder if it exists
 						const wsFolders = vscode.workspace.workspaceFolders;
 						if (wsFolders && wsFolders.length > 0) {
 							const wsUri = wsFolders[0].uri;
-							const templateFileUri = vscode.Uri.joinPath(wsUri, fileName);
+							// Check if /docs folder exists, if so save there, otherwise save to root
+							const docsUri = vscode.Uri.joinPath(wsUri, 'docs');
+							let targetFolder = wsUri;
+							try {
+								const docsStat = await vscode.workspace.fs.stat(docsUri);
+								if (docsStat.type === vscode.FileType.Directory) {
+									targetFolder = docsUri;
+								}
+							} catch {
+								// /docs doesn't exist, use root folder
+							}
+							
+							const templateFileUri = vscode.Uri.joinPath(targetFolder, fileName);
 							const content = text ? Buffer.from(text, 'utf8') : new Uint8Array();
 							try {
 								await vscode.workspace.fs.writeFile(templateFileUri, content);
@@ -575,7 +599,25 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 						try {
 							const fileUri = vscode.Uri.parse(uri);
 							const parentPaths = fileUri.path.split('/');
-							const templateFileUri = vscode.Uri.joinPath(fileUri.with({ path: parentPaths.join('/') }), fileName);
+							const parentUri = fileUri.with({ path: parentPaths.join('/') });
+							
+							// Check if /docs folder exists in the workspace, if so save there, otherwise use the parent URI
+							const wsFolders = vscode.workspace.workspaceFolders;
+							let targetFolder = parentUri;
+							if (wsFolders && wsFolders.length > 0) {
+								const wsUri = wsFolders[0].uri;
+								const docsUri = vscode.Uri.joinPath(wsUri, 'docs');
+								try {
+									const docsStat = await vscode.workspace.fs.stat(docsUri);
+									if (docsStat.type === vscode.FileType.Directory) {
+										targetFolder = docsUri;
+									}
+								} catch {
+									// /docs doesn't exist, use parent URI
+								}
+							}
+							
+							const templateFileUri = vscode.Uri.joinPath(targetFolder, fileName);
 							const content = text ? Buffer.from(text, 'utf8') : new Uint8Array();
 							await vscode.workspace.fs.writeFile(templateFileUri, content);
 							this._view?.webview.postMessage({
