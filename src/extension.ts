@@ -930,7 +930,7 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 			}
 
 			const { exec } = require('child_process');
-			exec(`git diff-tree --no-commit-id --name-only -r ${newCommitHash}`, { cwd: workspaceFolder }, async (err: any, stdout: string) => {
+			exec(`git diff-tree --no-commit-id --name-only -r ${newCommitHash}`, { cwd: workspaceFolder, maxBuffer: 10 * 1024 * 1024 }, async (err: any, stdout: string) => {
 				if (err) {
 					console.error('Failed to get changed files:', err);
 					return;
@@ -946,7 +946,7 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 				console.log(`Code changed: ${codeChanged}, Docs changed: ${docChanged}`);
 
 				// Show exact changed lines using git diff -U0, but skip for first commit
-				exec(`git rev-list --parents -n 1 ${newCommitHash}`, { cwd: workspaceFolder }, (revErr: any, revStdout: any) => {
+				exec(`git rev-list --parents -n 1 ${newCommitHash}`, { cwd: workspaceFolder, maxBuffer: 10 * 1024 * 1024 }, (revErr: any, revStdout: any) => {
 					if (revErr) {
 						return;
 					}
@@ -958,7 +958,7 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 					}
 
 					const diffCmd = `git show --no-color --format= --unified=0 ${newCommitHash}`;
-					exec(diffCmd, { cwd: workspaceFolder }, async (diffErr: any, diffStdout: any) => {
+					exec(diffCmd, { cwd: workspaceFolder, maxBuffer: 10 * 1024 * 1024 }, async (diffErr: any, diffStdout: any) => {
 						if (diffErr) {
 							console.error('Failed to get git diff:', diffErr);
 						}
