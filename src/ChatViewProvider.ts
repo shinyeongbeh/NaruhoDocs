@@ -320,10 +320,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 				case 'generateDoc': {
 					// generateDoc triggered (doc-generate thread)
 					this.addSystemMessage('Generating documentation...');
-					const response = await generateDocument(this.llmService, data);
-					// Response from docGenerate.generate captured
-					this._view?.webview.postMessage({ type: response.type, sender: response.sender, message: response.message });
-
+					await generateDocument(this.llmService, data);
 					break;
 				}
                 case 'setThreadBeginnerMode': {
