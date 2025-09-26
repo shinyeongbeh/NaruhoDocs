@@ -781,9 +781,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 			</head>
 			<body>
 				<div class="chat-container">
-					<div class="chat-header" style="margin-bottom:12px; position:relative; display:flex; align-items:center; padding:0 8px;">
-						<div style="flex:0 0 auto;">
-							<span id="hamburger-menu" style="cursor:pointer; background:#f3f3f3; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.04); display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px;">
+					<div class="chat-header">
+						<div class="menu-div">
+							<span id="hamburger-menu" class="hamburger-menu-class">
 								<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 									<line x1="4" y1="7" x2="20" y2="7"></line>
 									<line x1="4" y1="12" x2="20" y2="12"></line>
@@ -791,11 +791,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 								</svg>
 							</span>
 						</div>
-						<div style="flex:1 1 auto; text-align:center;">
+						<div class="current-doc">
 							<span id="current-doc-name"></span>
 						</div>
-						<div style="margin-left:auto; display:flex; align-items:center; gap:8px; padding-left:8px;">
-							<button class="refresh-vectordb" id="refresh-vectordb" title="Rebuild the database for RAG" style="display:flex; align-items:center; justify-content:center; padding:4px;">
+						<div class="chat-header-right-buttons">
+							<button class="refresh-vectordb" id="refresh-vectordb" title="Rebuild the database for RAG" >
 								<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 									<path d="M21.1 8.7C20.5 6.8 19.4 5.1 17.9 3.8C16.4 2.5 14.5 1.7 12.5 1.5C10.5 1.3 8.5 1.8 6.8 2.8C5.1 3.8 3.7 5.3 2.9 7.1"/>
 									<path d="M2.9 3.7V7.1H6.3"/>
@@ -805,39 +805,42 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 							</button>
 							<button id="clear-history" title="Clear all chat history">Clear History</button>
 						</div>
-						<div id="dropdown-container" style="display:none; position:absolute; left:0; top:40px; z-index:10;">
+						<div id="dropdown-container" class="dropdown-container-class">
 							<div id="thread-list-menu"></div>
 						</div>
 					</div>
 					<!-- ...existing chat UI... -->
 					   <!-- General buttons moved below chat messages, above chat input -->
-					   <div id="general-buttons" style="display:none; margin-top:18px; justify-content:center; margin-bottom:8px;">
-						   <button id="generate-doc-btn" style="margin-right:8px;">Generate Document</button>
-						   <button id="suggest-template-btn" style="margin-right:8px;">Suggest Template</button>
+					   <div id="general-buttons" class="general-buttons-class">
+						   <button id="generate-doc-btn" class="generate-doc-btn-class">Generate Document</button>
+						   <button id="suggest-template-btn" class="suggest-template-btn-class">Suggest Template</button>
 						   <button id="visualize-btn">Visualize</button>
 					   </div>
-					<div id="thread-tabs" style="display:flex; gap:4px; margin-bottom:8px;"></div>
+					<div id="thread-tabs" class="thread-tabs-class"></div>
 					   <div id="chat-messages" class="chat-messages"></div>
 					   <!-- General buttons will be shown here above the chat input box -->
 					   <div id="general-buttons-anchor"></div>
 					   <div class="chat-input-container">
-						<div class="chat-input-wrapper" style="position:relative; width:100%;">
-							<textarea id="chat-input" class="chat-input" placeholder="How can I help?" style="padding-right:32px;"></textarea>
-							<span id="send-icon" style="position:absolute; right:8px; top:50%; transform:translateY(-50%); cursor:pointer;">
+						<div class="chat-input-wrapper">
+							<textarea id="chat-input" class="chat-input" placeholder="How can I help?"></textarea>
+							<span id="send-icon" class="send-icon-class">
 								<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 									<line x1="22" y1="2" x2="11" y2="13"></line>
 									<polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
 								</svg>
 							</span>
 						</div>
-						<!--<button id="create-file-btn" style="margin-top:10px;">Create Default File</button>-->
+						<!--<button id="create-file-btn">Create Default File</button>-->
 					</div>
 				</div>
 
 				<script nonce="${nonce}" src="${markdownItUri}"></script>
 				<script nonce="${nonce}" src="${mermaidUri}"></script>
 				<script nonce="${nonce}" src="${scriptUri}"></script>
-			</body>
+				<script nonce="${nonce}">
+					console.log("[Webview] Inline sanity check script ran ✅");
+				</script>
+				</body>
 			</html>`;
 	}
 

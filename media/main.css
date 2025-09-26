@@ -3,6 +3,9 @@
 	width: 24px;
 	align-items: center;
 	background: none;
+	display:flex; 
+	justify-content:center; 
+	padding:4px;
 }
 .refresh-vectordb:hover {
 	background: none;
@@ -314,6 +317,12 @@
 	margin-top: 18px;
 	margin-bottom: 8px;
 }
+.general-buttons-class {
+	display:none; 
+	margin-top:18px; 
+	justify-content:center; 
+	margin-bottom:8px;
+}
 
 .clearHistory-btn,
 #general-buttons button {
@@ -334,6 +343,10 @@
 	background: #1976d2;
 	color: #fff;
 	border-color: #1976d2;
+}
+
+.generate-doc-btn-class, .suggest-template-btn-class {
+	margin-right:8px;
 }
 /* Hamburger menu open/close visual state */
 #hamburger-menu.open svg {
@@ -370,6 +383,19 @@
 	padding: 10px 0;
 	min-width: 200px;
 	border: 1px solid #333;
+}
+.dropdown-container-class {
+	display:none; 
+	position:absolute; 
+	left:0; 
+	top:40px; 
+	z-index:10;
+}
+
+.thread-tabs-class {
+	display:flex; 
+	gap:4px; 
+	margin-bottom:8px;
 }
 
 #thread-list-menu {
@@ -480,6 +506,8 @@ html {
 .chat-input-container {
 	display: flex;
 	align-items: center;
+	position:relative; 
+	width:100%;
 }
 
 .chat-input-wrapper {
@@ -503,20 +531,49 @@ html {
 	height: 18px;
 }
 
+.send-icon-class {
+	position:absolute; 
+	right:8px; 
+	top:50%; 
+	transform:translateY(-50%); 
+	cursor:pointer;
+}
+
 /* Align hamburger and doc name perfectly parallel */
 .chat-header {
 	display: flex;
 	align-items: center;
 	gap: 6px;
 	height: 32px;
+	margin-bottom:12px; 
+	position:relative; 
+	padding:0 8px;
 }
-
+.menu-div {
+	display: flex;
+	flex: 0 0 auto;
+}
+.hamburger-menu-class {
+	cursor:pointer; 
+	background:none; 
+	border-radius:8px; 
+	box-shadow:0 2px 8px rgba(0,0,0,0.04); 
+	display:inline-flex; 
+	align-items:center; 
+	justify-content:center; 
+	width:32px; 
+	height:32px;
+}
 #hamburger-menu {
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	width: 32px;
 	height: 32px;
+}
+.current-doc {
+	flex:1 1 auto; 
+	text-align:center;
 }
 
 #current-doc-name {
@@ -526,6 +583,14 @@ html {
 	align-items: center;
 	height: 32px;
 	margin-left: 2px;
+}
+
+.chat-header-right-buttons {
+	margin-left:auto; 
+	display:flex; 
+	align-items:center; 
+	gap:8px; 
+	padding-left:8px;
 }
 
 .chat-input {
