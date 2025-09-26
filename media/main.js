@@ -288,7 +288,7 @@
                         chatMessages.scrollTop = chatMessages.scrollHeight;
                     }
                 } else {
-                    modeText.textContent = 'Beginner Mode';
+                    modeText.textContent = 'Developer Mode';
                     modeText.classList.add('developer');
                     modeText.classList.remove('beginner');
                     vscode.postMessage({

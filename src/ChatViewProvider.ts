@@ -92,7 +92,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		try {
 			const botResponse = await this.llmService.trackedChat({
 				sessionId,
-				systemMessage: (session as any).systemMessage || SystemMessages.GENERAL_PURPOSE,
+				systemMessage: this.threadManager.getSystemMessage(sessionId) || SystemMessages.GENERAL_PURPOSE,
 				prompt,
 				task: 'chat'
 			});
@@ -251,14 +251,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
 					break;
 				}
-				case 'setThreadBeginnerMode': {
-					await this.setBeginnerDevMode.setThreadBeginnerMode(data.sessionId, this.threadManager.getSessions(), this.threadManager.getThreadTitles());
-					break;
-				}
-				case 'setThreadDeveloperMode': {
-					await this.setBeginnerDevMode.setThreadDeveloperMode(data.sessionId, this.threadManager.getSessions(), this.threadManager.getThreadTitles());
-					break;
-				}
+                case 'setThreadBeginnerMode': {
+                    const sys = await this.setBeginnerDevMode.setThreadBeginnerMode(data.sessionId, this.threadManager.getSessions(), this.threadManager.getThreadTitles());
+                    if (sys) { this.threadManager.setSystemMessage(data.sessionId, sys); }
+                    break;
+                }
+                case 'setThreadDeveloperMode': {
+                    const sys = await this.setBeginnerDevMode.setThreadDeveloperMode(data.sessionId, this.threadManager.getSessions(), this.threadManager.getThreadTitles());
+                    if (sys) { this.threadManager.setSystemMessage(data.sessionId, sys); }
+                    break;
+                }
 				case 'sendMessage': {
 					const userMessage = data.value as string;
 

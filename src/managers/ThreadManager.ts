@@ -29,6 +29,12 @@ export class ThreadManager {
         const generalThreadTitle = 'General Purpose';
         const sysMessage = SystemMessages.GENERAL_PURPOSE;
         this.systemMessages.set(generalThreadId, sysMessage);
+        const savedHistory = this.context.workspaceState.get<any[]>(`thread-history-${generalThreadId}`);
+        const applyHistory = (session: ChatSession) => {
+            if (savedHistory && Array.isArray(savedHistory)) {
+                try { session.setHistory(savedHistory as any); } catch { /* ignore */ }
+            }
+        };
 
         // If a session was already restored from history, do not create a new one.
         if (this.sessions.has(generalThreadId)) {
@@ -39,6 +45,7 @@ export class ThreadManager {
         if (this.llmService) {
             try {
                 const session = await this.llmService.getSession(generalThreadId, sysMessage, { taskType: 'chat', forceNew: true });
+                applyHistory(session);
                 this.sessions.set(generalThreadId, session);
                 this.threadTitles.set(generalThreadId, generalThreadTitle);
                 this.activeThreadId = generalThreadId;
@@ -49,6 +56,7 @@ export class ThreadManager {
         }
         // Fallback direct
         const fallbackSession = createChat({ apiKey: this.apiKey, maxHistoryMessages: 40, systemMessage: sysMessage });
+        applyHistory(fallbackSession);
         this.sessions.set(generalThreadId, fallbackSession);
         this.threadTitles.set(generalThreadId, generalThreadTitle);
         this.activeThreadId = generalThreadId;
@@ -178,6 +186,15 @@ export class ThreadManager {
         return this.systemMessages.get(sessionId);
     }
 
+    // Persist/override a thread's system message without touching history
+    public setSystemMessage(sessionId: string, systemMessage: string): void {
+        this.systemMessages.set(sessionId, systemMessage);
+        const session = this.sessions.get(sessionId);
+        if (session && typeof (session as any).setCustomSystemMessage === 'function') {
+            try { (session as any).setCustomSystemMessage(systemMessage); } catch { /* ignore */ }
+        }
+    }
+
     // Remove a thread
     public async removeThread(sessionId: string): Promise<void> {
         if (this.sessions.has(sessionId)) {
@@ -222,9 +239,9 @@ export class ThreadManager {
         for (const key of keys) {
             if (key.startsWith('thread-history-')) {
                 const sessionId = key.replace('thread-history-', '');
-                // if (sessionId === 'naruhodocs-general-thread') {
-                //     continue;
-                // }
+                if (sessionId === 'naruhodocs-general-thread') {
+                    continue;
+                }
                 let documentText = '';
                 try {
                     const uri = vscode.Uri.parse(sessionId);
@@ -321,7 +338,8 @@ export class ThreadManager {
     }
     
     public static async clearAllThreadHistoryOnce(context: vscode.ExtensionContext): Promise<void> {
-        console.log('Clearing all thread history...');
+        console.log('[NaruhoDocs] Performing full reset to first-run state...');
+        // 1) Clear all per-thread histories saved in workspace state
         const keys = context.workspaceState.keys();
         let cleared = 0;
         for (const key of keys) {
@@ -330,16 +348,20 @@ export class ThreadManager {
                 cleared++;
             }
         }
-        console.log(`Cleared ${cleared} thread histories`);
+        console.log(`[NaruhoDocs] Cleared ${cleared} thread histories`);
 
-        // Close all open tabs/editors
+        // 2) Clear last active thread id snapshot and any cached thread list metadata
+        try { await context.globalState.update('lastActiveThreadId', undefined); } catch { /* ignore */ }
+        try { await context.workspaceState.update('naruhodocs.threadList', undefined); } catch { /* ignore */ }
+
+        // 3) Close all open tabs/editors so the UI comes back fresh after reload
         try {
             await vscode.commands.executeCommand('workbench.action.closeAllEditors');
-            console.log('Closed all open tabs');
+            console.log('[NaruhoDocs] Closed all open tabs');
         } catch (error) {
-            console.warn('Failed to close tabs:', error);
+            console.warn('[NaruhoDocs] Failed to close tabs:', error);
         }
 
-        console.log('All thread history and tabs cleared');
+        console.log('[NaruhoDocs] Reset complete. Reload to reinitialize the General thread only.');
     }
 }
