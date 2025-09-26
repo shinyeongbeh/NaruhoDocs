@@ -663,10 +663,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 							<span id="current-doc-name"></span>
 						</div>
 						<div class="chat-header-right-buttons">
-							<button class="refresh-vectordb" id="refresh-vectordb" title="Rebuild the database for RAG" >
-								<img src="${refreshIconUri}" width="16" height="16" alt="Refresh">
-							</button>
-							<button id="clear-history" title="Clear all chat history">Clear History</button>
+							<!-- Buttons moved to view title toolbar (package.json menus.view/title). Retained container for layout. -->
 						</div>
 						<div id="dropdown-container" class="dropdown-container-class">
 							<div id="thread-list-menu"></div>

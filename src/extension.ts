@@ -106,6 +106,34 @@ export function activate(context: vscode.ExtensionContext) {
 		})
 	);
 
+	// Rebuild Vector DB command (moved from webview button to view title toolbar)
+	context.subscriptions.push(
+		vscode.commands.registerCommand('naruhodocs.rebuildVectorDB', async () => {
+			const ragEnabled = vscode.workspace.getConfiguration('naruhodocs').get<boolean>('rag.enabled', true);
+			if (!ragEnabled) {
+				vscode.window.showWarningMessage('RAG is disabled in settings. Enable it to rebuild the vector database.');
+				return;
+			}
+			try {
+				await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'Rebuilding NaruhoDocs RAG Vector Database', cancellable: false }, async (progress) => {
+					progress.report({ message: 'Initializing embeddings...' });
+					const embeddingConfigManager = new EmbeddingConfigManager(context);
+					await embeddingConfigManager.scaffoldIfMissing();
+					await embeddingConfigManager.load();
+					const providerName = vscode.workspace.getConfiguration('naruhodocs').get<string>('embedding.provider', 'local');
+					const embeddingConfig = embeddingConfigManager.resolveProvider(providerName);
+					const embeddings = await initializeEmbeddingModel(embeddingConfig);
+					initializeVectorStore(embeddings); // reinitialize singleton
+					progress.report({ message: 'Scanning workspace & chunking documents...' });
+					await buildVectorDB(getVectorStore());
+				});
+				vscode.window.showInformationMessage('NaruhoDocs RAG vector database rebuilt successfully.');
+			} catch (e: any) {
+				vscode.window.showErrorMessage('Failed to rebuild vector database: ' + (e?.message || String(e)));
+			}
+		})
+	);
+
 	// Thread management: map document URI to thread info
 	const threadMap: Map<string, { document: vscode.TextDocument, sessionId: string }> = new Map();
 	let activeThreadId: string | undefined;
@@ -1107,6 +1135,30 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 	});
 
 	context.subscriptions.push(clearHistoryCommand);
+
+	// Per-thread clear (toolbar) with confirmation
+	const clearCurrentThreadCommand = vscode.commands.registerCommand('naruhodocs.clearCurrentThreadHistory', async () => {
+		try {
+			const activeThreadId = (provider as any)?.threadManager?.getActiveThreadId?.();
+			if (!activeThreadId) {
+				vscode.window.showWarningMessage('No active thread to clear.');
+				return;
+			}
+			const confirm = await vscode.window.showWarningMessage(
+				`Clear history for this thread only? This cannot be undone.`,
+				{ modal: true },
+				'Clear'
+			);
+			if (confirm !== 'Clear') { return; }
+			await (provider as any)?.threadManager?.resetSession?.(activeThreadId);
+			// Tell webview to clear its rendered messages & add system note
+			provider?.postMessage({ type: 'clearMessages' });
+			provider?.addSystemMessage('History cleared for current thread.');
+		} catch (e:any) {
+			vscode.window.showErrorMessage('Failed to clear current thread history: ' + (e?.message || String(e)));
+		}
+	});
+	context.subscriptions.push(clearCurrentThreadCommand);
 }
 // Removed legacy interactive configuration helpers (showLLMConfigurationQuickPick, configureLocalLLM, showLocalLLMSetupInstructions).
 

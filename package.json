@@ -87,7 +87,20 @@
       {
         "command": "naruhodocs.clearAllThreadHistory",
         "title": "Clear All Thread History",
-        "category": "NaruhoDocs"
+        "category": "NaruhoDocs",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "naruhodocs.clearCurrentThreadHistory",
+        "title": "Clear Current Thread History",
+        "category": "NaruhoDocs",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "naruhodocs.rebuildVectorDB",
+        "title": "Rebuild RAG Vector Database",
+        "category": "NaruhoDocs",
+        "icon": "$(sync)"
       }
     ],
     "configuration": {
@@ -193,6 +206,20 @@
           "type": "webview",
           "name": "NaruhoDocs Chat",
           "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "naruhodocs.rebuildVectorDB",
+          "when": "view == naruhodocs.chatView && config.naruhodocs.rag.enabled",
+          "group": "navigation@1"
+        },
+        {
+          "command": "naruhodocs.clearCurrentThreadHistory",
+          "when": "view == naruhodocs.chatView",
+          "group": "navigation@2"
         }
       ]
     }

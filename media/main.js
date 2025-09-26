@@ -242,23 +242,11 @@
         } catch (e) { /* ignore */ }
     }, 150);
 
-    window.addEventListener('DOMContentLoaded', () => {
-        const clearHistoryBtn = document.getElementById('clear-history');
-        if (clearHistoryBtn) {
-            clearHistoryBtn.onclick = () => {
-                showClearHistoryConfirm();
-            };
-        }
+    // Removed in-webview clear history / rebuild vector DB buttons.
+    // Functionality now lives in VS Code view title toolbar commands.
+    window.addEventListener('DOMContentLoaded', () => { /* no-op placeholder */ });
 
-        const refreshChatBtn = document.getElementById('refresh-vectordb');
-        if (refreshChatBtn) {
-                refreshChatBtn.onclick = () => {
-                    vscode.postMessage({ type: 'vscodeReloadWindow' });
-                };
-        }
-    });
-
-    function showClearHistoryConfirm() {
+    function showClearHistoryConfirm() { // still used by keyboard shortcut or future triggers
         // Remove any existing modal
         let oldModal = document.getElementById('clear-history-modal');
         if (oldModal) {
