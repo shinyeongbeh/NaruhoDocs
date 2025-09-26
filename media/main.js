@@ -196,6 +196,19 @@
     if (typeof oldState.isHamburgerOpen === 'boolean' && dropdownContainer && hamburgerMenu) {
         dropdownContainer.style.display = oldState.isHamburgerOpen ? 'block' : 'none';
         hamburgerMenu.classList.toggle('open', oldState.isHamburgerOpen);
+        
+        // Restore icon state
+        const hamburgerIcon = hamburgerMenu.querySelector('.hamburger-icon');
+        const closeIcon = hamburgerMenu.querySelector('.close-icon');
+        if (hamburgerIcon && closeIcon) {
+            if (oldState.isHamburgerOpen) {
+                /** @type {HTMLElement} */ (hamburgerIcon).style.display = 'none';
+                /** @type {HTMLElement} */ (closeIcon).style.display = 'inline';
+            } else {
+                /** @type {HTMLElement} */ (hamburgerIcon).style.display = 'inline';
+                /** @type {HTMLElement} */ (closeIcon).style.display = 'none';
+            }
+        }
     }
 
     renderThreadListMenu();
@@ -829,7 +842,16 @@
                 renderThreadListMenu(); // update UI immediately
                 vscode.postMessage({ type: 'switchThread', sessionId: thread.id });
                 if (dropdownContainer) { dropdownContainer.style.display = 'none'; }
-                if (hamburgerMenu) { hamburgerMenu.classList.remove('open'); }
+                if (hamburgerMenu) { 
+                    hamburgerMenu.classList.remove('open');
+                    // Reset icons when closing dropdown
+                    const hamburgerIcon = hamburgerMenu.querySelector('.hamburger-icon');
+                    const closeIcon = hamburgerMenu.querySelector('.close-icon');
+                    if (hamburgerIcon && closeIcon) {
+                        /** @type {HTMLElement} */ (hamburgerIcon).style.display = 'inline';
+                        /** @type {HTMLElement} */ (closeIcon).style.display = 'none';
+                    }
+                }
             });
             threadListMenu.appendChild(item);
         });
@@ -897,6 +919,20 @@
             const isOpen = dropdownContainer.style.display === 'none' || dropdownContainer.style.display === '';
             dropdownContainer.style.display = isOpen ? 'block' : 'none';
             hamburgerMenu.classList.toggle('open', isOpen);
+            
+            // Toggle between hamburger and close icons
+            const hamburgerIcon = hamburgerMenu.querySelector('.hamburger-icon');
+            const closeIcon = hamburgerMenu.querySelector('.close-icon');
+            if (hamburgerIcon && closeIcon) {
+                if (isOpen) {
+                    /** @type {HTMLElement} */ (hamburgerIcon).style.display = 'none';
+                    /** @type {HTMLElement} */ (closeIcon).style.display = 'inline';
+                } else {
+                    /** @type {HTMLElement} */ (hamburgerIcon).style.display = 'inline';
+                    /** @type {HTMLElement} */ (closeIcon).style.display = 'none';
+                }
+            }
+            
             persistState();
         });
     }
@@ -908,7 +944,16 @@
             vscode.postMessage({ type: 'createFile' });
             // Always close dropdown and set hamburger to close mode
             if (dropdownContainer) { dropdownContainer.style.display = 'none'; }
-            if (hamburgerMenu) { hamburgerMenu.classList.remove('open'); }
+            if (hamburgerMenu) { 
+                hamburgerMenu.classList.remove('open');
+                // Reset icons when closing dropdown
+                const hamburgerIcon = hamburgerMenu.querySelector('.hamburger-icon');
+                const closeIcon = hamburgerMenu.querySelector('.close-icon');
+                if (hamburgerIcon && closeIcon) {
+                    /** @type {HTMLElement} */ (hamburgerIcon).style.display = 'inline';
+                    /** @type {HTMLElement} */ (closeIcon).style.display = 'none';
+                }
+            }
         });
     }
 
