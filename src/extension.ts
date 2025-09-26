@@ -194,11 +194,31 @@ export function activate(context: vscode.ExtensionContext) {
 			watcher.onDidCreate(reload, undefined, context.subscriptions);
 			watcher.onDidDelete(async () => { await modelConfigManager.load(); llmService.setModelConfigManager(modelConfigManager); llmService.clearAllSessions(); llmService.logEvent('model_config_deleted'); updateProviderModelStatus(activeThreadId); });
 		}
-		try {
-			await llmManager.initializeFromConfig();
-			llmService.logEvent('provider_init', { provider: llmManager.getCurrentProvider()?.name });
-
-			// Initialize the general-purpose thread AFTER provider is confirmed
+	try {
+		console.log('[NaruhoDocs] Extension activation: Initializing LLM manager from config');
+		const config = vscode.workspace.getConfiguration('naruhodocs');
+		const providerType = config.get<string>('llm.provider', 'ootb');
+		console.log('[NaruhoDocs] Extension activation: LLM config provider type:', providerType);
+		
+		// Add retry logic for packaged extensions where initialization might fail on first try
+		let retryCount = 0;
+		const maxRetries = 3;
+		while (retryCount < maxRetries) {
+			try {
+				await llmManager.initializeFromConfig();
+				console.log('[NaruhoDocs] Extension activation: LLM manager initialized successfully');
+				llmService.logEvent('provider_init', { provider: llmManager.getCurrentProvider()?.name });
+				break;
+			} catch (initError) {
+				retryCount++;
+				console.warn(`[NaruhoDocs] LLM initialization attempt ${retryCount} failed:`, initError);
+				if (retryCount >= maxRetries) {
+					throw initError;
+				}
+				// Wait before retry (exponential backoff)
+				await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+			}
+		}			// Initialize the general-purpose thread AFTER provider is confirmed
 			const generalThreadId = 'naruhodocs-general-thread';
 			const generalThreadTitle = 'General Purpose';
 			// Ensure backing LLM session is created through LLMService so logging + provider attribution work
@@ -488,6 +508,24 @@ export function activate(context: vscode.ExtensionContext) {
 				vscode.window.showInformationMessage(`✅ ${provider?.name} connection successful`);
 			} else {
 				vscode.window.showErrorMessage(`❌ ${provider?.name || 'LLM'} connection failed`);
+			}
+		})
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand('naruhodocs.reinitializeLLMProvider', async () => {
+			try {
+				vscode.window.showInformationMessage('🔄 Reinitializing LLM provider...');
+				await llmManager.initializeFromConfig();
+				llmService.clearAllSessions();
+				provider.updateLLMManager(llmManager);
+				updateProviderModelStatus(activeThreadId);
+				const providerName = llmManager.getCurrentProvider()?.name || 'Unknown';
+				vscode.window.showInformationMessage(`✅ LLM provider reinitialized: ${providerName}`);
+			} catch (error) {
+				const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+				vscode.window.showErrorMessage(`❌ Failed to reinitialize LLM provider: ${errorMsg}`);
+				console.error('[NaruhoDocs] Manual reinitialize failed:', error);
 			}
 		})
 	);
