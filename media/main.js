@@ -5,7 +5,7 @@
 
 (function () {
     /**
-     * @typedef {{sender:string,message:string}} NaruhoHistoryEntry
+     * @typedef {{sender:string,message:string,messageType?:string}} NaruhoHistoryEntry
      */
     /** @type {Record<string, NaruhoHistoryEntry[]> | undefined} */
     // @ts-ignore augment window
@@ -30,7 +30,7 @@
     // Track a simple hash of the currently rendered history to avoid unnecessary full re-renders
     let lastHistorySignature = '';
     /** Build a stable signature for a history array */
-    /** @param {Array<{sender?:string,message?:string}>} history */
+    /** @param {Array<{sender?:string,message?:string,messageType?:string,rawMermaid?:string}>} history */
     function signatureFor(history) {
         try {
             if (!Array.isArray(history)) { return 'na'; }
@@ -41,7 +41,7 @@
      * Flicker-free atomic replacement of chat history using an off-DOM buffer.
      * Applies a fade transition only when content actually changes.
      */
-    /** @param {Array<{sender?:string,message?:string}>} history */
+    /** @param {Array<{sender?:string,message?:string,messageType?:string}>} history */
     function setFullHistory(history) {
         if (!chatMessages) { return; }
         const sig = signatureFor(history);
@@ -55,7 +55,21 @@
         if (Array.isArray(history)) {
             history.forEach(function (entry) {
                 if (!entry || typeof entry !== 'object') { return; }
-                const messageElement = buildMessageElement(entry.sender || 'Bot', entry.message || '');
+                const messageElement = buildMessageElement(entry.sender || 'Bot', entry.message || '', entry.messageType);
+                try {
+                    // If backend provided rawMermaid and markdown renderer removed code fence (edge legacy), inject it.
+                    const rawMermaid = /** @type {any} */(entry).rawMermaid;
+                    if (rawMermaid && !messageElement.querySelector('code.language-mermaid')) {
+                        const pre = document.createElement('pre');
+                        const code = document.createElement('code');
+                        code.className = 'language-mermaid';
+                        code.textContent = rawMermaid;
+                        pre.appendChild(code);
+                        messageElement.appendChild(pre);
+                    }
+                } catch { /* ignore */ }
+                // Ensure mermaid diagrams re-render on history hydration
+                try { enhanceMessageElement(messageElement, entry.messageType); } catch { /* ignore */ }
                 frag.appendChild(messageElement);
             });
         }
@@ -94,7 +108,7 @@
                     }
                     if (activeThreadId && chatMessages && !chatMessages.innerHTML.trim() && store[activeThreadId]) {
                         chatMessages.innerHTML = '';
-                        store[activeThreadId].forEach(function (entry) { if (entry) { addMessage(entry.sender || 'Bot', entry.message || ''); } });
+                        store[activeThreadId].forEach(function (entry) { if (entry) { addMessage(entry.sender || 'Bot', entry.message || '', entry.messageType); } });
                     }
                 } catch (err) { console.warn('[NaruhoDocs] Failed to apply allThreadHistories:', err); }
             } else if (msg.type === 'toggleGeneralTabUI') {
@@ -172,6 +186,8 @@
         } catch (e) {
             console.warn('[NaruhoDocs] Failed to restore cached chatHTML:', e);
         }
+        // After raw HTML restore, upgrade any legacy mermaid blocks/toolbars to new wrapper format
+        try { upgradeLegacyDiagrams(); } catch (e) { console.warn('[NaruhoDocs] Legacy diagram upgrade failed:', e); }
     }
     if (oldState.threads) {
         threads = oldState.threads;
@@ -196,7 +212,7 @@
                 // @ts-ignore
                 const store = window.__naruhodocsAllHistories;
                 if (store && store[activeThreadId] && store[activeThreadId].length) {
-                    store[activeThreadId].forEach(/** @param {NaruhoHistoryEntry} entry */function (entry) { if (entry) { addMessage(entry.sender || 'Bot', entry.message || ''); } });
+                    store[activeThreadId].forEach(/** @param {NaruhoHistoryEntry} entry */function (entry) { if (entry) { addMessage(entry.sender || 'Bot', entry.message || '', entry.messageType); } });
                 }
             }
         } catch (e) { /* ignore */ }
@@ -271,7 +287,7 @@
                 type: 'sendMessage',
                 value: chatInput.value
             });
-            addMessage('You', chatInput.value);
+            addMessage('You', chatInput.value, undefined);
             chatInput.value = '';
         }
     }
@@ -525,7 +541,7 @@
                         btn.textContent = suggestion.displayName;
                         btn.title = suggestion.description || '';
                         btn.addEventListener('click', () => {
-                            addMessage('System', 'Generating documentation...');
+                            addMessage('System', 'Generating documentation...', undefined);
                             vscode.postMessage({ type: 'generateDoc', docType: suggestion.displayName, fileName: suggestion.fileName });
                             modal.remove();
                         });
@@ -535,7 +551,7 @@
                     const othersBtn = document.createElement('button');
                     othersBtn.textContent = 'Others';
                     othersBtn.addEventListener('click', () => {
-                        addMessage('System', 'Generating documentation...');
+                        addMessage('System', 'Generating documentation...', undefined);
                         showCustomDocPrompt(modal);
                     });
                     box.appendChild(othersBtn);
@@ -566,7 +582,7 @@
             submitBtn.textContent = 'Submit';
             submitBtn.addEventListener('click', () => {
                 if (input.value.trim()) {
-                    addMessage('System', 'Generating documentation...');
+                    addMessage('System', 'Generating documentation...', undefined);
                     vscode.postMessage({ type: 'generateDoc', docType: input.value.trim() });
                     if (modal) {
                         modal.remove();
@@ -764,7 +780,7 @@
                     // fallback for other formats
                     text = msg.text || msg.content || '';
                 }
-                addMessage(sender, text);
+                addMessage(sender, text, undefined);
             });
         }
         persistState();
@@ -1078,146 +1094,12 @@
         }, 3000);
     }
 
-    /** @param {string} sender @param {string} message */
-    function addMessage(sender, message) {
+    /** @param {string} sender @param {string} message @param {string|undefined} messageType */
+    function addMessage(sender, message, messageType) {
         if (chatMessages) {
-            const messageElement = buildMessageElement(sender, message);
-
-            // Process Mermaid diagrams
-            if (typeof mermaidLib !== 'undefined') {
-                const mermaidBlocks = messageElement.querySelectorAll('code.language-mermaid');
-                mermaidBlocks.forEach(async (block, index) => {
-                    try {
-                        const mermaidCode = block.textContent;
-                        const diagramId = `mermaid-${Date.now()}-${index}`;
-
-                        // Create a container for the Mermaid diagram
-                        const diagramContainer = document.createElement('div');
-                        diagramContainer.className = 'mermaid-diagram-container';
-                        diagramContainer.style.textAlign = 'center';
-                        diagramContainer.style.margin = '10px 0';
-                        diagramContainer.style.padding = '10px';
-                        diagramContainer.style.border = '1px solid var(--vscode-panel-border)';
-                        diagramContainer.style.borderRadius = '4px';
-                        diagramContainer.style.backgroundColor = 'var(--vscode-editor-background)';
-                        diagramContainer.style.position = 'relative';
-
-                        // Create diagram controls
-                        const controlsContainer = document.createElement('div');
-                        controlsContainer.className = 'diagram-controls';
-                        controlsContainer.style.position = 'absolute';
-                        controlsContainer.style.top = '5px';
-                        controlsContainer.style.right = '5px';
-                        controlsContainer.style.display = 'flex';
-                        controlsContainer.style.gap = '5px';
-                        controlsContainer.style.opacity = '0.7';
-                        controlsContainer.style.transition = 'opacity 0.2s';
-
-                        // Enlarge button
-                        const enlargeBtn = document.createElement('button');
-                        enlargeBtn.className = 'diagram-control-btn';
-                        enlargeBtn.innerHTML = 'Enlarge';
-                        enlargeBtn.title = 'Enlarge diagram';
-                        enlargeBtn.style.cssText = `
-                            background: var(--vscode-button-background);
-                            color: var(--vscode-button-foreground);
-                            border: 1px solid var(--vscode-button-border, transparent);
-                            border-radius: 4px;
-                            padding: 4px 8px;
-                            cursor: pointer;
-                            font-size: 11px;
-                            font-weight: 500;
-                            transition: all 0.2s ease;
-                        `;
-
-                        // Export button
-                        const exportBtn = document.createElement('button');
-                        exportBtn.className = 'diagram-control-btn';
-                        exportBtn.innerHTML = 'Export';
-                        exportBtn.title = 'Export diagram';
-                        exportBtn.style.cssText = enlargeBtn.style.cssText;
-
-                        controlsContainer.appendChild(enlargeBtn);
-                        controlsContainer.appendChild(exportBtn);
-                        diagramContainer.appendChild(controlsContainer);
-
-                        // Add hover effects to buttons
-                        [enlargeBtn, exportBtn].forEach(btn => {
-                            btn.addEventListener('mouseenter', () => {
-                                btn.style.background = 'var(--vscode-button-hoverBackground)';
-                                btn.style.transform = 'translateY(-1px)';
-                            });
-                            btn.addEventListener('mouseleave', () => {
-                                btn.style.background = 'var(--vscode-button-background)';
-                                btn.style.transform = 'translateY(0)';
-                            });
-                        });
-
-                        // Show controls on hover
-                        diagramContainer.addEventListener('mouseenter', () => {
-                            controlsContainer.style.opacity = '1';
-                        });
-                        diagramContainer.addEventListener('mouseleave', () => {
-                            controlsContainer.style.opacity = '0.7';
-                        });
-
-                        // Replace the code block with the diagram container
-                        const preElement = block.parentElement;
-                        if (preElement && preElement.tagName === 'PRE' && preElement.parentElement) {
-                            preElement.parentElement.replaceChild(diagramContainer, preElement);
-                        }
-
-                        // Render the Mermaid diagram
-                        if (typeof mermaidLib !== 'undefined') {
-                            const { svg } = await mermaidLib.render(diagramId, mermaidCode);
-
-                            // Create diagram content container
-                            const diagramContent = document.createElement('div');
-                            diagramContent.className = 'diagram-content';
-                            diagramContent.innerHTML = svg;
-                            diagramContainer.appendChild(diagramContent);
-
-                            // Add click handlers for interactivity
-                            const svgElement = diagramContent.querySelector('svg');
-                            if (svgElement) {
-                                svgElement.style.cursor = 'pointer';
-                                svgElement.style.maxWidth = '100%';
-                                svgElement.style.height = 'auto';
-
-                                // Click to enlarge
-                                svgElement.addEventListener('click', () => {
-                                    openDiagramModal(mermaidCode, diagramId);
-                                });
-
-                                // Enlarge button handler
-                                enlargeBtn.addEventListener('click', (e) => {
-                                    e.stopPropagation();
-                                    openDiagramModal(mermaidCode, diagramId);
-                                });
-
-                                // Export button handler
-                                exportBtn.addEventListener('click', (e) => {
-                                    e.stopPropagation();
-                                    exportDiagram(svgElement, diagramId);
-                                });
-                            }
-                        }
-                    } catch (error) {
-                        console.error('Error rendering Mermaid diagram:', error);
-                        let msg = 'Unknown error';
-                        if (error && typeof error === 'object' && 'message' in error) {
-                            const m = error.message;
-                            if (typeof m === 'string') { msg = m; }
-                        }
-                        // Fallback: show the code block with error styling
-                        if (block instanceof HTMLElement) {
-                            block.style.backgroundColor = 'var(--vscode-inputValidation-errorBackground)';
-                            block.style.color = 'var(--vscode-inputValidation-errorForeground)';
-                            block.textContent = 'Error rendering diagram: ' + msg;
-                        }
-                    }
-                });
-            }
+            const messageElement = buildMessageElement(sender, message, messageType);
+            // Enhance (mermaid rendering etc.) in both live add & history restore paths
+            try { enhanceMessageElement(messageElement, messageType); } catch { /* ignore */ }
 
             chatMessages.appendChild(messageElement);
             chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -1226,11 +1108,154 @@
     }
 
     /**
+     * Enhance a freshly built message element: render Mermaid diagrams with controls.
+     * Shared between addMessage() and setFullHistory() so diagrams persist after sidebar reopen.
+     * @param {HTMLElement} messageElement
+     */
+    /**
+     * @param {HTMLElement} messageElement
+     * @param {string | undefined} messageType
+     */
+    function enhanceMessageElement(messageElement, messageType) {
+        if (typeof mermaidLib === 'undefined') { return; }
+        const mermaidBlocks = messageElement.querySelectorAll('code.language-mermaid');
+        mermaidBlocks.forEach(async (block, index) => {
+            const preElement = block.parentElement;
+            if (!preElement || preElement.tagName !== 'PRE' || !preElement.parentElement) { return; }
+            // If already wrapped (legacy upgrade may have processed), skip
+            if (preElement.parentElement.classList && preElement.parentElement.classList.contains('mermaid-diagram-wrapper')) { return; }
+            try {
+                const mermaidCode = block.textContent || '';
+                // Persist original code for hydration on wrapper (not disappearing pre element)
+                const diagramId = `mermaid-${Date.now()}-${index}`;
+
+                // Replace pre with container + external toolbar wrapper
+                const outerWrapper = document.createElement('div');
+                outerWrapper.className = 'mermaid-diagram-wrapper';
+                outerWrapper.style.position = 'relative';
+                outerWrapper.style.margin = '14px 0 24px 0';
+                outerWrapper.dataset.mermaidSource = mermaidCode;
+                outerWrapper.dataset.diagramId = diagramId;
+                outerWrapper.dataset.enhanced = '1';
+
+                const toolbar = document.createElement('div');
+                toolbar.className = 'mermaid-diagram-toolbar';
+                toolbar.style.position = 'absolute';
+                toolbar.style.top = '-8px';
+                toolbar.style.right = '0';
+                toolbar.style.display = 'flex';
+                toolbar.style.gap = '6px';
+                toolbar.style.zIndex = '5';
+
+                /**
+                 * @param {string} svgPath
+                 * @param {string} title
+                 */
+                function iconButton(svgPath, title) {
+                    const btn = document.createElement('button');
+                    btn.title = title;
+                    btn.style.cssText = 'background:transparent;border:1px solid var(--vscode-panel-border);width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:6px;cursor:pointer;padding:0;color:var(--vscode-editor-foreground);';
+                    btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${svgPath}"/></svg>`;
+                    btn.addEventListener('mouseenter', () => { btn.style.background = 'var(--vscode-button-hoverBackground)'; });
+                    btn.addEventListener('mouseleave', () => { btn.style.background = 'transparent'; });
+                    return btn;
+                }
+
+                const enlargeBtn = iconButton('M15 3h6v6M3 9V3h6M15 21h6v-6M3 15v6h6', 'Open full view');
+                const exportBtn = iconButton('M12 5v11m0 0l-4-4m4 4 4-4M5 19h14', 'Export SVG');
+
+                toolbar.appendChild(enlargeBtn);
+                toolbar.appendChild(exportBtn);
+
+                const diagramContainer = document.createElement('div');
+                diagramContainer.className = 'mermaid-diagram-container';
+                diagramContainer.style.textAlign = 'center';
+                diagramContainer.style.padding = '10px';
+                diagramContainer.style.border = '1px solid var(--vscode-panel-border)';
+                diagramContainer.style.borderRadius = '6px';
+                diagramContainer.style.backgroundColor = 'var(--vscode-editor-background)';
+
+                outerWrapper.appendChild(toolbar);
+                outerWrapper.appendChild(diagramContainer);
+                preElement.parentElement.replaceChild(outerWrapper, preElement);
+
+                const { svg } = await mermaidLib.render(diagramId, mermaidCode);
+                const diagramContent = document.createElement('div');
+                diagramContent.className = 'diagram-content';
+                diagramContent.innerHTML = svg;
+                diagramContainer.appendChild(diagramContent);
+                const svgElement = diagramContent.querySelector('svg');
+                if (svgElement) {
+                    svgElement.style.cursor = 'pointer';
+                    svgElement.style.maxWidth = '100%';
+                    svgElement.style.height = 'auto';
+                    svgElement.addEventListener('click', () => { openDiagramModal(mermaidCode, diagramId); });
+                    enlargeBtn.addEventListener('click', (e) => { e.stopPropagation(); openDiagramModal(mermaidCode, diagramId); });
+                    exportBtn.addEventListener('click', (e) => { e.stopPropagation(); if (svgElement) { exportDiagram(svgElement, diagramId); } });
+                }
+            } catch (error) {
+                console.error('Error rendering Mermaid diagram:', error);
+                if (preElement instanceof HTMLElement) {
+                    preElement.style.backgroundColor = 'var(--vscode-inputValidation-errorBackground)';
+                    preElement.style.color = 'var(--vscode-inputValidation-errorForeground)';
+                }
+            }
+        });
+        // Hydration pass: wrappers missing SVG but having data-mermaid-source
+        const staleWrappers = messageElement.querySelectorAll('div.mermaid-diagram-wrapper');
+        staleWrappers.forEach(wrapper => {
+            // Deduplicate multiple toolbars if somehow duplicated
+            const toolbars = wrapper.querySelectorAll('.mermaid-diagram-toolbar');
+            if (toolbars.length > 1) {
+                for (let i = 1; i < toolbars.length; i++) { toolbars[i].remove(); }
+            }
+            const hasSvg = wrapper.querySelector('svg');
+            if (hasSvg) { return; }
+            const code = wrapper.getAttribute('data-mermaid-source');
+            if (!code) { return; }
+            try {
+                const diagramId = wrapper.getAttribute('data-diagram-id') || `rehydrated-${Date.now()}`;
+                let toolbar = wrapper.querySelector('.mermaid-diagram-toolbar');
+                // Clear wrapper but keep toolbar node (not cloning) to avoid duplicate stacks
+                const toolbarNode = toolbar ? toolbar : null;
+                wrapper.innerHTML = '';
+                if (toolbarNode) { wrapper.appendChild(toolbarNode); }
+                const diagramContainer = document.createElement('div');
+                diagramContainer.className = 'mermaid-diagram-container';
+                diagramContainer.style.textAlign = 'center';
+                diagramContainer.style.padding = '10px';
+                diagramContainer.style.border = '1px solid var(--vscode-panel-border)';
+                diagramContainer.style.borderRadius = '6px';
+                diagramContainer.style.backgroundColor = 'var(--vscode-editor-background)';
+                wrapper.appendChild(diagramContainer);
+                mermaidLib.render(diagramId, code).then((/** @type {{svg:string}} */ { svg }) => {
+                    const diagramContent = document.createElement('div');
+                    diagramContent.className = 'diagram-content';
+                    diagramContent.innerHTML = svg;
+                    diagramContainer.appendChild(diagramContent);
+                    const svgElement = diagramContent.querySelector('svg');
+                    if (svgElement) {
+                        svgElement.style.cursor = 'pointer';
+                        svgElement.style.maxWidth = '100%';
+                        svgElement.style.height = 'auto';
+                        svgElement.addEventListener('click', () => { openDiagramModal(code, diagramId); });
+                    }
+                }).catch(()=>{});
+            } catch { /* ignore */ }
+        });
+    }
+
+    /**
      * Build a chat message DOM element (shared by addMessage & setFullHistory for flicker-free rendering)
      * @param {string} sender
      * @param {string} message
      */
-    function buildMessageElement(sender, message) {
+    /**
+     * @param {string} sender
+     * @param {string} message
+     * @param {string | undefined} messageType
+     */
+    function buildMessageElement(sender, message, messageType) {
         const messageElement = document.createElement('div');
         messageElement.classList.add('message');
         if (sender === 'You') {
@@ -1239,6 +1264,9 @@
             messageElement.classList.add('system');
         } else {
             messageElement.classList.add('bot');
+        }
+        if (messageType === 'diagram') {
+            messageElement.classList.add('diagram');
         }
         const isProviderChange = sender === 'System' && /^Provider changed to /i.test(message.trim());
         if (isProviderChange) {
@@ -1252,6 +1280,28 @@
         return messageElement;
     }
 
+    /**
+     * Upgrade any legacy-rendered mermaid diagrams (text buttons or raw code blocks) to new wrapper/icon format.
+     */
+    function upgradeLegacyDiagrams() {
+        if (!chatMessages) { return; }
+        // Convert raw code blocks not yet wrapped
+        const rawBlocks = chatMessages.querySelectorAll('pre > code.language-mermaid');
+        rawBlocks.forEach(code => {
+            const msgEl = code.closest('.message');
+            if (msgEl && msgEl instanceof HTMLElement) { try { enhanceMessageElement(msgEl, 'diagram'); } catch { /* ignore */ } }
+        });
+        // Replace any text-based buttons labeled Enlarge / Export inside diagrams
+        const legacyButtons = chatMessages.querySelectorAll('.message button');
+        legacyButtons.forEach(btn => {
+            const txt = (btn.textContent||'').trim().toLowerCase();
+            if (txt === 'enlarge' || txt === 'export') {
+                const msgEl = btn.closest('.message');
+                if (msgEl && msgEl instanceof HTMLElement) { try { enhanceMessageElement(msgEl, 'diagram'); } catch { /* ignore */ } }
+            }
+        });
+    }
+
     // ✅ single unified listener
     window.addEventListener('message', event => {
         const message = event.data;
@@ -1260,13 +1310,13 @@
                 setFullHistory(message.history);
                 break;
             case 'addMessage':
-                addMessage(message.sender, message.message);
+                addMessage(message.sender, message.message, message.messageType);
                 break;
             case 'clearMessages':
                 clearMessages();
                 break;
             case 'docCreated':
-                addMessage('System', `Documentation file created: <code>${message.filePath}</code>`);
+                addMessage('System', `Documentation file created: <code>${message.filePath}</code>`, undefined);
                 break;
             case 'threadList':
                 threads = message.threads || [];

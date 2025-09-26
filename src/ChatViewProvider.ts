@@ -11,6 +11,7 @@ import { getNonce } from './utils/utils';
 import { ThreadManager } from './managers/ThreadManager';
 import * as path from 'path';
 import * as fs from 'fs';
+import { OutputLogger } from './utils/OutputLogger';
 import { generateTemplate } from './general-purpose/GenerateTemplate';
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
@@ -23,6 +24,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 	private isInitializing: boolean = true;
 	// Track last sent normalized history signature per thread to suppress redundant redraws
 	private lastSentHistorySignatures: Map<string, string> = new Map();
+	// Track last sent diagram count per thread so we can force resend when diagrams appear/disappear
+	private lastSentDiagramCounts: Map<string, number> = new Map();
 
 	// Compute a simple signature of a session's current normalized history
 	private computeHistorySignature(session: ChatSession): string {
@@ -83,19 +86,23 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		});
 	}
 
-	// Scan documents in workspace and get document suggestions from AI 
-	async scanDocs() {
-		// Get all filenames and contents
-		const filesAndContents = await this.documentSuggestion.getWorkspaceFilesAndContents();
-		// Get AI suggestions
-		const aiSuggestions = await this.documentSuggestion.getAISuggestions(this.llmService, filesAndContents);
-		// AI suggestions retrieved
-		// Pass all AI suggestions to modal, but filter after AI generates
-		this.postMessage({
-			type: 'aiSuggestedDocs',
-			suggestions: aiSuggestions,
-			existingFiles: filesAndContents.map(f => f.path.split(/[/\\]/).pop()?.toLowerCase())
-		});
+	// Scan documents in workspace and get document suggestions from AI
+	public async scanDocs() {
+		try {
+			const filesAndContents = await this.documentSuggestion.getWorkspaceFilesAndContents();
+			const aiSuggestions = await this.documentSuggestion.getAISuggestions(this.llmService, filesAndContents);
+			this.postMessage({
+				type: 'aiSuggestedDocs',
+				suggestions: aiSuggestions,
+				existingFiles: filesAndContents.map(f => f.path.split(/[/\\]/).pop()?.toLowerCase())
+			});
+		} catch (e: any) {
+			this.postMessage({ type: 'addMessage', sender: 'System', message: `Error scanning docs: ${e.message || e}` });
+		}
+	}
+
+	private _detectDiagram(text: string | undefined): boolean {
+		return typeof text === 'string' && /```mermaid[\s\S]*?```/i.test(text);
 	}
 
 	/**
@@ -108,8 +115,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 			this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: 'No active thread.' });
 			return Promise.resolve('No active thread.');
 		}
-		// Immediately show user message
-		this._view?.webview.postMessage({ type: 'addMessage', sender: 'You', message: prompt });
+		// Immediately show user message (with diagram tagging if applicable)
+		this._view?.webview.postMessage({ type: 'addMessage', sender: 'You', message: prompt, messageType: this._detectDiagram(prompt) ? 'diagram' : undefined });
 
 		try {
 			const botResponse = await this.llmService.trackedChat({
@@ -118,22 +125,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 				prompt,
 				task: 'chat'
 			});
-
-			// --- START: FIX ---
-			// Manually add the new exchange to the session's history object
-			const history = session.getHistory();
-			history.push(new HumanMessage(prompt));
-			history.push(new AIMessage(botResponse));
-			// --- END: FIX ---
-
-			this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: botResponse });
-
-			// Now, save the updated history
+			// session.chat already appended Human + AI messages; do NOT duplicate.
+			this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: botResponse, messageType: this._detectDiagram(botResponse) ? 'diagram' : undefined });
 			await this.threadManager.saveThreadHistory(sessionId);
-
 			return botResponse;
 		} catch (error: any) {
 			const errorMsg = `Error: ${error.message || 'Unable to connect to LLM.'}`;
+			// Persist the error as an AI message so saved history matches displayed conversation
+			try { session.getHistory().push(new AIMessage(errorMsg)); await this.threadManager.saveThreadHistory(sessionId); } catch { /* ignore */ }
 			this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: errorMsg });
 			return errorMsg;
 		}
@@ -145,6 +144,41 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 	 */
 	public addSystemMessage(message: string) {
 		this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message });
+	}
+
+	/**
+	 * Append a bot (AI) message directly to the active session history without creating a paired user message.
+	 * Used for internally generated context like visualizations so they appear as bot output only.
+	 */
+	public async addBotMessage(message: string, meta?: { messageType?: string; flags?: string[] }): Promise<void> {
+		try {
+			const activeThreadId = this.threadManager.getActiveThreadId();
+			if (!activeThreadId) { return; }
+			const session = this.threadManager.getSession(activeThreadId);
+			if (!session) { return; }
+			// IMPORTANT: session.getHistory() returns a filtered COPY (system message removed), so pushing
+			// to it does NOT mutate the underlying chat session history. We must reconstruct and call setHistory.
+			const existing = session.getHistory().map((m: any) => {
+				let role: string | undefined = m.type || (typeof m._getType === 'function' ? m._getType() : undefined);
+				if (!role || role === 'unknown') {
+					const ctor = m.constructor?.name?.toLowerCase?.() || '';
+					if (ctor.includes('human')) { role = 'human'; }
+					else if (ctor.includes('ai')) { role = 'ai'; }
+				}
+				if (role === 'user') { role = 'human'; }
+				if (role === 'assistant' || role === 'bot') { role = 'ai'; }
+				const text = (m as any).text || (typeof m.content === 'string' ? m.content : JSON.stringify(m.content));
+				return { type: role, text };
+			});
+			const updated = [...existing, { type: 'ai', text: message }];
+			(session as any).setHistory(updated as any);
+			await this.threadManager.saveThreadHistory(activeThreadId);
+			// Also push to UI immediately
+			const inferredType = this._detectDiagram(message) ? 'diagram' : undefined;
+			this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message, messageType: meta?.messageType || inferredType, flags: meta?.flags });
+		} catch (e) {
+			console.warn('[NaruhoDocs] Failed to add bot message:', e);
+		}
 	}
 
 	public async resolveWebviewView(
@@ -365,13 +399,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 							task: 'chat'
 						});
 						// Append to in-memory history
-						const hist = activeSession.getHistory();
-						hist.push(new HumanMessage(userMessage));
-						hist.push(new AIMessage(botResponse));
+						// session.chat already added messages; only display & persist
 						this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: botResponse });
 						await this.threadManager.saveThreadHistory(activeThreadId);
 					} catch (error: any) {
-						this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: `Error: ${error.message || 'Unable to connect to LLM.'}` });
+						const errMsg = `Error: ${error.message || 'Unable to connect to LLM.'}`;
+						try { activeSession?.getHistory().push(new AIMessage(errMsg)); await this.threadManager.saveThreadHistory(activeThreadId); } catch { /* ignore */ }
+						this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: errMsg });
 					}
 					break;
 				}
@@ -674,7 +708,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 			if (this.context.extensionMode === vscode.ExtensionMode.Development) {
 				console.log('[NaruhoDocs][History] Raw history length:', raw.length, 'for session', activeId);
 			}
-			const normalized = raw
+				const normalized: Array<{ sender: string; message: string; messageType?: string; rawMermaid?: string }> = raw
 				.filter((msg: any) => {
 					// Filter out RAG Query system/context messages
 					// You can adjust this filter as needed for your app
@@ -700,11 +734,42 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 					if (role === 'assistant' || role === 'bot') { role = 'ai'; }
 					const sender = role === 'human' ? 'You' : 'Bot';
 					const text = typeof msg.content === 'string' ? msg.content : msg.text || JSON.stringify(msg.content);
-					return { sender, message: text };
+					const isDiagram = this._detectDiagram(text);
+					let rawMermaid: string | undefined;
+					if (isDiagram) {
+						const match = text.match(/```mermaid\s*([\s\S]*?)```/i);
+						if (match) { rawMermaid = match[1].trim(); }
+					}
+					return { sender, message: text, messageType: isDiagram ? 'diagram' : undefined, rawMermaid };
 				});
 			if (this.context.extensionMode === vscode.ExtensionMode.Development) {
 				console.log('[NaruhoDocs][History] Normalized history length:', normalized.length);
 			}
+			// Logging stats
+			try {
+				const diagramCount = normalized.filter(n => !!n.rawMermaid || /```mermaid/.test(n.message)).length;
+				OutputLogger.history(`_sendFullHistory thread=${activeId} messages=${normalized.length} diagrams=${diagramCount}`);
+				// Force resend logic: if diagram count changed or diagrams present but signature suppression would skip, we'll bypass
+				const lastDiagramCount = this.lastSentDiagramCounts.get(activeId);
+				const sig = precomputedSignature || this.computeHistorySignature(session);
+				const lastSig = this.lastSentHistorySignatures.get(activeId);
+				const diagramCountChanged = lastDiagramCount === undefined || lastDiagramCount !== diagramCount;
+				const shouldForce = diagramCount > 0 && diagramCountChanged;
+				if (shouldForce) {
+					OutputLogger.history(`Forcing history resend (diagramCountChanged) thread=${activeId} old=${lastDiagramCount} new=${diagramCount}`);
+					// Intentionally do not early-return on signature match below.
+					this.lastSentHistorySignatures.delete(activeId); // clear to ensure send
+				}
+				// Update counts now
+				this.lastSentDiagramCounts.set(activeId, diagramCount);
+				// If signature unchanged and not forced, skip
+				if (!shouldForce && lastSig && sig === lastSig) {
+					OutputLogger.history(`Suppressing resend (signature unchanged) thread=${activeId} sig=${sig.slice(0,24)}... diagrams=${diagramCount}`);
+					return; // Skip sending to avoid flicker
+				}
+				// Proceed to send and record signature below
+				precomputedSignature = sig;
+			} catch {/* ignore */}
 			// Fallback: if raw has items but normalized becomes empty (unexpected), replay manually
 			if (raw.length > 0 && normalized.length === 0) {
 				if (this._isVerbose()) { console.warn('[NaruhoDocs][History] Normalized empty; falling back to manual replay'); }
@@ -727,11 +792,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 			this._view.webview.postMessage({ type: 'setFullHistory', history: normalized });
 			// Record signature so we can suppress redundant redraws later
 			try {
-				const sig = precomputedSignature || this.computeHistorySignature(session);
-				this.lastSentHistorySignatures.set(activeId, sig);
+				const sigFinal = precomputedSignature || this.computeHistorySignature(session);
+				this.lastSentHistorySignatures.set(activeId, sigFinal);
 			} catch { /* ignore */ }
 		} catch (e) {
 			console.warn('Failed to send full history:', e);
+			OutputLogger.error(`_sendFullHistory failed thread=${sessionId || 'active'}: ${e instanceof Error ? e.message : String(e)}`);
 		}
 	}
 

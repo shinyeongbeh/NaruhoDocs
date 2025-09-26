@@ -2,9 +2,11 @@
 
 .container {
     padding: 20px;
-    height: 100vh;
+    /* Use 100% so VS Code can control the view height; 100vh caused stale layout after reopen */
+    height: 100%;
     display: flex;
     flex-direction: column;
+    box-sizing: border-box;
 }
 
 .header {

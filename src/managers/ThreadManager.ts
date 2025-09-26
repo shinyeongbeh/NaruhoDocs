@@ -3,6 +3,7 @@ import { createChat, ChatSession } from '../langchain-backend/llm';
 import { SystemMessages } from '../SystemMessages';
 import { LLMProviderManager } from '../llm-providers/manager';
 import { LLMService } from './LLMService';
+import { OutputLogger } from '../utils/OutputLogger';
 
 export class ThreadManager {
     private sessions: Map<string, ChatSession> = new Map();
@@ -305,7 +306,34 @@ export class ThreadManager {
         const session = this.sessions.get(sessionId);
         if (session) {
             const raw = session.getHistory();
-            const serialized = raw.map((m: any) => {
+            try {
+                if (raw.length === 0) {
+                    OutputLogger.history(`[Debug] saveThreadHistory rawLength=0 session=${sessionId}`);
+                } else {
+                    const lastMsg = raw[raw.length - 1];
+                    const preview = (lastMsg as any)?.text || (typeof (lastMsg as any)?.content === 'string' ? (lastMsg as any).content : JSON.stringify((lastMsg as any)?.content));
+                    OutputLogger.history(`[Debug] saveThreadHistory rawLength=${raw.length} lastPreview="${(preview||'').toString().slice(0,80).replace(/\n/g,' ')}" session=${sessionId}`);
+                }
+            } catch { /* ignore */ }
+            // Dedupe consecutive identical role+text pairs (addresses earlier duplicate insertion bug)
+            const compact: any[] = [];
+            for (const m of raw) {
+                const directType = (m as any).type || (typeof (m as any)._getType === 'function' ? (m as any)._getType() : undefined);
+                let role = directType || 'unknown';
+                if (role !== 'human' && role !== 'ai') {
+                    const ctor = m.constructor?.name?.toLowerCase?.() || '';
+                    if (ctor.includes('human')) { role = 'human'; }
+                    else if (ctor.includes('ai')) { role = 'ai'; }
+                }
+                if (role === 'user') { role = 'human'; }
+                if (role === 'assistant' || role === 'bot') { role = 'ai'; }
+                const textVal = (m as any).text || (typeof m.content === 'string' ? m.content : JSON.stringify(m.content));
+                const last = compact[compact.length - 1];
+                if (!last || last.type !== role || last.text !== textVal) {
+                    compact.push({ type: role, text: textVal });
+                }
+            }
+            const serialized = compact.map((m: any) => {
                 const directType = (m as any).type;
                 const fnType = typeof m._getType === 'function' ? m._getType() : undefined;
                 let role = directType || fnType || 'unknown';
@@ -320,6 +348,13 @@ export class ThreadManager {
                 return { type: role, text };
             });
             await this.context.workspaceState.update(`thread-history-${sessionId}`, serialized);
+            try {
+                const diagramCount = serialized.filter(m => typeof m.text === 'string' && /```mermaid[\s\S]*?```/i.test(m.text)).length;
+                if (serialized.length === 0 && raw.length > 0) {
+                    OutputLogger.history(`Persist anomaly thread=${sessionId} raw>0(${raw.length}) serialized=0`);
+                }
+                OutputLogger.history(`Persisted thread=${sessionId} messages=${serialized.length} diagrams=${diagramCount}`);
+            } catch {/* ignore */}
         }
     }
 

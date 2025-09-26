@@ -2,6 +2,13 @@
 
 // This script will be run within the webview itself for visualization
 (function () {
+    /**
+     * @typedef {Object} VisualizationResult
+     * @property {'mermaid'|'d3'|'vis'|'error'} type
+     * @property {string} content
+     * @property {string} title
+     * @property {string=} error
+     */
     // @ts-ignore: acquireVsCodeApi is provided by VS Code webview
     const vscode = acquireVsCodeApi();
 
@@ -18,7 +25,9 @@
     const errorMessage = document.getElementById('error-message');
     const visualizationContainer = document.getElementById('visualization-container');
 
-    let currentVisualization = null;
+    /** @type {VisualizationResult|null} */
+    let currentVisualization = /** @type {any} */(null);
+    let restoring = false;
 
     // Initialize Mermaid
     if (typeof mermaidLib !== 'undefined') {
@@ -79,6 +88,9 @@
         });
     }
 
+    /**
+     * @param {VisualizationResult} result
+     */
     function handleVisualizationResult(result) {
         showLoading(false);
         
@@ -93,7 +105,8 @@
             return;
         }
 
-        currentVisualization = result;
+    currentVisualization = result;
+    saveState();
         
         try {
             renderVisualization(result);
@@ -104,10 +117,14 @@
             }
         } catch (error) {
             console.error('Error rendering visualization:', error);
-            showError(`Failed to render visualization: ${error.message}`);
+            const msg = error && typeof error === 'object' && 'message' in error ? /** @type {any} */(error).message : 'Unknown error';
+            showError(`Failed to render visualization: ${msg}`);
         }
     }
 
+    /**
+     * @param {VisualizationResult} result
+     */
     function renderVisualization(result) {
         if (!visualizationContainer) {
             return;
@@ -144,6 +161,9 @@
         addExportControls();
     }
 
+    /**
+     * @param {string} content
+     */
     function renderMermaidDiagram(content) {
         if (typeof mermaidLib === 'undefined') {
             throw new Error('Mermaid library not loaded');
@@ -165,6 +185,9 @@
         mermaidLib.init(undefined, diagramElement);
     }
 
+    /**
+     * @param {string} content
+     */
     function renderD3Visualization(content) {
         // TODO: Implement D3.js visualization rendering
         const container = document.createElement('div');
@@ -175,6 +198,9 @@
         }
     }
 
+    /**
+     * @param {string} content
+     */
     function renderVisVisualization(content) {
         // TODO: Implement Vis.js visualization rendering
         const container = document.createElement('div');
@@ -213,6 +239,11 @@
         }
     }
 
+    /**
+     * @param {string} text
+     * @param {string} title
+     * @param {() => void} onClick
+     */
     function createControlButton(text, title, onClick) {
         const button = document.createElement('button');
         button.className = 'control-button';
@@ -238,6 +269,9 @@
         });
     }
 
+    /**
+     * @param {boolean} show
+     */
     function showLoading(show) {
         if (loadingElement) {
             if (show) {
@@ -254,6 +288,9 @@
         }
     }
 
+    /**
+     * @param {string} message
+     */
     function showError(message) {
         if (errorElement && errorMessage) {
             errorMessage.textContent = message;
@@ -270,18 +307,25 @@
     // Restore state if needed
     const state = vscode.getState();
     if (state && state.currentVisualization) {
+        restoring = true;
         currentVisualization = state.currentVisualization;
-        handleVisualizationResult(currentVisualization);
+    try { if (currentVisualization) { handleVisualizationResult(currentVisualization); } } finally { restoring = false; }
     }
 
     // Save state when visualization changes
     function saveState() {
         vscode.setState({
-            currentVisualization: currentVisualization
+            currentVisualization: currentVisualization,
+            selectedType: visualizationType instanceof HTMLSelectElement ? visualizationType.value : undefined
         });
     }
 
-    // Auto-save state periodically
-    setInterval(saveState, 1000);
+    // Persist visualization type changes
+    if (visualizationType instanceof HTMLSelectElement) {
+        visualizationType.addEventListener('change', saveState);
+        if (state && state.selectedType) {
+            visualizationType.value = state.selectedType;
+        }
+    }
 
 }());

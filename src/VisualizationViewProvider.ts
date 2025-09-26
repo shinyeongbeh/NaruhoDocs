@@ -23,8 +23,7 @@ export class VisualizationViewProvider implements vscode.WebviewViewProvider {
         _token: vscode.CancellationToken
     ) {
         this._view = webviewView;
-
-            this._isReady = false;
+        this._isReady = false;
         webviewView.webview.options = {
             // Allow scripts in the webview
             enableScripts: true,
@@ -72,8 +71,15 @@ export class VisualizationViewProvider implements vscode.WebviewViewProvider {
                 if (this._isReady) {
                     this._postMessage({ type: 'visualizationResult', result: this._lastResult });
                 }
-            }, 200);
+            }, 150);
         }
+
+        // Re-send visualization when view becomes visible again (covers collapse/expand scenario)
+        webviewView.onDidChangeVisibility(() => {
+            if (webviewView.visible && this._lastResult && this._isReady) {
+                this._postMessage({ type: 'visualizationResult', result: this._lastResult });
+            }
+        });
     }
 
     public showVisualization(result: VisualizationResult) {
