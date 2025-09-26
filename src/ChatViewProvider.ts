@@ -415,6 +415,26 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		this.threadManager.createThread(sessionId, initialContext, title);
 	}
 
+	/** Hydrate any previously persisted threads (including general) before creating new sessions. */
+	public async restorePersistedThreads(): Promise<void> {
+		try {
+			const keys = this.context.workspaceState.keys();
+			await (this.threadManager as any).restoreThreads(keys);
+			// Ensure general thread exists / hydrated
+			await (this.threadManager as any).initializeGeneralThread();
+			// Prefer last active if stored
+			let active = this.context.globalState.get<string>('lastActiveThreadId');
+			if (!active || !(this.threadManager.getSessions().has(active))) {
+				active = 'naruhodocs-general-thread';
+			}
+			await this.threadManager.setActiveThread(active);
+			this._postThreadList();
+			this._sendFullHistory(active);
+		} catch (e) {
+			console.warn('[NaruhoDocs] restorePersistedThreads failed:', e);
+		}
+	}
+
 	// ...existing code...
 	public async setActiveThread(sessionId: string) {
 		await this.threadManager.setActiveThread(sessionId);
@@ -456,6 +476,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		} else {
 			vscode.window.showWarningMessage('No active chat session found.');
 		}
+	}
+
+	// Placeholder for scanDocs command hook (currently implemented elsewhere / future expansion)
+	public async scanDocs(): Promise<void> {
+		// Intentionally minimal; real implementation can push a system message or trigger analyzer later
+		try { this.addSystemMessage('Scanning docs is not yet implemented in ChatViewProvider.'); } catch { /* ignore */ }
 	}
 
 	private _postThreadList() {

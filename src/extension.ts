@@ -154,6 +154,9 @@ export function activate(context: vscode.ExtensionContext) {
 	}
 
 	provider = new ChatViewProvider(context.extensionUri, undefined, context, llmManager);
+	// Attempt early hydration of any previously persisted threads (including general) so we do not
+	// overwrite an existing restored general history with a fresh empty session later in activation.
+	(async () => { try { await (provider as any).restorePersistedThreads(); } catch { /* non-fatal */ } })();
 
 	// Model config manager (per-repo JSON) - instantiate now, load inside activation async block
 	const modelConfigManager = new ModelConfigManager(context);
@@ -218,14 +221,20 @@ export function activate(context: vscode.ExtensionContext) {
 				// Wait before retry (exponential backoff)
 				await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
 			}
-		}			// Initialize the general-purpose thread AFTER provider is confirmed
+		} 		// Initialize the general-purpose thread AFTER provider is confirmed (only if not already restored)
 			const generalThreadId = 'naruhodocs-general-thread';
-			const generalThreadTitle = 'General Purpose';
-			// Ensure backing LLM session is created through LLMService so logging + provider attribution work
-			await llmService.getSession(generalThreadId, SystemMessages.GENERAL_PURPOSE, { taskType: 'chat', forceNew: true });
-			provider.createThread(generalThreadId, SystemMessages.GENERAL_PURPOSE, generalThreadTitle);
-			activeThreadId = generalThreadId;
-			provider.setActiveThread(generalThreadId);
+			// If restorePersistedThreads ran earlier and hydrated general thread, skip recreation
+			const existingGeneral = (provider as any)?.threadManager?.getSession?.(generalThreadId);
+			if (!existingGeneral) {
+				const generalThreadTitle = 'General Purpose';
+				await llmService.getSession(generalThreadId, SystemMessages.GENERAL_PURPOSE, { taskType: 'chat', forceNew: true });
+				provider.createThread(generalThreadId, SystemMessages.GENERAL_PURPOSE, generalThreadTitle);
+				activeThreadId = generalThreadId;
+				provider.setActiveThread(generalThreadId);
+			} else {
+				activeThreadId = generalThreadId;
+				provider.setActiveThread(generalThreadId);
+			}
 
 			updateProviderModelStatus(activeThreadId);
 
