@@ -1015,175 +1015,193 @@
     }
 
     // Fallback modal for when VS Code API is not available
-    /** @param {any} mermaidCode @param {string} diagramId */
+    /** @param {string} mermaidCode @param {string} diagramId */
     function openFallbackModal(mermaidCode, diagramId) {
-        // Remove any existing modal
-        const existingModal = document.getElementById('diagram-modal');
-        if (existingModal) {
-            existingModal.remove();
-        }
+        const existing = document.getElementById('diagram-modal');
+        if (existing) { existing.remove(); }
 
-        // Create modal overlay - full VS Code window
         const modal = document.createElement('div');
         modal.id = 'diagram-modal';
-        modal.className = 'diagram-modal'; // Use class instead of inline style
+        modal.className = 'diagram-modal';
 
         const modalContent = document.createElement('div');
         modalContent.className = 'diagram-modal-content';
 
-        const modalHeader = document.createElement('div');
-        modalHeader.className = 'diagram-modal-header';
+        const header = document.createElement('div');
+        header.className = 'diagram-modal-header';
 
-        const modalTitle = document.createElement('h3');
-        modalTitle.className = 'diagram-modal-title';
+        const titleEl = document.createElement('h3');
+        titleEl.className = 'diagram-modal-title';
+        titleEl.textContent = 'Diagram';
 
-        const modalControls = document.createElement('div');
-        modalControls.className = 'diagram-modal-controls';
+        const controls = document.createElement('div');
+        controls.className = 'diagram-modal-controls';
+        controls.style.display = 'flex';
+        controls.style.alignItems = 'center';
+        controls.style.gap = '4px';
 
-        // Zoom controls
-        const zoomOutBtn = createModalButton('🔍-', 'Zoom out');
-        const zoomResetBtn = createModalButton('100%', 'Reset zoom');
-        const zoomInBtn = createModalButton('🔍+', 'Zoom in');
-        const fullscreenBtn = createModalButton('⛶', 'Fullscreen');
-        const exportBtn = createModalButton('💾', 'Export');
-        const closeBtn = createModalButton('✖', 'Close');
+        // Zoom indicator badge
+        const zoomBadge = document.createElement('span');
+        zoomBadge.id = 'zoom-indicator';
+        zoomBadge.style.cssText = 'font-size:11px;padding:2px 6px;border:1px solid var(--vscode-editorWidget-border);border-radius:4px;opacity:0.8;';
+        zoomBadge.textContent = '100%';
 
-        modalControls.appendChild(zoomOutBtn);
-        modalControls.appendChild(zoomResetBtn);
-        modalControls.appendChild(zoomInBtn);
-        modalControls.appendChild(fullscreenBtn);
-        modalControls.appendChild(exportBtn);
-        modalControls.appendChild(closeBtn);
+        // Button factory
+        /** @param {string} label @param {string} title @param {() => void} onClick */
+        function createIconButton(label, title, onClick) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.textContent = label;
+            btn.title = title;
+            btn.style.cssText = 'background:var(--vscode-button-secondaryBackground, var(--vscode-button-background));color:var(--vscode-button-foreground);border:none;border-radius:4px;cursor:pointer;padding:4px 6px;min-width:28px;font-size:12px;line-height:1;display:inline-flex;align-items:center;justify-content:center;';
+            btn.onmouseenter = () => { btn.style.background = 'var(--vscode-button-hoverBackground)'; };
+            btn.onmouseleave = () => { btn.style.background = 'var(--vscode-button-secondaryBackground, var(--vscode-button-background))'; };
+            btn.onclick = onClick;
+            return btn;
+        }
 
-        modalHeader.appendChild(modalTitle);
-        modalHeader.appendChild(modalControls);
+        // State
+        let currentScale = 1;
+        let fitScale = 1;
+        const MIN_SCALE = 0.2;
+        const MAX_SCALE = 4;
+        const STEP = 0.2;
 
-        // Create diagram container
-        const diagramContainer = document.createElement('div');
-        diagramContainer.id = 'modal-diagram-container';
-        diagramContainer.style.cssText = `
-            text-align: center;
-            overflow: auto;
-            max-height: calc(90vh - 100px);
-            position: relative;
-        `;
+        /** @type {SVGSVGElement | null} */
+        let svgElement = null;
+        /** @type {HTMLElement | null} */
+        let innerStage = null;
 
-        modalContent.appendChild(modalHeader);
-        modalContent.appendChild(diagramContainer);
+        function updateZoomBadge() {
+            zoomBadge.textContent = `${Math.round(currentScale * 100)}%`;
+        }
+
+        /** @param {number} newScale */
+        function applyScale(newScale) {
+            currentScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, newScale));
+            if (innerStage) { innerStage.style.transform = `scale(${currentScale})`; }
+            updateZoomBadge();
+        }
+
+        function computeFitScale() {
+            if (!svgElement || !innerStage) { return 1; }
+            const container = innerStage.parentElement; // outer stage
+            if (!container) { return 1; }
+            const availW = container.clientWidth - 16; // padding allowance
+            const availH = container.clientHeight - 16;
+
+            let vbW, vbH;
+            if (svgElement.viewBox && svgElement.viewBox.baseVal && svgElement.viewBox.baseVal.width && svgElement.viewBox.baseVal.height) {
+                vbW = svgElement.viewBox.baseVal.width;
+                vbH = svgElement.viewBox.baseVal.height;
+            } else {
+                try {
+                    const bbox = svgElement.getBBox();
+                    vbW = bbox.width || 1;
+                    vbH = bbox.height || 1;
+                } catch {
+                    vbW = svgElement.clientWidth || 1;
+                    vbH = svgElement.clientHeight || 1;
+                }
+            }
+            if (vbW === 0 || vbH === 0) { return 1; }
+            const scale = Math.min(availW / vbW, availH / vbH, 1); // never upscale above 1
+            return scale <= 0 || !isFinite(scale) ? 1 : scale;
+        }
+
+        // Diagram stage wrappers
+        const outerStage = document.createElement('div');
+        outerStage.style.cssText = 'position:relative;overflow:auto;max-height:calc(90vh - 100px);display:flex;justify-content:center;align-items:center;';
+        innerStage = document.createElement('div');
+        innerStage.style.cssText = 'transform-origin:center center;transition:transform 0.25s ease;display:inline-block;';
+        outerStage.appendChild(innerStage);
+
+        // Buttons
+        const btnZoomOut = createIconButton('−', 'Zoom out', () => applyScale(currentScale - STEP));
+        const btnZoomIn = createIconButton('+', 'Zoom in', () => applyScale(currentScale + STEP));
+        const btnFit = createIconButton('⤢', 'Fit to view', () => { fitScale = computeFitScale(); applyScale(fitScale); });
+        const btnReset = createIconButton('1:1', 'Reset to 100%', () => applyScale(1));
+        const btnCopy = createIconButton('⧉', 'Copy Mermaid source', () => {
+            const toCopy = mermaidCode || (svgElement ? new XMLSerializer().serializeToString(svgElement) : '');
+            try {
+                if (navigator.clipboard && toCopy) {
+                    navigator.clipboard.writeText(toCopy).then(() => showToast('Mermaid source copied', 'info')).catch(() => fallbackCopy());
+                } else {
+                    fallbackCopy();
+                }
+            } catch { fallbackCopy(); }
+            function fallbackCopy() {
+                if (!toCopy) { return; }
+                const ta = document.createElement('textarea');
+                ta.value = toCopy;
+                document.body.appendChild(ta);
+                ta.select();
+                try { document.execCommand('copy'); showToast('Mermaid source copied', 'info'); } catch {}
+                document.body.removeChild(ta);
+            }
+        });
+        const btnFullscreen = createIconButton('⛶', 'Toggle fullscreen', () => {
+            if (document.fullscreenElement) {
+                document.exitFullscreen();
+            } else {
+                modal.requestFullscreen().then(() => { setTimeout(() => { fitScale = computeFitScale(); applyScale(fitScale); }, 50); }).catch(()=>{});
+            }
+        });
+        const btnClose = createIconButton('✖', 'Close', () => closeModal());
+
+        controls.appendChild(zoomBadge);
+        controls.appendChild(btnZoomOut);
+        controls.appendChild(btnZoomIn);
+        controls.appendChild(btnFit);
+        controls.appendChild(btnReset);
+        controls.appendChild(btnCopy);
+        controls.appendChild(btnFullscreen);
+        controls.appendChild(btnClose);
+
+        header.appendChild(titleEl);
+        header.appendChild(controls);
+        modalContent.appendChild(header);
+        modalContent.appendChild(outerStage);
         modal.appendChild(modalContent);
         document.body.appendChild(modal);
 
-        // Render the enlarged diagram
+        // Render mermaid
         if (typeof mermaidLib !== 'undefined') {
-            mermaidLib.render(`${diagramId}-modal`, mermaidCode)
-                .then((/** @type {{svg: string}} */ { svg }) => {
-                    diagramContainer.innerHTML = svg;
-                    const svgElement = diagramContainer.querySelector('svg');
-                    if (svgElement) {
-                        svgElement.style.cssText = `
-                            max-width: 100%;
-                            height: auto;
-                            transform-origin: center;
-                            transition: transform 0.3s ease;
-                        `;
-
-                        // Set up zoom functionality
-                        let currentZoom = 1;
-                        const zoomStep = 0.2;
-
-                        /** @param {number} newZoom */
-                        function updateZoom(newZoom) {
-                            currentZoom = Math.max(0.5, Math.min(3, newZoom));
-                            if (svgElement) {
-                                svgElement.style.transform = `scale(${currentZoom})`;
-                            }
-                            zoomResetBtn.textContent = `${Math.round(currentZoom * 100)}%`;
-                        }
-
-                        zoomInBtn.onclick = () => updateZoom(currentZoom + zoomStep);
-                        zoomOutBtn.onclick = () => updateZoom(currentZoom - zoomStep);
-                        zoomResetBtn.onclick = () => updateZoom(1);
-
-                        // Export functionality
-                        exportBtn.onclick = () => exportDiagram(svgElement, diagramId);
-
-                        // Fullscreen functionality
-                        fullscreenBtn.onclick = () => {
-                            if (document.fullscreenElement) {
-                                document.exitFullscreen();
-                            } else {
-                                modal.requestFullscreen().catch(err => {
-                                    console.log('Fullscreen failed:', err);
-                                });
-                            }
-                        };
-                    }
-                })
-                .catch((/** @type {any} */ error) => {
-                    diagramContainer.innerHTML = `<p style="color: var(--vscode-errorForeground); padding: 20px;">Failed to render diagram: ${error.message}</p>`;
-                });
+            mermaidLib.render(`${diagramId}-modal`, mermaidCode).then((/** @type {{svg:string}} */ res) => {
+                const svg = res.svg;
+                innerStage.innerHTML = svg;
+                svgElement = /** @type {SVGSVGElement|null} */ (innerStage.querySelector('svg'));
+                // Initial fit
+                fitScale = computeFitScale();
+                applyScale(fitScale);
+                // Recompute on window resize
+                const resizeHandler = () => { const prev = currentScale; fitScale = computeFitScale(); if (Math.abs(prev - fitScale) < 0.01) { return; } applyScale(fitScale); };
+                window.addEventListener('resize', resizeHandler);
+                modal.addEventListener('remove', () => window.removeEventListener('resize', resizeHandler));
+            }).catch((/** @type {any} */ error) => {
+                innerStage.innerHTML = `<p style="color: var(--vscode-errorForeground); padding: 20px;">Failed to render diagram: ${error.message}</p>`;
+            });
         }
 
-        // Close modal functionality
-        function closeModal() {
-            modal.remove();
-        }
-
-        closeBtn.onclick = closeModal;
-        modal.onclick = (e) => {
-            if (e.target === modal) {
-                closeModal();
-            }
-        };
+        function closeModal() { modal.remove(); }
+    modal.onclick = (e) => { if (e.target === modal) { closeModal(); } };
 
         // Keyboard shortcuts
         /** @param {KeyboardEvent} e */
-        function handleKeyDown(e) {
-            if (e.key === 'Escape') {
-                closeModal();
-            } else if (e.key === '+' || e.key === '=') {
-                e.preventDefault();
-                zoomInBtn.click();
-            } else if (e.key === '-') {
-                e.preventDefault();
-                zoomOutBtn.click();
-            } else if (e.key === '0') {
-                e.preventDefault();
-                zoomResetBtn.click();
-            }
+        function handleKey(e) {
+            if (e.key === 'Escape') { closeModal(); }
+            else if (e.key === '+' || e.key === '=') { e.preventDefault(); btnZoomIn.click(); }
+            else if (e.key === '-') { e.preventDefault(); btnZoomOut.click(); }
+            else if (e.key === '0') { e.preventDefault(); btnReset.click(); }
+            else if (e.key.toLowerCase() === 'f') { e.preventDefault(); btnFit.click(); }
         }
-
-        document.addEventListener('keydown', handleKeyDown);
-        modal.addEventListener('remove', () => {
-            document.removeEventListener('keydown', handleKeyDown);
-        });
+        document.addEventListener('keydown', handleKey);
+        modal.addEventListener('remove', () => document.removeEventListener('keydown', handleKey));
     }
 
-    // Function to create modal buttons
-    /** @param {string} text @param {string} title */
-    function createModalButton(text, title) {
-        const button = document.createElement('button');
-        button.textContent = text;
-        button.title = title;
-        button.style.cssText = `
-            background: var(--vscode-button-background);
-            color: var(--vscode-button-foreground);
-            border: none;
-            border-radius: 4px;
-            padding: 6px 10px;
-            cursor: pointer;
-            font-size: 12px;
-            transition: background 0.2s;
-            min-width: 30px;
-        `;
-        button.onmouseenter = () => {
-            button.style.background = 'var(--vscode-button-hoverBackground)';
-        };
-        button.onmouseleave = () => {
-            button.style.background = 'var(--vscode-button-background)';
-        };
-        return button;
-    }
+    // Legacy createModalButton retained for backward compatibility (unused after refactor)
+    /** @deprecated */
+    function createModalButton() { /* no-op retained */ }
 
     // Function to export diagram as SVG or PNG
     /** @param {SVGSVGElement} svgElement @param {string} diagramId */
