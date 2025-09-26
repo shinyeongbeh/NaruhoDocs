@@ -349,18 +349,20 @@
 	margin-right:8px;
 }
 /* Hamburger menu open/close visual state */
-#hamburger-menu.open svg {
-	/* Hide hamburger lines, show X */
+#hamburger-menu .hamburger-icon {
+	display: inline-block;
+}
+
+#hamburger-menu .close-icon {
 	display: none;
 }
 
-#hamburger-menu.open::before {
-	content: '\2715';
-	/* Unicode X */
-	font-size: 24px;
-	color: #2196f3;
+#hamburger-menu.open .hamburger-icon {
+	display: none;
+}
+
+#hamburger-menu.open .close-icon {
 	display: inline-block;
-	vertical-align: middle;
 }
 
 #hamburger-menu {
@@ -518,26 +520,37 @@ html {
 #send-icon {
 	color: var(--vscode-icon-foreground);
 	position: absolute;
-	right: 16px;
+	right: 12px;
 	top: 50%;
 	transform: translateY(-50%);
 	cursor: pointer;
-	z-index: 2;
+	z-index: 10;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	border-radius: 4px;
+	transition: background-color 0.2s;
+	pointer-events: auto;
+}
+
+#send-icon:hover {
+	background-color: var(--vscode-toolbar-hoverBackground);
 }
 
 #send-icon img {
-
 	width: 18px;
 	height: 18px;
+	filter: brightness(0) saturate(100%) invert(50%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(100%) contrast(100%);
+	pointer-events: none;
 }
 
-.send-icon-class {
-	position:absolute; 
-	right:8px; 
-	top:50%; 
-	transform:translateY(-50%); 
-	cursor:pointer;
+#send-icon:hover img {
+	filter: brightness(0) saturate(100%) invert(50%) sepia(100%) saturate(2000%) hue-rotate(202deg) brightness(95%) contrast(101%);
 }
+
+/* send-icon-class styles merged into #send-icon */
 
 /* Align hamburger and doc name perfectly parallel */
 .chat-header {
