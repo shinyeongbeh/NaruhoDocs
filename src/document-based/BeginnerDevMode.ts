@@ -5,7 +5,7 @@ export class BeginnerDevMode {
   /**
    * Switch the system message for a document-based thread to beginner mode.
    */
-  async setThreadBeginnerMode(sessionId: string, sessions: Map<string, ChatSession>, threadTitles: Map<string, string>) {
+  async setThreadBeginnerMode(sessionId: string, sessions: Map<string, ChatSession>, threadTitles: Map<string, string>): Promise<string | undefined> {
     if (sessionId === 'naruhodocs-general-thread') {
       return;
     }
@@ -24,13 +24,15 @@ export class BeginnerDevMode {
     if (session) {
       const sysMessage = SystemMessages.DOCUMENT_SPECIFIC_BEGINNER(title, initialContext);
       session.setCustomSystemMessage(sysMessage);
+      return sysMessage;
     }
+    return undefined;
   }
 
   /**
    * Switch the system message for a document-based thread to developer mode.
    */
-  public async setThreadDeveloperMode(sessionId: string, sessions: Map<string, ChatSession>, threadTitles: Map<string, string>) {
+  public async setThreadDeveloperMode(sessionId: string, sessions: Map<string, ChatSession>, threadTitles: Map<string, string>): Promise<string | undefined> {
     if (sessionId === 'naruhodocs-general-thread') {
       return;
     }
@@ -49,6 +51,8 @@ export class BeginnerDevMode {
     if (session) {
       const sysMessage = SystemMessages.DOCUMENT_SPECIFIC_DEVELOPER(title, initialContext);
       session.setCustomSystemMessage(sysMessage);
+      return sysMessage;
     }
+    return undefined;
   }
 }

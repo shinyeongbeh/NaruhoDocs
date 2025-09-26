@@ -102,7 +102,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 	 * Send a message to a specific thread and display the bot response.
 	 */
 	public async sendMessageToThread(sessionId: string, prompt: string) {
-		this.threadManager.setActiveThread(sessionId);
+		await this.threadManager.setActiveThread(sessionId);
 		const session = this.threadManager.getSession(sessionId);
 		if (!session) {
 			this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: 'No active thread.' });
@@ -114,7 +114,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		try {
 			const botResponse = await this.llmService.trackedChat({
 				sessionId,
-				systemMessage: (session as any).systemMessage || SystemMessages.GENERAL_PURPOSE,
+				systemMessage: this.threadManager.getSystemMessage(sessionId) || SystemMessages.GENERAL_PURPOSE,
 				prompt,
 				task: 'chat'
 			});
@@ -326,12 +326,36 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
 					break;
 				}
-				case 'setThreadBeginnerMode': {
-					await this.setBeginnerDevMode.setThreadBeginnerMode(data.sessionId, this.threadManager.getSessions(), this.threadManager.getThreadTitles());
+                case 'setThreadBeginnerMode': {
+                    const sys = await this.setBeginnerDevMode.setThreadBeginnerMode(data.sessionId, this.threadManager.getSessions(), this.threadManager.getThreadTitles());
+                    if (sys) { this.threadManager.setSystemMessage(data.sessionId, sys); }
+                    break;
+                }
+                case 'setThreadDeveloperMode': {
+                    const sys = await this.setBeginnerDevMode.setThreadDeveloperMode(data.sessionId, this.threadManager.getSessions(), this.threadManager.getThreadTitles());
+                    if (sys) { this.threadManager.setSystemMessage(data.sessionId, sys); }
+                    break;
+                }
+				case 'setGeneralBeginnerMode': {
+					// Apply beginner system message for General thread only
+					const sessionId = 'naruhodocs-general-thread';
+					const sys = (require('./SystemMessages') as any).GENERAL_BEGINNER as string;
+					const session = this.threadManager.getSession(sessionId);
+					if (session && typeof (session as any).setCustomSystemMessage === 'function') {
+						try { (session as any).setCustomSystemMessage(sys); } catch {}
+					}
+					this.threadManager.setSystemMessage(sessionId, sys);
 					break;
 				}
-				case 'setThreadDeveloperMode': {
-					await this.setBeginnerDevMode.setThreadDeveloperMode(data.sessionId, this.threadManager.getSessions(), this.threadManager.getThreadTitles());
+				case 'setGeneralDeveloperMode': {
+					// Developer mode for General reverts to GENERAL_PURPOSE
+					const sessionId = 'naruhodocs-general-thread';
+					const sys = SystemMessages.GENERAL_PURPOSE;
+					const session = this.threadManager.getSession(sessionId);
+					if (session && typeof (session as any).setCustomSystemMessage === 'function') {
+						try { (session as any).setCustomSystemMessage(sys); } catch {}
+					}
+					this.threadManager.setSystemMessage(sessionId, sys);
 					break;
 				}
 				case 'sendMessage': {
@@ -607,8 +631,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	// ...existing code...
-	public setActiveThread(sessionId: string) {
-		this.threadManager.setActiveThread(sessionId);
+	public async setActiveThread(sessionId: string) {
+		await this.threadManager.setActiveThread(sessionId);
 		// Update UI thread list immediately
 		try {
 			this._postThreadList();
