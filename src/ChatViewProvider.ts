@@ -169,24 +169,55 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 							OutputLogger.history(`preChat length=${preLen} session=${activeThreadId}`);
 							const systemMsg = this.threadManager.getSystemMessage(activeThreadId);
 							const botResponse = await this.llmService.trackedChat({ sessionId: activeThreadId, systemMessage: systemMsg || SystemMessages.GENERAL_PURPOSE, prompt: userMessage, task:'chat' });
+							// Always re-sync the ThreadManager session reference with the canonical LLMService session.
+							// Root cause: after provider/model changes LLMService may recreate its session while ThreadManager
+							// still points at an old (now inert) instance. This produced zero-length histories and caused
+							// _sendFullHistory to clear UI messages. We now pull the canonical session every send.
+							const canonicalSession = await this.llmService.getSession(activeThreadId, systemMsg || SystemMessages.GENERAL_PURPOSE, { taskType:'chat' });
+							this.threadManager.setSession(activeThreadId, canonicalSession);
 							// Post instrumentation
 							let postLen = 0;
-							try { postLen = activeSession.getHistory().length; } catch { /* ignore */ }
+							try { postLen = canonicalSession.getHistory().length; } catch { /* ignore */ }
 							OutputLogger.history(`postChat length=${postLen} delta=${postLen-preLen} session=${activeThreadId}`);
-							// Fallback: if no growth, manually append messages
+							// Robust fallback: if still no growth, rebuild serialized history and set explicitly.
 							if (postLen === preLen) {
-								OutputLogger.history(`historyDidNotGrow applying fallback push session=${activeThreadId}`);
-								try { (activeSession.getHistory() as any[]).push(new HumanMessage(userMessage)); } catch { /* ignore */ }
-								try { (activeSession.getHistory() as any[]).push(new AIMessage(botResponse)); } catch { /* ignore */ }
-								try { postLen = activeSession.getHistory().length; } catch { /* ignore */ }
-								OutputLogger.history(`afterFallback length=${postLen} session=${activeThreadId}`);
+								OutputLogger.history(`historyDidNotGrow applying rebuild fallback session=${activeThreadId}`);
+								try {
+									const existing = canonicalSession.getHistory();
+									const serialized = existing.map((m: any) => {
+										let role: string | undefined = m.type || (typeof m._getType === 'function' ? m._getType() : undefined);
+										if (!role || role === 'unknown') {
+											const ctor = m.constructor?.name?.toLowerCase?.() || '';
+											if (ctor.includes('human')) { role = 'human'; }
+											else if (ctor.includes('ai')) { role = 'ai'; }
+										}
+										if (role === 'user') { role = 'human'; }
+										if (role === 'assistant' || role === 'bot') { role = 'ai'; }
+										const text = (m as any).text || (typeof m.content === 'string' ? m.content : JSON.stringify(m.content));
+										return { type: role, text };
+									});
+									serialized.push({ type:'human', text: userMessage });
+									serialized.push({ type:'ai', text: botResponse });
+									(canonicalSession as any).setHistory(serialized as any);
+									postLen = canonicalSession.getHistory().length;
+									OutputLogger.history(`afterRebuildFallback length=${postLen} session=${activeThreadId}`);
+								} catch { /* ignore */ }
 							}
 							this._view?.webview.postMessage({ type:'addMessage', sender:'Bot', message: botResponse });
 							await this.threadManager.saveThreadHistory(activeThreadId);
 							this._sendFullHistory(activeThreadId);
 						} catch (error:any) {
 							const errMsg = `Error: ${error.message || 'Unable to connect to LLM.'}`;
-							try { activeSession?.getHistory().push(new AIMessage(errMsg)); await this.threadManager.saveThreadHistory(activeThreadId); } catch { }
+							try {
+								// Re-sync canonical session on error as well
+								const canonicalSession = await this.llmService.getSession(activeThreadId!, this.threadManager.getSystemMessage(activeThreadId!) || SystemMessages.GENERAL_PURPOSE, { taskType:'chat' });
+								this.threadManager.setSession(activeThreadId!, canonicalSession);
+								const existing = canonicalSession.getHistory();
+								const serialized = existing.map((m: any) => ({ type: (m.type || (typeof m._getType === 'function' ? m._getType() : 'unknown')), text: (m as any).text || (typeof m.content === 'string' ? m.content : JSON.stringify(m.content)) }));
+								serialized.push({ type:'ai', text: errMsg });
+								(canonicalSession as any).setHistory(serialized as any);
+								await this.threadManager.saveThreadHistory(activeThreadId!);
+							} catch { /* ignore */ }
 							this._view?.webview.postMessage({ type:'addMessage', sender:'Bot', message: errMsg });
 						}
 						break;
@@ -319,9 +350,25 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 			if (!activeThreadId) { return; }
 			const session = this.threadManager.getSession(activeThreadId);
 			if (!session) { return; }
-			// Push as AIMessage into history then persist
-			(session.getHistory() as any[]).push(new AIMessage(message));
-			this.threadManager.saveThreadHistory(activeThreadId);
+			// Rebuild history (getHistory returns a filtered copy, so pushing into it is ineffective)
+			try {
+				const existing = session.getHistory();
+				const serialized = existing.map((m: any) => {
+					let role: string | undefined = m.type || (typeof m._getType === 'function' ? m._getType() : undefined);
+					if (!role || role === 'unknown') {
+						const ctor = m.constructor?.name?.toLowerCase?.() || '';
+						if (ctor.includes('human')) { role = 'human'; }
+						else if (ctor.includes('ai')) { role = 'ai'; }
+					}
+					if (role === 'user') { role = 'human'; }
+					if (role === 'assistant' || role === 'bot') { role = 'ai'; }
+					const text = (m as any).text || (typeof m.content === 'string' ? m.content : JSON.stringify(m.content));
+					return { type: role, text };
+				});
+				serialized.push({ type:'ai', text: message });
+				(session as any).setHistory(serialized as any);
+				this.threadManager.saveThreadHistory(activeThreadId);
+			} catch { /* ignore */ }
 			// Send incremental add (webview will handle visualization toolbar hydration)
 			this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message, messageType: opts?.messageType });
 			// Trigger a fresh full history send so atomic state matches storage (diagram detection relies on normalized list)

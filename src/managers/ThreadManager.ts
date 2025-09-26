@@ -162,9 +162,8 @@ export class ThreadManager {
 
     // Add a new session
     public setSession(sessionId: string, session: ChatSession): void {
-        if (!this.sessions.has(sessionId)) {
-            this.sessions.set(sessionId, session);
-        }
+        // Always overwrite to ensure we point at the canonical session (LLMService may recreate sessions).
+        this.sessions.set(sessionId, session);
     }
 
     // Get a specific session
