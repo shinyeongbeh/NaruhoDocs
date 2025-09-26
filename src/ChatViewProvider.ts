@@ -358,6 +358,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 					const activeSession = this.threadManager.getSession(activeThreadId);
 					try {
 						if (!activeSession) { throw new Error('No active thread'); }
+						this._view?.webview.postMessage({ type: 'addMessage', sender: 'You', message: userMessage });
 						const systemMsg = this.threadManager.getSystemMessage(activeThreadId);
 						const botResponse = await this.llmService.trackedChat({
 							sessionId: activeThreadId,
@@ -371,7 +372,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 						hist.push(new AIMessage(botResponse));
 						
 						// Send both user message and bot response to UI
-						this._view?.webview.postMessage({ type: 'addMessage', sender: 'You', message: userMessage });
+						// this._view?.webview.postMessage({ type: 'addMessage', sender: 'You', message: userMessage });
 						this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: botResponse });
 						
 						await this.threadManager.saveThreadHistory(activeThreadId);
