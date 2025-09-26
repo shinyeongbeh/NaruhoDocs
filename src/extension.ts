@@ -194,11 +194,31 @@ export function activate(context: vscode.ExtensionContext) {
 			watcher.onDidCreate(reload, undefined, context.subscriptions);
 			watcher.onDidDelete(async () => { await modelConfigManager.load(); llmService.setModelConfigManager(modelConfigManager); llmService.clearAllSessions(); llmService.logEvent('model_config_deleted'); updateProviderModelStatus(activeThreadId); });
 		}
-		try {
-			await llmManager.initializeFromConfig();
-			llmService.logEvent('provider_init', { provider: llmManager.getCurrentProvider()?.name });
-
-			// Initialize the general-purpose thread AFTER provider is confirmed
+	try {
+		console.log('[NaruhoDocs] Extension activation: Initializing LLM manager from config');
+		const config = vscode.workspace.getConfiguration('naruhodocs');
+		const providerType = config.get<string>('llm.provider', 'ootb');
+		console.log('[NaruhoDocs] Extension activation: LLM config provider type:', providerType);
+		
+		// Add retry logic for packaged extensions where initialization might fail on first try
+		let retryCount = 0;
+		const maxRetries = 3;
+		while (retryCount < maxRetries) {
+			try {
+				await llmManager.initializeFromConfig();
+				console.log('[NaruhoDocs] Extension activation: LLM manager initialized successfully');
+				llmService.logEvent('provider_init', { provider: llmManager.getCurrentProvider()?.name });
+				break;
+			} catch (initError) {
+				retryCount++;
+				console.warn(`[NaruhoDocs] LLM initialization attempt ${retryCount} failed:`, initError);
+				if (retryCount >= maxRetries) {
+					throw initError;
+				}
+				// Wait before retry (exponential backoff)
+				await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+			}
+		}			// Initialize the general-purpose thread AFTER provider is confirmed
 			const generalThreadId = 'naruhodocs-general-thread';
 			const generalThreadTitle = 'General Purpose';
 			// Ensure backing LLM session is created through LLMService so logging + provider attribution work
@@ -348,7 +368,19 @@ export function activate(context: vscode.ExtensionContext) {
 					const ws = vscode.workspace.workspaceFolders?.[0];
 					if (ws) {
 						try {
-							const targetUri = vscode.Uri.joinPath(ws.uri, `${path.basename(doc.fileName).replace(/\.[^.]+$/, '')}.summary.md`);
+							// Check if /docs folder exists, if so save there, otherwise save to root
+							const docsUri = vscode.Uri.joinPath(ws.uri, 'docs');
+							let targetFolder = ws.uri;
+							try {
+								const docsStat = await vscode.workspace.fs.stat(docsUri);
+								if (docsStat.type === vscode.FileType.Directory) {
+									targetFolder = docsUri;
+								}
+							} catch {
+								// /docs doesn't exist, use root folder
+							}
+							
+							const targetUri = vscode.Uri.joinPath(targetFolder, `${path.basename(doc.fileName).replace(/\.[^.]+$/, '')}.summary.md`);
 							await vscode.workspace.fs.writeFile(targetUri, Buffer.from(summaryContent, 'utf8'));
 							vscode.window.showInformationMessage(`Saved summary to ${targetUri.fsPath}`);
 						} catch (e) {
@@ -414,7 +446,19 @@ export function activate(context: vscode.ExtensionContext) {
 				if (sel === 'Save') {
 					const ws = vscode.workspace.workspaceFolders?.[0];
 					if (ws) {
-						const targetUri = vscode.Uri.joinPath(ws.uri, `${path.basename(doc.fileName).replace(/\.[^.]+$/, '')}.${picked.toLowerCase()}.md`);
+						// Check if /docs folder exists, if so save there, otherwise save to root
+						const docsUri = vscode.Uri.joinPath(ws.uri, 'docs');
+						let targetFolder = ws.uri;
+						try {
+							const docsStat = await vscode.workspace.fs.stat(docsUri);
+							if (docsStat.type === vscode.FileType.Directory) {
+								targetFolder = docsUri;
+							}
+						} catch {
+							// /docs doesn't exist, use root folder
+						}
+						
+						const targetUri = vscode.Uri.joinPath(targetFolder, `${path.basename(doc.fileName).replace(/\.[^.]+$/, '')}.${picked.toLowerCase()}.md`);
 						await vscode.workspace.fs.writeFile(targetUri, Buffer.from(resp.content, 'utf8'));
 						vscode.window.showInformationMessage(`Saved translation to ${targetUri.fsPath}`);
 					}
@@ -488,6 +532,24 @@ export function activate(context: vscode.ExtensionContext) {
 				vscode.window.showInformationMessage(`✅ ${provider?.name} connection successful`);
 			} else {
 				vscode.window.showErrorMessage(`❌ ${provider?.name || 'LLM'} connection failed`);
+			}
+		})
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand('naruhodocs.reinitializeLLMProvider', async () => {
+			try {
+				vscode.window.showInformationMessage('🔄 Reinitializing LLM provider...');
+				await llmManager.initializeFromConfig();
+				llmService.clearAllSessions();
+				provider.updateLLMManager(llmManager);
+				updateProviderModelStatus(activeThreadId);
+				const providerName = llmManager.getCurrentProvider()?.name || 'Unknown';
+				vscode.window.showInformationMessage(`✅ LLM provider reinitialized: ${providerName}`);
+			} catch (error) {
+				const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+				vscode.window.showErrorMessage(`❌ Failed to reinitialize LLM provider: ${errorMsg}`);
+				console.error('[NaruhoDocs] Manual reinitialize failed:', error);
 			}
 		})
 	);
@@ -892,7 +954,7 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 			}
 
 			const { exec } = require('child_process');
-			exec(`git diff-tree --no-commit-id --name-only -r ${newCommitHash}`, { cwd: workspaceFolder }, async (err: any, stdout: string) => {
+			exec(`git diff-tree --no-commit-id --name-only -r ${newCommitHash}`, { cwd: workspaceFolder, maxBuffer: 10 * 1024 * 1024 }, async (err: any, stdout: string) => {
 				if (err) {
 					console.error('Failed to get changed files:', err);
 					return;
@@ -908,7 +970,7 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 				console.log(`Code changed: ${codeChanged}, Docs changed: ${docChanged}`);
 
 				// Show exact changed lines using git diff -U0, but skip for first commit
-				exec(`git rev-list --parents -n 1 ${newCommitHash}`, { cwd: workspaceFolder }, (revErr: any, revStdout: any) => {
+				exec(`git rev-list --parents -n 1 ${newCommitHash}`, { cwd: workspaceFolder, maxBuffer: 10 * 1024 * 1024 }, (revErr: any, revStdout: any) => {
 					if (revErr) {
 						return;
 					}
@@ -920,7 +982,7 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 					}
 
 					const diffCmd = `git show --no-color --format= --unified=0 ${newCommitHash}`;
-					exec(diffCmd, { cwd: workspaceFolder }, async (diffErr: any, diffStdout: any) => {
+					exec(diffCmd, { cwd: workspaceFolder, maxBuffer: 10 * 1024 * 1024 }, async (diffErr: any, diffStdout: any) => {
 						if (diffErr) {
 							console.error('Failed to get git diff:', diffErr);
 						}

@@ -45,14 +45,17 @@
     function setFullHistory(history) {
         if (!chatMessages) { return; }
         const sig = signatureFor(history);
+        console.log('[NaruhoDocs] setFullHistory called with signature:', sig, 'current:', lastHistorySignature);
         if (sig === lastHistorySignature) {
             // Skip redundant render
+            console.log('[NaruhoDocs] setFullHistory: skipping redundant render');
             return;
         }
         lastHistorySignature = sig;
         // Off-DOM construction
         const frag = document.createDocumentFragment();
         if (Array.isArray(history)) {
+            console.log('[NaruhoDocs] setFullHistory: building', history.length, 'messages');
             history.forEach(function (entry) {
                 if (!entry || typeof entry !== 'object') { return; }
                 const messageElement = buildMessageElement(entry.sender || 'Bot', entry.message || '', entry.messageType);
@@ -77,6 +80,7 @@
         chatMessages.style.opacity = '0';
         // Microtask to allow CSS opacity transition (if defined in CSS) before DOM swap
         setTimeout(() => {
+            console.log('[NaruhoDocs] setFullHistory: clearing and replacing chat messages');
             chatMessages.innerHTML = '';
             chatMessages.appendChild(frag);
             chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -165,6 +169,13 @@
 
     const chatMessages = document.getElementById('chat-messages');
     const chatInput = document.getElementById('chat-input'); // HTMLTextAreaElement
+    
+    console.log('[NaruhoDocs] DOM elements found:', {
+        chatMessages: !!chatMessages,
+        chatInput: !!chatInput,
+        chatMessagesId: chatMessages?.id,
+        chatMessagesClass: chatMessages?.className
+    });
     const sendIcon = document.getElementById('send-icon');
     const hamburgerMenu = document.getElementById('hamburger-menu');
     const dropdownContainer = document.getElementById('dropdown-container');
@@ -201,6 +212,19 @@
     if (typeof oldState.isHamburgerOpen === 'boolean' && dropdownContainer && hamburgerMenu) {
         dropdownContainer.style.display = oldState.isHamburgerOpen ? 'block' : 'none';
         hamburgerMenu.classList.toggle('open', oldState.isHamburgerOpen);
+        
+        // Restore icon state
+        const hamburgerIcon = hamburgerMenu.querySelector('.hamburger-icon');
+        const closeIcon = hamburgerMenu.querySelector('.close-icon');
+        if (hamburgerIcon && closeIcon) {
+            if (oldState.isHamburgerOpen) {
+                /** @type {HTMLElement} */ (hamburgerIcon).style.display = 'none';
+                /** @type {HTMLElement} */ (closeIcon).style.display = 'inline';
+            } else {
+                /** @type {HTMLElement} */ (hamburgerIcon).style.display = 'inline';
+                /** @type {HTMLElement} */ (closeIcon).style.display = 'none';
+            }
+        }
     }
 
     renderThreadListMenu();
@@ -281,26 +305,34 @@
     }
 
     function sendMessage() {
-        if (chatInput && (chatInput instanceof HTMLTextAreaElement) && chatInput.value) {
-            console.log('[NaruhoDocs] sendMessage triggered:', chatInput.value);
+        console.log('[NaruhoDocs] sendMessage called, chatInput:', chatInput);
+        if (chatInput && (chatInput instanceof HTMLTextAreaElement) && chatInput.value.trim()) {
+            const messageText = chatInput.value;
+            console.log('[NaruhoDocs] sendMessage triggered:', messageText);
+            
+            // Send to backend - backend will handle displaying both user and bot messages
             vscode.postMessage({
                 type: 'sendMessage',
-                value: chatInput.value
+                value: messageText
             });
             addMessage('You', chatInput.value, undefined);
             chatInput.value = '';
+            
+            console.log('[NaruhoDocs] Message sent to backend, input cleared');
+        } else {
+            console.log('[NaruhoDocs] sendMessage: no input or empty value');
         }
-    }
-
-    if (sendIcon) {
-        sendIcon.addEventListener('click', sendMessage);
     }
 
     // Reset chat icon removed from UI - reset functionality available via command palette
 
+    console.log('[NaruhoDocs] Chat input element:', chatInput);
     if (chatInput) {
+        console.log('[NaruhoDocs] Setting up chat input keydown listener');
         chatInput.addEventListener('keydown', (event) => {
+            console.log('[NaruhoDocs] Key pressed:', event.key, 'Shift:', event.shiftKey);
             if (event.key === 'Enter' && !event.shiftKey) {
+                console.log('[NaruhoDocs] Enter key detected, sending message');
                 event.preventDefault();
                 sendMessage();
             }
@@ -316,14 +348,71 @@
         });
     }
 
+    // Ensure send icon functionality is working - use setTimeout to ensure DOM is ready
+    setTimeout(() => {
+        console.log('[NaruhoDocs] Looking for send icon element...');
+        const sendIconElement = document.getElementById('send-icon');
+        console.log('[NaruhoDocs] Send icon element:', sendIconElement);
+        
+        if (sendIconElement) {
+            console.log('[NaruhoDocs] Setting up send icon click listener');
+            
+            // Add click listener with debugging
+            sendIconElement.addEventListener('click', (e) => {
+                console.log('[NaruhoDocs] Send icon clicked!', e);
+                e.preventDefault();
+                e.stopPropagation();
+                sendMessage();
+            });
+            
+            // Also add mousedown and touchstart for better mobile/touch support
+            sendIconElement.addEventListener('mousedown', (e) => {
+                console.log('[NaruhoDocs] Send icon mousedown!', e);
+            });
+            
+            sendIconElement.addEventListener('touchstart', (e) => {
+                console.log('[NaruhoDocs] Send icon touchstart!', e);
+                e.preventDefault();
+                sendMessage();
+            });
+            
+        } else {
+            console.log('[NaruhoDocs] Send icon not found!');
+            // Try to find it with different selectors
+            const allElements = document.querySelectorAll('[id*="send"], [class*="send"], span');
+            console.log('[NaruhoDocs] All potential send elements:', allElements);
+            
+            // Try to find it by traversing the DOM
+            const chatContainer = document.querySelector('.chat-input-container');
+            console.log('[NaruhoDocs] Chat input container:', chatContainer);
+            if (chatContainer) {
+                const spans = chatContainer.querySelectorAll('span');
+                console.log('[NaruhoDocs] Spans in chat container:', spans);
+            }
+        }
+    }, 100);
+
+    // Also add event delegation as a fallback
+    document.addEventListener('click', (e) => {
+        const target = e.target;
+        if (target && target instanceof Element) {
+            if (target.id === 'send-icon' || target.closest('#send-icon')) {
+                console.log('[NaruhoDocs] Send icon clicked via delegation!', target);
+                e.preventDefault();
+                e.stopPropagation();
+                sendMessage();
+            }
+        }
+    });
+
     function renderThreadListMenu() {
-        // Sync backend mode on tab switch (if not general thread)
-        if (typeof activeThreadId === 'string' && activeThreadId !== 'naruhodocs-general-thread') {
+        // Sync backend mode on tab switch for both general and document threads
+        if (typeof activeThreadId === 'string') {
             const mode = threadModes[activeThreadId] || 'developer';
-            if (mode === 'beginner') {
-                vscode.postMessage({ type: 'setThreadBeginnerMode', sessionId: activeThreadId });
+            if (activeThreadId === 'naruhodocs-general-thread') {
+                vscode.postMessage({ type: mode === 'beginner' ? 'setGeneralBeginnerMode' : 'setGeneralDeveloperMode', sessionId: activeThreadId });
             } else {
-                vscode.postMessage({ type: 'setThreadDeveloperMode', sessionId: activeThreadId });
+                vscode.postMessage({ type: mode === 'beginner' ? 'setThreadBeginnerMode' : 'setThreadDeveloperMode', sessionId: activeThreadId });
             }
         }
         console.log('[NaruhoDocs] Rendering thread list menu. Active thread ID:', activeThreadId, 'Threads:', threads);
@@ -354,7 +443,7 @@
                 chatInputContainer.parentElement.insertBefore(chatModeButtons, chatInputContainer);
             }
         }
-        if (typeof activeThreadId === 'string' && activeThreadId !== 'naruhodocs-general-thread') {
+        if (typeof activeThreadId === 'string') {
             chatModeButtons.innerHTML = '';
             // Create custom slide switch for mode selection
             const switchLabel = document.createElement('label');
@@ -394,7 +483,7 @@
                     modeText.classList.add('beginner');
                     modeText.classList.remove('developer');
                     vscode.postMessage({
-                        type: 'setThreadBeginnerMode',
+                        type: activeThreadId === 'naruhodocs-general-thread' ? 'setGeneralBeginnerMode' : 'setThreadBeginnerMode',
                         sessionId: activeThreadId
                     });
                     // Show chat message for switching to Beginner Mode
@@ -418,7 +507,7 @@
                     modeText.classList.add('developer');
                     modeText.classList.remove('beginner');
                     vscode.postMessage({
-                        type: 'setThreadDeveloperMode',
+                        type: activeThreadId === 'naruhodocs-general-thread' ? 'setGeneralDeveloperMode' : 'setThreadDeveloperMode',
                         sessionId: activeThreadId
                     });
                     // Show chat message for switching to Developer Mode
@@ -462,24 +551,7 @@
             chatModeButtons.innerHTML = '';
             chatModeButtons.style.display = 'none';
         }
-        // Add event listeners for general buttons
-        const generateDocBtn = document.getElementById('generate-doc-btn');
-        if (generateDocBtn) {
-            generateDocBtn.addEventListener('click', () => {
-                // Remove any previous modal and listeners
-                let oldModal = document.getElementById('doc-type-modal');
-                if (oldModal) {
-                    oldModal.remove();
-                }
-                // Always trigger a fresh scan before showing modal
-                vscode.postMessage({ type: 'scanDocs' });
-                console.log('[NaruhoDocs][UI] Generate Doc button clicked, scanDocs posted');
-                // Show modal dialog for doc type selection
-                showDocTypeModal();
-                console.log('[NaruhoDocs][UI] showDocTypeModal called');
-                console.log('[NaruhoDocs][UI] showDocTypeModal rendering modal');
-            });
-        }
+
         // Modal for doc type selection
         function showDocTypeModal() {
             // Remove existing modal if present
@@ -523,7 +595,9 @@
             /** @param {MessageEvent} event */
             function handleAISuggestedDocs(event) {
                 const message = event.data;
+                console.log('[NaruhoDocs] Generate Doc modal received message:', message.type);
                 if (message.type === 'aiSuggestedDocs') {
+                    console.log('[NaruhoDocs] Generate Doc processing aiSuggestedDocs:', message);
                     // Remove loading
                     box.innerHTML = '';
                     box.appendChild(closeBtn);
@@ -540,8 +614,11 @@
                         const btn = document.createElement('button');
                         btn.textContent = suggestion.displayName;
                         btn.title = suggestion.description || '';
-                        btn.addEventListener('click', () => {
-                            addMessage('System', 'Generating documentation...', undefined);
+                        btn.style.cssText = 'pointer-events: auto; position: relative; z-index: 10;';
+                        btn.addEventListener('click', (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            console.log('[NaruhoDocs] Generate Doc button clicked:', suggestion.displayName, undefined);
                             vscode.postMessage({ type: 'generateDoc', docType: suggestion.displayName, fileName: suggestion.fileName });
                             modal.remove();
                         });
@@ -550,8 +627,11 @@
                     // Always add 'Others' button at the end
                     const othersBtn = document.createElement('button');
                     othersBtn.textContent = 'Others';
-                    othersBtn.addEventListener('click', () => {
-                        addMessage('System', 'Generating documentation...', undefined);
+                    othersBtn.style.cssText = 'pointer-events: auto; position: relative; z-index: 10;';
+                    othersBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        console.log('[NaruhoDocs] Generate Doc Others button clicked', undefined);
                         showCustomDocPrompt(modal);
                     });
                     box.appendChild(othersBtn);
@@ -580,9 +660,12 @@
 
             const submitBtn = document.createElement('button');
             submitBtn.textContent = 'Submit';
-            submitBtn.addEventListener('click', () => {
+            submitBtn.style.cssText = 'pointer-events: auto; position: relative; z-index: 10;';
+            submitBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
                 if (input.value.trim()) {
-                    addMessage('System', 'Generating documentation...', undefined);
+                    console.log('[NaruhoDocs] Custom Generate Doc submit:', input.value.trim(), undefined);
                     vscode.postMessage({ type: 'generateDoc', docType: input.value.trim() });
                     if (modal) {
                         modal.remove();
@@ -594,28 +677,7 @@
             const innerDiv = modal.querySelector('div');
             if (innerDiv) { innerDiv.appendChild(promptBox); }
         }
-        const suggestTemplateBtn = document.getElementById('suggest-template-btn');
-        if (suggestTemplateBtn) {
-            suggestTemplateBtn.addEventListener('click', () => {
-                // Remove any previous modal and listeners
-                let oldModal = document.getElementById('doc-type-modal');
-                if (oldModal) {
-                    oldModal.remove();
-                }
-                // Always trigger a fresh scan before showing modal
-                vscode.postMessage({ type: 'scanDocs' });
-                showTemplateSelectionModal();
-            });
-        }
 
-        // Add event listener for visualize button
-        const visualizeBtn = document.getElementById('visualize-btn');
-        if (visualizeBtn) {
-            visualizeBtn.addEventListener('click', () => {
-                // Send message to extension to show visualization menu
-                vscode.postMessage({ type: 'showVisualizationMenu' });
-            });
-        }
 
         // Modal for template selection (uses AI suggestions and filters out existing docs)
         function showTemplateSelectionModal() {
@@ -651,7 +713,9 @@
             /** @param {any} event */
             function handleAISuggestedDocs(event) {
                 const message = event.data;
+                console.log('[NaruhoDocs] Template modal received message:', message.type);
                 if (message.type === 'aiSuggestedDocs') {
+                    console.log('[NaruhoDocs] Template processing aiSuggestedDocs:', message);
                     // Remove loading
                     box.innerHTML = '';
                     box.appendChild(closeBtn);
@@ -669,6 +733,7 @@
                         btn.textContent = suggestion.displayName;
                         btn.title = suggestion.description || '';
                         btn.addEventListener('click', () => {
+                            console.log('[NaruhoDocs] Generate Template button clicked:', suggestion.displayName);
                             vscode.postMessage({ type: 'generateTemplate', templateType: suggestion.displayName });
                             modal.remove();
                         });
@@ -678,6 +743,7 @@
                     const othersBtn = document.createElement('button');
                     othersBtn.textContent = 'Others';
                     othersBtn.addEventListener('click', () => {
+                        console.log('[NaruhoDocs] Generate Template Others button clicked');
                         showCustomTemplatePrompt(modal);
                     });
                     box.appendChild(othersBtn);
@@ -709,6 +775,7 @@
                 if (input.value.trim()) {
                     // Always send a canonical template request for custom input
                     const templateType = input.value.trim();
+                    console.log('[NaruhoDocs] Custom Generate Template submit:', templateType);
                     vscode.postMessage({ type: 'generateTemplate', templateType: templateType });
                     if (modal) { modal.remove(); }
                 }
@@ -717,6 +784,52 @@
 
             modal.querySelector('div').appendChild(promptBox);
         }
+
+        // Add event listeners for general buttons (only add if not already added)
+        const generateDocBtn = document.getElementById('generate-doc-btn');
+        if (generateDocBtn && !generateDocBtn.hasAttribute('data-listener-added')) {
+            generateDocBtn.setAttribute('data-listener-added', 'true');
+            generateDocBtn.addEventListener('click', () => {
+                // Remove any previous modal and listeners
+                let oldModal = document.getElementById('doc-type-modal');
+                if (oldModal) {
+                    oldModal.remove();
+                }
+                // Always trigger a fresh scan before showing modal
+                vscode.postMessage({ type: 'scanDocs' });
+                console.log('[NaruhoDocs][UI] Generate Doc button clicked, scanDocs posted');
+                // Show modal dialog for doc type selection
+                showDocTypeModal();
+                console.log('[NaruhoDocs][UI] showDocTypeModal called');
+                console.log('[NaruhoDocs][UI] showDocTypeModal rendering modal');
+            });
+        }
+
+        const suggestTemplateBtn = document.getElementById('suggest-template-btn');
+        if (suggestTemplateBtn && !suggestTemplateBtn.hasAttribute('data-listener-added')) {
+            suggestTemplateBtn.setAttribute('data-listener-added', 'true');
+            suggestTemplateBtn.addEventListener('click', () => {
+                // Remove any previous modal and listeners
+                let oldModal = document.getElementById('doc-type-modal');
+                if (oldModal) {
+                    oldModal.remove();
+                }
+                // Always trigger a fresh scan before showing modal
+                vscode.postMessage({ type: 'scanDocs' });
+                showTemplateSelectionModal();
+            });
+        }
+
+        // Add event listener for visualize button
+        const visualizeBtn = document.getElementById('visualize-btn');
+        if (visualizeBtn && !visualizeBtn.hasAttribute('data-listener-added')) {
+            visualizeBtn.setAttribute('data-listener-added', 'true');
+            visualizeBtn.addEventListener('click', () => {
+                // Send message to extension to show visualization menu
+                vscode.postMessage({ type: 'showVisualizationMenu' });
+            });
+        }
+
         // Always keep General thread at the top, and ensure it exists in the dropdown
         let generalThread = threads.find(t => t.id === 'naruhodocs-general-thread');
         if (!generalThread) {
@@ -744,7 +857,16 @@
                 renderThreadListMenu(); // update UI immediately
                 vscode.postMessage({ type: 'switchThread', sessionId: thread.id });
                 if (dropdownContainer) { dropdownContainer.style.display = 'none'; }
-                if (hamburgerMenu) { hamburgerMenu.classList.remove('open'); }
+                if (hamburgerMenu) { 
+                    hamburgerMenu.classList.remove('open');
+                    // Reset icons when closing dropdown
+                    const hamburgerIcon = hamburgerMenu.querySelector('.hamburger-icon');
+                    const closeIcon = hamburgerMenu.querySelector('.close-icon');
+                    if (hamburgerIcon && closeIcon) {
+                        /** @type {HTMLElement} */ (hamburgerIcon).style.display = 'inline';
+                        /** @type {HTMLElement} */ (closeIcon).style.display = 'none';
+                    }
+                }
             });
             threadListMenu.appendChild(item);
         });
@@ -764,9 +886,10 @@
 
     /** @param {any} history */
     function showHistory(history) {
+        console.log('[NaruhoDocs] showHistory called, clearing messages and showing:', history);
         clearMessages();
         if (Array.isArray(history)) {
-            console.log('[NaruhoDocs] Showing history:', history);
+            console.log('[NaruhoDocs] Showing history with', history.length, 'entries');
             history.forEach(msg => {
                 let sender = 'Bot';
                 let text = '';
@@ -808,9 +931,24 @@
 
     if (hamburgerMenu && dropdownContainer) {
         hamburgerMenu.addEventListener('click', () => {
-            const isOpen = dropdownContainer.style.display === 'none';
+            const isOpen = dropdownContainer.style.display === 'none' || dropdownContainer.style.display === '';
             dropdownContainer.style.display = isOpen ? 'block' : 'none';
             hamburgerMenu.classList.toggle('open', isOpen);
+            
+            // Toggle between hamburger and close icons
+            const hamburgerIcon = hamburgerMenu.querySelector('.hamburger-icon');
+            const closeIcon = hamburgerMenu.querySelector('.close-icon');
+            if (hamburgerIcon && closeIcon) {
+                if (isOpen) {
+                    /** @type {HTMLElement} */ (hamburgerIcon).style.display = 'none';
+                    /** @type {HTMLElement} */ (closeIcon).style.display = 'inline';
+                } else {
+                    /** @type {HTMLElement} */ (hamburgerIcon).style.display = 'inline';
+                    /** @type {HTMLElement} */ (closeIcon).style.display = 'none';
+                }
+            }
+            
+            persistState();
         });
     }
 
@@ -821,7 +959,16 @@
             vscode.postMessage({ type: 'createFile' });
             // Always close dropdown and set hamburger to close mode
             if (dropdownContainer) { dropdownContainer.style.display = 'none'; }
-            if (hamburgerMenu) { hamburgerMenu.classList.remove('open'); }
+            if (hamburgerMenu) { 
+                hamburgerMenu.classList.remove('open');
+                // Reset icons when closing dropdown
+                const hamburgerIcon = hamburgerMenu.querySelector('.hamburger-icon');
+                const closeIcon = hamburgerMenu.querySelector('.close-icon');
+                if (hamburgerIcon && closeIcon) {
+                    /** @type {HTMLElement} */ (hamburgerIcon).style.display = 'inline';
+                    /** @type {HTMLElement} */ (closeIcon).style.display = 'none';
+                }
+            }
         });
     }
 
@@ -1096,6 +1243,8 @@
 
     /** @param {string} sender @param {string} message @param {string|undefined} messageType */
     function addMessage(sender, message, messageType) {
+        console.log('[NaruhoDocs] addMessage called with:', sender, message);
+        console.log('[NaruhoDocs] chatMessages element:', chatMessages);
         if (chatMessages) {
             const messageElement = buildMessageElement(sender, message, messageType);
             // Enhance (mermaid rendering etc.) in both live add & history restore paths
@@ -1310,6 +1459,7 @@
                 setFullHistory(message.history);
                 break;
             case 'addMessage':
+                console.log('[NaruhoDocs] Received addMessage:', message.sender, message.message);
                 addMessage(message.sender, message.message, message.messageType);
                 break;
             case 'clearMessages':

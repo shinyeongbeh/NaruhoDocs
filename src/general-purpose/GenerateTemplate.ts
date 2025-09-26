@@ -92,7 +92,19 @@ Generate a ${templateType} template using ONLY this placeholder style. Output on
     if (sel === 'Save') {
       const ws = vscode.workspace.workspaceFolders?.[0];
       if (ws) {
-        const targetUri = vscode.Uri.joinPath(ws.uri, `${templateType.toUpperCase()}_TEMPLATE.md`);
+        // Check if /docs folder exists, if so save there, otherwise save to root
+        const docsUri = vscode.Uri.joinPath(ws.uri, 'docs');
+        let targetFolder = ws.uri;
+        try {
+          const docsStat = await vscode.workspace.fs.stat(docsUri);
+          if (docsStat.type === vscode.FileType.Directory) {
+            targetFolder = docsUri;
+          }
+        } catch {
+          // /docs doesn't exist, use root folder
+        }
+        
+        const targetUri = vscode.Uri.joinPath(targetFolder, `${templateType.toUpperCase()}_TEMPLATE.md`);
         await vscode.workspace.fs.writeFile(targetUri, Buffer.from(templateContent, 'utf8'));
         vscode.window.showInformationMessage(`Saved template to ${targetUri.fsPath}`);
       }

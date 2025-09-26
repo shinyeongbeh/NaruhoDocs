@@ -4,7 +4,7 @@
   "description": "A VSCode extension that could help in documentation writing and reading. ",
   "version": "0.0.2",
   "engines": {
-    "vscode": "^1.103.0"
+    "vscode": "^1.104.0"
   },
   "categories": [
     "Other"
@@ -32,6 +32,11 @@
       {
         "command": "naruhodocs.testLLMConnection",
         "title": "Test LLM Connection",
+        "category": "NaruhoDocs"
+      },
+      {
+        "command": "naruhodocs.reinitializeLLMProvider",
+        "title": "Reinitialize LLM Provider",
         "category": "NaruhoDocs"
       },
       {

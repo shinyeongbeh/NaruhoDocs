@@ -16,13 +16,19 @@ export class LLMProviderManager {
     }
 
     async initializeFromConfig(): Promise<void> {
+        // Add a small delay to ensure configuration is fully loaded (helps with packaged extensions)
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
         const config = vscode.workspace.getConfiguration('naruhodocs');
         const providerType = config.get<string>('llm.provider', 'ootb');
+        console.log('[NaruhoDocs] LLMProviderManager: Initializing provider type:', providerType);
         
         const provider = this.providers.get(providerType);
         if (!provider) {
+            console.error('[NaruhoDocs] LLMProviderManager: Unknown provider type:', providerType);
             throw new Error(`Unknown provider type: ${providerType}`);
         }
+        console.log('[NaruhoDocs] LLMProviderManager: Found provider:', provider.name);
 
         try {
             const options: any = {
@@ -37,7 +43,21 @@ export class LLMProviderManager {
                 options.backend = config.get<string>('llm.localBackend', 'ollama');
             }
 
+            console.log('[NaruhoDocs] LLMProviderManager: Initializing provider with options:', { 
+                ...options, 
+                apiKey: options.apiKey ? '[REDACTED]' : undefined 
+            });
+
+            // Validate configuration before attempting initialization
+            if (providerType === 'local' && !options.baseUrl) {
+                throw new Error('Local LLM provider requires baseUrl to be configured');
+            }
+            if (providerType === 'byok' && !options.apiKey) {
+                throw new Error('BYOK provider requires API key to be configured');
+            }
+
             await provider.initialize(options);
+            console.log('[NaruhoDocs] LLMProviderManager: Provider initialized successfully');
 
             // Local model availability validation (best-effort)
             if (providerType === 'local') {

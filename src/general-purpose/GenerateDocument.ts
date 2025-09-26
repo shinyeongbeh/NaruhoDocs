@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { RetrieveWorkspaceFilenamesTool, RetrieveFileContentTool } from '../langchain-backend/features';
 import { LLMService } from '../managers/LLMService';
-export async function generateDocument(llmService: LLMService, data: { docType: any; fileName?: any }): Promise<{ type: String; sender: String; message: String }> {
+export async function generateDocument(llmService: LLMService, data: { docType: any; fileName?: any }) {
   // Suggest filename with AI if not provided
   let aiFilename = '';
   if (!data.fileName || typeof data.fileName !== 'string' || data.fileName.trim() === '') {
@@ -103,19 +103,49 @@ export async function generateDocument(llmService: LLMService, data: { docType: 
       } catch (err) {
         aiGeneratedDoc = `# ${data.docType}\n\nDescribe your documentation needs here.`;
       }
-      const fileUri = vscode.Uri.joinPath(wsUri, fileName);
-      try {
-        await vscode.workspace.fs.writeFile(fileUri, Buffer.from(aiGeneratedDoc, 'utf8'));
-        // Trigger a fresh scan to update modal choices
-        await vscode.commands.executeCommand('naruhodocs.scanDocs');
-        // scanDocs triggered after doc creation
+      // const fileUri = vscode.Uri.joinPath(wsUri, fileName);
+      // try {
+      //   await vscode.workspace.fs.writeFile(fileUri, Buffer.from(aiGeneratedDoc, 'utf8'));
+      //   // Trigger a fresh scan to update modal choices
+      //   await vscode.commands.executeCommand('naruhodocs.scanDocs');
+      //   // scanDocs triggered after doc creation
 
-        return { type: 'addMessage', sender: 'System', message: `Document created: ${fileUri.fsPath}` };
+      //   return { type: 'addMessage', sender: 'System', message: `Document created: ${fileUri.fsPath}` };
 
-      } catch (err) {
-        const errorMsg = typeof err === 'object' && err !== null && 'message' in err ? (err as any).message : String(err);
-        return { type: 'addMessage', sender: 'System', message: `Error creating doc: ${errorMsg}` };
-      }
+      // } catch (err) {
+      //   const errorMsg = typeof err === 'object' && err !== null && 'message' in err ? (err as any).message : String(err);
+      //   return { type: 'addMessage', sender: 'System', message: `Error creating doc: ${errorMsg}` };
+      // }
+
+      //Show in new untitled document
+      const newDoc = await vscode.workspace.openTextDocument({
+        content: aiGeneratedDoc,
+        language: 'markdown'
+      });
+      await vscode.window.showTextDocument(newDoc, { preview: true, viewColumn: vscode.ViewColumn.Beside });
+      // Provide save option via notification
+      vscode.window.showInformationMessage(`${fileName} ready. Save as new file?`, 'Save').then(async sel => {
+        if (sel === 'Save') {
+          const ws = vscode.workspace.workspaceFolders?.[0];
+          if (ws) {
+            // Check if /docs folder exists, if so save there, otherwise save to root
+            const docsUri = vscode.Uri.joinPath(ws.uri, 'docs');
+            let targetFolder = ws.uri;
+            try {
+              const docsStat = await vscode.workspace.fs.stat(docsUri);
+              if (docsStat.type === vscode.FileType.Directory) {
+                targetFolder = docsUri;
+              }
+            } catch {
+              // /docs doesn't exist, use root folder
+            }
+            
+            const targetUri = vscode.Uri.joinPath(targetFolder, `${fileName.toUpperCase()}.md`);
+            await vscode.workspace.fs.writeFile(targetUri, Buffer.from(aiGeneratedDoc, 'utf8'));
+            vscode.window.showInformationMessage(`Saved document to ${targetUri.fsPath}`);
+          }
+        }
+      });
     }
   } else {
     return { type: 'addMessage', sender: 'System', message: 'No workspace folder open.' };
@@ -124,9 +154,9 @@ export async function generateDocument(llmService: LLMService, data: { docType: 
 async function suggestFilename(docType: string, llmService: LLMService): Promise<string> {
   let aiFilename = '';
   // Attempting AI filename suggestion for docType: ${docType}
-  try {    
+  try {
     aiFilename = (await llmService.request({
-      type: 'chat', 
+      type: 'chat',
       prompt: `Suggest a concise, filesystem-friendly filename (with .md extension) for a ${docType} documentation file. Respond with only the filename, no explanation.`,
     })).content;
     aiFilename = aiFilename.trim().replace(/\s+/g, '_').toUpperCase();

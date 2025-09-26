@@ -109,7 +109,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 	 * Send a message to a specific thread and display the bot response.
 	 */
 	public async sendMessageToThread(sessionId: string, prompt: string) {
-		this.threadManager.setActiveThread(sessionId);
+		await this.threadManager.setActiveThread(sessionId);
 		const session = this.threadManager.getSession(sessionId);
 		if (!session) {
 			this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: 'No active thread.' });
@@ -121,7 +121,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		try {
 			const botResponse = await this.llmService.trackedChat({
 				sessionId,
-				systemMessage: (session as any).systemMessage || SystemMessages.GENERAL_PURPOSE,
+				systemMessage: this.threadManager.getSystemMessage(sessionId) || SystemMessages.GENERAL_PURPOSE,
 				prompt,
 				task: 'chat'
 			});
@@ -353,23 +353,45 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 				// }
 				case 'generateDoc': {
 					// generateDoc triggered (doc-generate thread)
-
-					const response = await generateDocument(this.llmService, data);
-					// Response from docGenerate.generate captured
-					this._view?.webview.postMessage({ type: response.type, sender: response.sender, message: response.message });
-
+					this.addSystemMessage('Generating documentation...');
+					await generateDocument(this.llmService, data);
 					break;
 				}
-				case 'setThreadBeginnerMode': {
-					await this.setBeginnerDevMode.setThreadBeginnerMode(data.sessionId, this.threadManager.getSessions(), this.threadManager.getThreadTitles());
+                case 'setThreadBeginnerMode': {
+                    const sys = await this.setBeginnerDevMode.setThreadBeginnerMode(data.sessionId, this.threadManager.getSessions(), this.threadManager.getThreadTitles());
+                    if (sys) { this.threadManager.setSystemMessage(data.sessionId, sys); }
+                    break;
+                }
+                case 'setThreadDeveloperMode': {
+                    const sys = await this.setBeginnerDevMode.setThreadDeveloperMode(data.sessionId, this.threadManager.getSessions(), this.threadManager.getThreadTitles());
+                    if (sys) { this.threadManager.setSystemMessage(data.sessionId, sys); }
+                    break;
+                }
+				case 'setGeneralBeginnerMode': {
+					// Apply beginner system message for General thread only
+					const sessionId = 'naruhodocs-general-thread';
+					const sys = (require('./SystemMessages') as any).GENERAL_BEGINNER as string;
+					const session = this.threadManager.getSession(sessionId);
+					if (session && typeof (session as any).setCustomSystemMessage === 'function') {
+						try { (session as any).setCustomSystemMessage(sys); } catch {}
+					}
+					this.threadManager.setSystemMessage(sessionId, sys);
 					break;
 				}
-				case 'setThreadDeveloperMode': {
-					await this.setBeginnerDevMode.setThreadDeveloperMode(data.sessionId, this.threadManager.getSessions(), this.threadManager.getThreadTitles());
+				case 'setGeneralDeveloperMode': {
+					// Developer mode for General reverts to GENERAL_PURPOSE
+					const sessionId = 'naruhodocs-general-thread';
+					const sys = SystemMessages.GENERAL_PURPOSE;
+					const session = this.threadManager.getSession(sessionId);
+					if (session && typeof (session as any).setCustomSystemMessage === 'function') {
+						try { (session as any).setCustomSystemMessage(sys); } catch {}
+					}
+					this.threadManager.setSystemMessage(sessionId, sys);
 					break;
 				}
 				case 'sendMessage': {
 					const userMessage = data.value as string;
+					console.log('[NaruhoDocs] Backend received sendMessage:', userMessage);
 					let activeThreadId = this.threadManager.getActiveThreadId();
 					if (!activeThreadId) {
 						// Graceful fallback: auto-initialize general thread if somehow missing
@@ -391,6 +413,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 					const activeSession = this.threadManager.getSession(activeThreadId);
 					try {
 						if (!activeSession) { throw new Error('No active thread'); }
+						this._view?.webview.postMessage({ type: 'addMessage', sender: 'You', message: userMessage });
 						const systemMsg = this.threadManager.getSystemMessage(activeThreadId);
 						const botResponse = await this.llmService.trackedChat({
 							sessionId: activeThreadId,
@@ -401,6 +424,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 						// Append to in-memory history
 						// session.chat already added messages; only display & persist
 						this._view?.webview.postMessage({ type: 'addMessage', sender: 'Bot', message: botResponse });
+						
 						await this.threadManager.saveThreadHistory(activeThreadId);
 					} catch (error: any) {
 						const errMsg = `Error: ${error.message || 'Unable to connect to LLM.'}`;
@@ -459,11 +483,23 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 					break;
 				}
 				case 'createFile': {
-					// Create a default file in the workspace root
+					// Create a default file in the workspace root or docs folder
 					const wsFolders = vscode.workspace.workspaceFolders;
 					if (wsFolders && wsFolders.length > 0) {
 						const wsUri = wsFolders[0].uri;
-						const fileUri = vscode.Uri.joinPath(wsUri, 'NaruhoDocsFile.txt');
+						// Check if /docs folder exists, if so save there, otherwise save to root
+						const docsUri = vscode.Uri.joinPath(wsUri, 'docs');
+						let targetFolder = wsUri;
+						try {
+							const docsStat = await vscode.workspace.fs.stat(docsUri);
+							if (docsStat.type === vscode.FileType.Directory) {
+								targetFolder = docsUri;
+							}
+						} catch {
+							// /docs doesn't exist, use root folder
+						}
+						
+						const fileUri = vscode.Uri.joinPath(targetFolder, 'NaruhoDocsFile.txt');
 						try {
 							await vscode.workspace.fs.writeFile(fileUri, new Uint8Array());
 							this._view?.webview.postMessage({ type: 'addMessage', sender: 'System', message: `File created: ${fileUri.fsPath}` });
@@ -551,11 +587,23 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 					}
 
 					if (uri === generalThreadId || !uri) {
-						// Save in workspace root
+						// Save in workspace root or docs folder if it exists
 						const wsFolders = vscode.workspace.workspaceFolders;
 						if (wsFolders && wsFolders.length > 0) {
 							const wsUri = wsFolders[0].uri;
-							const templateFileUri = vscode.Uri.joinPath(wsUri, fileName);
+							// Check if /docs folder exists, if so save there, otherwise save to root
+							const docsUri = vscode.Uri.joinPath(wsUri, 'docs');
+							let targetFolder = wsUri;
+							try {
+								const docsStat = await vscode.workspace.fs.stat(docsUri);
+								if (docsStat.type === vscode.FileType.Directory) {
+									targetFolder = docsUri;
+								}
+							} catch {
+								// /docs doesn't exist, use root folder
+							}
+							
+							const templateFileUri = vscode.Uri.joinPath(targetFolder, fileName);
 							const content = text ? Buffer.from(text, 'utf8') : new Uint8Array();
 							try {
 								await vscode.workspace.fs.writeFile(templateFileUri, content);
@@ -582,7 +630,25 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 						try {
 							const fileUri = vscode.Uri.parse(uri);
 							const parentPaths = fileUri.path.split('/');
-							const templateFileUri = vscode.Uri.joinPath(fileUri.with({ path: parentPaths.join('/') }), fileName);
+							const parentUri = fileUri.with({ path: parentPaths.join('/') });
+							
+							// Check if /docs folder exists in the workspace, if so save there, otherwise use the parent URI
+							const wsFolders = vscode.workspace.workspaceFolders;
+							let targetFolder = parentUri;
+							if (wsFolders && wsFolders.length > 0) {
+								const wsUri = wsFolders[0].uri;
+								const docsUri = vscode.Uri.joinPath(wsUri, 'docs');
+								try {
+									const docsStat = await vscode.workspace.fs.stat(docsUri);
+									if (docsStat.type === vscode.FileType.Directory) {
+										targetFolder = docsUri;
+									}
+								} catch {
+									// /docs doesn't exist, use parent URI
+								}
+							}
+							
+							const templateFileUri = vscode.Uri.joinPath(targetFolder, fileName);
 							const content = text ? Buffer.from(text, 'utf8') : new Uint8Array();
 							await vscode.workspace.fs.writeFile(templateFileUri, content);
 							this._view?.webview.postMessage({
@@ -641,8 +707,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	// ...existing code...
-	public setActiveThread(sessionId: string) {
-		this.threadManager.setActiveThread(sessionId);
+	public async setActiveThread(sessionId: string) {
+		await this.threadManager.setActiveThread(sessionId);
 		// Update UI thread list immediately
 		try {
 			this._postThreadList();
@@ -812,12 +878,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
 	private _getHtmlForWebview(webview: vscode.Webview) {
 		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.js'));
-		const markdownItUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'node_modules', 'markdown-it', 'dist', 'markdown-it.min.js'));
-		const mermaidUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'node_modules', 'mermaid', 'dist', 'mermaid.min.js'));
+		const markdownItUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'markdown-it.min.js'));
+		const mermaidUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'mermaid.min.js'));
 		const styleResetUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'reset.css'));
 		const styleVSCodeUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'vscode.css'));
 		const styleMainUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.css'));
 		const styleMarkdownUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'markdown.css'));
+		const sendIconUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'send.svg'));
+		const hamburgerIconUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'hamburger.svg'));
+		const refreshIconUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'refresh.svg'));
+		const closeIconUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'close.svg'));
 		const nonce = getNonce();
 
 
@@ -830,7 +900,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 					Use a content security policy to only allow loading images from https or from our extension directory,
 					and only allow scripts that have a specific nonce.
 				-->
-				<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}'; img-src ${webview.cspSource};">
+				<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src ${webview.cspSource} data:; font-src ${webview.cspSource};">
 
 				<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
@@ -847,63 +917,55 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 			</head>
 			<body>
 				<div class="chat-container">
-					<div class="chat-header" style="margin-bottom:12px; position:relative; display:flex; align-items:center; padding:0 8px;">
-						<div style="flex:0 0 auto;">
-							<span id="hamburger-menu" style="cursor:pointer; background:#f3f3f3; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.04); display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px;">
-								<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-									<line x1="4" y1="7" x2="20" y2="7"></line>
-									<line x1="4" y1="12" x2="20" y2="12"></line>
-									<line x1="4" y1="17" x2="20" y2="17"></line>
-								</svg>
+					<div class="chat-header">
+						<div class="menu-div">
+							<span id="hamburger-menu" class="hamburger-menu-class">
+								<img src="${hamburgerIconUri}" width="20" height="20" alt="Menu" class="hamburger-icon">
+								<img src="${closeIconUri}" width="20" height="20" alt="Close" class="close-icon" style="display: none;">
 							</span>
 						</div>
-						<div style="flex:1 1 auto; text-align:center;">
+						<div class="current-doc">
 							<span id="current-doc-name"></span>
 						</div>
-						<div style="margin-left:auto; display:flex; align-items:center; gap:8px; padding-left:8px;">
-							<button class="refresh-vectordb" id="refresh-vectordb" title="Rebuild the database for RAG" style="display:flex; align-items:center; justify-content:center; padding:4px;">
-								<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-									<path d="M21.1 8.7C20.5 6.8 19.4 5.1 17.9 3.8C16.4 2.5 14.5 1.7 12.5 1.5C10.5 1.3 8.5 1.8 6.8 2.8C5.1 3.8 3.7 5.3 2.9 7.1"/>
-									<path d="M2.9 3.7V7.1H6.3"/>
-									<path d="M2.9 15.3C3.5 17.2 4.6 18.9 6.1 20.2C7.6 21.5 9.5 22.3 11.5 22.5C13.5 22.7 15.5 22.2 17.2 21.2C18.9 20.2 20.3 18.7 21.1 16.9"/>
-									<path d="M21.1 20.3V16.9H17.7"/>
-								</svg>
+						<div class="chat-header-right-buttons">
+							<button class="refresh-vectordb" id="refresh-vectordb" title="Rebuild the database for RAG" >
+								<img src="${refreshIconUri}" width="16" height="16" alt="Refresh">
 							</button>
 							<button id="clear-history" title="Clear all chat history">Clear History</button>
 						</div>
-						<div id="dropdown-container" style="display:none; position:absolute; left:0; top:40px; z-index:10;">
+						<div id="dropdown-container" class="dropdown-container-class">
 							<div id="thread-list-menu"></div>
 						</div>
 					</div>
 					<!-- ...existing chat UI... -->
 					   <!-- General buttons moved below chat messages, above chat input -->
-					   <div id="general-buttons" style="display:none; margin-top:18px; justify-content:center; margin-bottom:8px;">
-						   <button id="generate-doc-btn" style="margin-right:8px;">Generate Document</button>
-						   <button id="suggest-template-btn" style="margin-right:8px;">Suggest Template</button>
+					   <div id="general-buttons" class="general-buttons-class">
+						   <button id="generate-doc-btn" class="generate-doc-btn-class">Generate Document</button>
+						   <button id="suggest-template-btn" class="suggest-template-btn-class">Suggest Template</button>
 						   <button id="visualize-btn">Visualize</button>
 					   </div>
-					<div id="thread-tabs" style="display:flex; gap:4px; margin-bottom:8px;"></div>
+					<div id="thread-tabs" class="thread-tabs-class"></div>
 					   <div id="chat-messages" class="chat-messages"></div>
 					   <!-- General buttons will be shown here above the chat input box -->
 					   <div id="general-buttons-anchor"></div>
 					   <div class="chat-input-container">
-						<div class="chat-input-wrapper" style="position:relative; width:100%;">
-							<textarea id="chat-input" class="chat-input" placeholder="How can I help?" style="padding-right:32px;"></textarea>
-							<span id="send-icon" style="position:absolute; right:8px; top:50%; transform:translateY(-50%); cursor:pointer;">
-								<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-									<line x1="22" y1="2" x2="11" y2="13"></line>
-									<polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-								</svg>
+						<div class="chat-input-wrapper">
+							<textarea id="chat-input" class="chat-input" placeholder="How can I help?"></textarea>
+							<span id="send-icon" class="send-icon-class">
+								<img src="${sendIconUri}" width="18" height="18" alt="Send">
 							</span>
 						</div>
-						<!--<button id="create-file-btn" style="margin-top:10px;">Create Default File</button>-->
+						<!--<button id="create-file-btn">Create Default File</button>-->
 					</div>
 				</div>
 
 				<script nonce="${nonce}" src="${markdownItUri}"></script>
 				<script nonce="${nonce}" src="${mermaidUri}"></script>
 				<script nonce="${nonce}" src="${scriptUri}"></script>
-			</body>
+				<script nonce="${nonce}">
+					console.log("[Webview] Inline sanity check script ran ✅");
+				</script>
+				</body>
 			</html>`;
 	}
 

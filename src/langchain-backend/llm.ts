@@ -28,16 +28,23 @@ export interface ChatSession {
 }
 
 export function createChat(opts: CreateChatOptions = {}): ChatSession {
-  const apiKey = opts.apiKey || process.env.GOOGLE_API_KEY || '';
-  if (!apiKey) {
-    throw new Error('Gemini API key missing. Set naruhodocs.geminiApiKey in settings or GOOGLE_API_KEY env var.');
+  let model: BaseChatModel;
+  
+  if (opts.chatModel) {
+    // Use provided custom chat model (e.g., local LLM)
+    model = opts.chatModel;
+  } else {
+    // Use Gemini - require API key
+    const apiKey = opts.apiKey || process.env.GOOGLE_API_KEY || '';
+    if (!apiKey) {
+      throw new Error('Gemini API key missing. Set naruhodocs.geminiApiKey in settings or GOOGLE_API_KEY env var.');
+    }
+    model = new ChatGoogleGenerativeAI({
+      apiKey,
+      model: opts.model || 'gemini-2.0-flash',
+      temperature: opts.temperature ?? 0,
+    });
   }
-  //use opts.chatModel for creating local model chat
-  const model = opts.chatModel || new ChatGoogleGenerativeAI({
-    apiKey,
-    model: opts.model || 'gemini-2.0-flash',
-    temperature: opts.temperature ?? 0,
-  });
 
   const maxHistory = opts.maxHistoryMessages ?? 20;
   let history: BaseMessage[] = [];
