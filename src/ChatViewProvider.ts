@@ -238,7 +238,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 					case 'switchThread': {
 						const sessionId = data.sessionId as string;
 						this.threadManager.setActiveThread(sessionId);
-						this._sendFullHistory(sessionId);
+						// Force resend on thread change so UI always updates even if signature unchanged
+						this._sendFullHistory(sessionId, undefined, true);
 						break;
 					}
 					case 'showVisualizationMenu': {
@@ -471,7 +472,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 	 * Normalize and send entire history for the active thread in one atomic message to avoid
 	 * flicker and race conditions with iterative addMessage calls after webview recreation.
 	 */
-	private _sendFullHistory(sessionId?: string, precomputedSignature?: string) {
+	private _sendFullHistory(sessionId?: string, precomputedSignature?: string, forceResend: boolean = false) {
 		if (!this._view) { return; }
 		const activeId = sessionId || this.threadManager.getActiveThreadId();
 		if (!activeId) { return; }
@@ -537,7 +538,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 				// Update counts now
 				this.lastSentDiagramCounts.set(activeId, diagramCount);
 				// If signature unchanged and not forced, skip
-				if (!shouldForce && lastSig && sig === lastSig) {
+				if (!forceResend && !shouldForce && lastSig && sig === lastSig) {
 					OutputLogger.history(`Suppressing resend (signature unchanged) thread=${activeId} sig=${sig.slice(0,24)}... diagrams=${diagramCount}`);
 					return; // Skip sending to avoid flicker
 				}
