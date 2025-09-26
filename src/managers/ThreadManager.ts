@@ -102,12 +102,12 @@ export class ThreadManager {
         }
     }
 
-    // Switch active thread
-    public setActiveThread(sessionId: string): void {
+    // Switch active thread (await persistence of outgoing thread to avoid race conditions)
+    public async setActiveThread(sessionId: string): Promise<void> {
         if (this.sessions.has(sessionId)) {
             // Before switching, save the history of the current (outgoing) thread.
             if (this.activeThreadId) {
-                this.saveThreadHistory(this.activeThreadId);
+                try { await this.saveThreadHistory(this.activeThreadId); } catch { /* ignore */ }
             }
             this.activeThreadId = sessionId;
             this.onThreadListChange?.();
@@ -192,6 +192,16 @@ export class ThreadManager {
         const session = this.sessions.get(sessionId);
         if (session && typeof (session as any).setCustomSystemMessage === 'function') {
             try { (session as any).setCustomSystemMessage(systemMessage); } catch { /* ignore */ }
+        } else if (this.llmService) {
+            // Recreate session with new system message to ensure provider-side sessions pick it up
+            const oldSession = this.sessions.get(sessionId);
+            const history = oldSession?.getHistory?.() || [];
+            this.llmService.getSession(sessionId, systemMessage, { taskType: 'chat', forceNew: true })
+                .then(newSession => {
+                    try { newSession.setHistory(history as any); } catch { /* ignore */ }
+                    this.sessions.set(sessionId, newSession);
+                })
+                .catch(() => { /* ignore recreate errors */ });
         }
     }
 

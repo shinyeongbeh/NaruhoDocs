@@ -191,13 +191,13 @@
     }
 
     function renderThreadListMenu() {
-        // Sync backend mode on tab switch (if not general thread)
-        if (typeof activeThreadId === 'string' && activeThreadId !== 'naruhodocs-general-thread') {
+        // Sync backend mode on tab switch for both general and document threads
+        if (typeof activeThreadId === 'string') {
             const mode = threadModes[activeThreadId] || 'developer';
-            if (mode === 'beginner') {
-                vscode.postMessage({ type: 'setThreadBeginnerMode', sessionId: activeThreadId });
+            if (activeThreadId === 'naruhodocs-general-thread') {
+                vscode.postMessage({ type: mode === 'beginner' ? 'setGeneralBeginnerMode' : 'setGeneralDeveloperMode', sessionId: activeThreadId });
             } else {
-                vscode.postMessage({ type: 'setThreadDeveloperMode', sessionId: activeThreadId });
+                vscode.postMessage({ type: mode === 'beginner' ? 'setThreadBeginnerMode' : 'setThreadDeveloperMode', sessionId: activeThreadId });
             }
         }
         console.log('[NaruhoDocs] Rendering thread list menu. Active thread ID:', activeThreadId, 'Threads:', threads);
@@ -228,7 +228,7 @@
                 chatInputContainer.parentElement.insertBefore(chatModeButtons, chatInputContainer);
             }
         }
-        if (typeof activeThreadId === 'string' && activeThreadId !== 'naruhodocs-general-thread') {
+        if (typeof activeThreadId === 'string') {
             chatModeButtons.innerHTML = '';
             // Create custom slide switch for mode selection
             const switchLabel = document.createElement('label');
@@ -268,7 +268,7 @@
                     modeText.classList.add('beginner');
                     modeText.classList.remove('developer');
                     vscode.postMessage({
-                        type: 'setThreadBeginnerMode',
+                        type: activeThreadId === 'naruhodocs-general-thread' ? 'setGeneralBeginnerMode' : 'setThreadBeginnerMode',
                         sessionId: activeThreadId
                     });
                     // Show chat message for switching to Beginner Mode
@@ -288,11 +288,11 @@
                         chatMessages.scrollTop = chatMessages.scrollHeight;
                     }
                 } else {
-                    modeText.textContent = 'Developer Mode';
+                    modeText.textContent = 'Beginner Mode';
                     modeText.classList.add('developer');
                     modeText.classList.remove('beginner');
                     vscode.postMessage({
-                        type: 'setThreadDeveloperMode',
+                        type: activeThreadId === 'naruhodocs-general-thread' ? 'setGeneralDeveloperMode' : 'setThreadDeveloperMode',
                         sessionId: activeThreadId
                     });
                     // Show chat message for switching to Developer Mode
