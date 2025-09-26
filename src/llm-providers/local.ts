@@ -27,17 +27,25 @@ export class LocalProvider implements LLMProvider {
         const backend = options.backend || 'ollama';
         const baseUrl = options.baseUrl || this.getDefaultUrl(backend);
         const modelName = options.model || this.getDefaultModel(backend);
+        
+        console.log('[NaruhoDocs] LocalProvider: Initializing with:', { backend, baseUrl, modelName });
 
         this.backendConfig = this.getBackendConfig(backend, baseUrl, modelName);
+        console.log('[NaruhoDocs] LocalProvider: Backend config:', this.backendConfig);
 
         try {
             // Test connection first
+            console.log('[NaruhoDocs] LocalProvider: Testing connection...');
             if (!(await this.testConnection())) {
+                console.error('[NaruhoDocs] LocalProvider: Connection test failed');
                 throw new Error('Connection test failed');
             }
+            console.log('[NaruhoDocs] LocalProvider: Connection test passed');
 
             // Create model based on backend type
+            console.log('[NaruhoDocs] LocalProvider: Creating model for backend...');
             this.model = this.createModelForBackend(this.backendConfig, options);
+            console.log('[NaruhoDocs] LocalProvider: Model created successfully');
 
         } catch (error) {
             throw new LLMProviderError(

@@ -35,6 +35,11 @@
         "category": "NaruhoDocs"
       },
       {
+        "command": "naruhodocs.reinitializeLLMProvider",
+        "title": "Reinitialize LLM Provider",
+        "category": "NaruhoDocs"
+      },
+      {
         "command": "naruhodocs.showProviderStatus",
         "title": "Show Provider Status",
         "category": "NaruhoDocs"
