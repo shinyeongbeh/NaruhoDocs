@@ -8,9 +8,12 @@ export async function buildVectorDB(vectorStore: LocalMemoryVectorStore) {
   // Use the shared vector store instance
   const docs: Document[] = [];
   const files = await vscode.workspace.findFiles('**/*', '{**/node_modules/**,**/.next/**,**/.vercel/**}');
-  const notAllowedExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.ico', '.exe', '.dll', '.bin', '.class', '.jar', '.war', '.zip', '.tar', '.gz', '.mp3', '.mp4', '.avi', '.mov', '.wmv', '.pdf', '.naruhodocs'];
+  const notAllowedExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.ico', '.exe', '.dll', '.bin', '.class', '.jar', '.war', '.zip', '.tar', '.gz', '.mp3', '.mp4', '.avi', '.mov', '.wmv', '.pdf', '.naruhodocs', '.map', '.vsix', '.min.js'];
+  const notAllowedFiles = ['package-lock.json', 'yarn.lock', 'pnpm-lock.yaml'];
   for (const file of files) {
+    const fileName = file.fsPath.split(/[/\\]/).pop()?.toLowerCase() || '';
     if (notAllowedExtensions.some(ext => file.fsPath.endsWith(ext))) { continue; }
+    if (notAllowedFiles.includes(fileName)) { continue; }
     try {
       const content = (await vscode.workspace.fs.readFile(file)).toString();
       // Skip empty or whitespace-only files

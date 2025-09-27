@@ -16,7 +16,7 @@ export class LocalMemoryVectorStore {
     await this.store.addDocuments(documents);
   }
 
-  async similaritySearch(query: string, k: number = 30): Promise<Document[]> {
+  async similaritySearch(query: string, k: number = 15): Promise<Document[]> {
     return this.store.similaritySearch(query, k);
   }
 

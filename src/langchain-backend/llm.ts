@@ -139,22 +139,16 @@ Keep responses focused and technical, using the retrieved context as your primar
   let tools: any[] = [];
   // check the settings if user enabled RAG or not
   let RAGstatus = vscode.workspace.getConfiguration('naruhodocs').get<boolean>('rag.enabled', );
-  if (opts.systemMessage === SystemMessages.GENERAL_PURPOSE && RAGstatus) {
-  // if (RAGstatus) {
-    // Use RAG-enabled agent for general-purpose chat
-    tools = [RAGretrieval];
-    // tools = [retrieveFilenames, retrieveFileContent, RAGretrieval];
+  if(RAGstatus) {
+    tools = [retrieveFilenames, retrieveFileContent, RAGretrieval];
   } else {
     tools = [retrieveFilenames, retrieveFileContent];
-    // tools = [RAGretrieval];
-    // tools = [retrieveFilenames, retrieveFileContent, RAGretrieval];
   }
 
 
   // Create LangGraph agent with RAG capabilities
   const agent = createReactAgent({
     llm: model,
-    // tools: [retrieveFilenames, retrieveFileContent, RAGretrieval],
     tools: tools
   });
 

@@ -137,7 +137,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 					}
 					case 'setGeneralBeginnerMode': {
 						const sessionId = 'naruhodocs-general-thread';
-						const sys = (require('./SystemMessages') as any).GENERAL_BEGINNER as string;
+						const sys = SystemMessages.GENERAL_BEGINNER as string;
 						const session = this.threadManager.getSession(sessionId);
 						if (session && typeof (session as any).setCustomSystemMessage === 'function') { try { (session as any).setCustomSystemMessage(sys); } catch {} }
 						this.threadManager.setSystemMessage(sessionId, sys);

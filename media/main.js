@@ -318,7 +318,6 @@
     if (chatInput) {
         console.log('[NaruhoDocs] Setting up chat input keydown listener');
         chatInput.addEventListener('keydown', (event) => {
-            console.log('[NaruhoDocs] Key pressed:', event.key, 'Shift:', event.shiftKey);
             if (event.key === 'Enter' && !event.shiftKey) {
                 console.log('[NaruhoDocs] Enter key detected, sending message');
                 event.preventDefault();
