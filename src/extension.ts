@@ -111,25 +111,17 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('naruhodocs.rebuildVectorDB', async () => {
 			const ragEnabled = vscode.workspace.getConfiguration('naruhodocs').get<boolean>('rag.enabled', true);
 			if (!ragEnabled) {
-				vscode.window.showWarningMessage('RAG is disabled in settings. Enable it to rebuild the vector database.');
+				vscode.window.showWarningMessage('RAG is disabled in settings. Enable it then run Rebuild to trigger a full reload.');
 				return;
 			}
+			// Instead of manually rebuilding (which can miss edge initialization cases),
+			// perform a full window reload so the standard activation flow reliably
+			// re-runs embedding + vector store initialization.
 			try {
-				await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'Rebuilding NaruhoDocs RAG Vector Database', cancellable: false }, async (progress) => {
-					progress.report({ message: 'Initializing embeddings...' });
-					const embeddingConfigManager = new EmbeddingConfigManager(context);
-					await embeddingConfigManager.scaffoldIfMissing();
-					await embeddingConfigManager.load();
-					const providerName = vscode.workspace.getConfiguration('naruhodocs').get<string>('embedding.provider', 'local');
-					const embeddingConfig = embeddingConfigManager.resolveProvider(providerName);
-					const embeddings = await initializeEmbeddingModel(embeddingConfig);
-					initializeVectorStore(embeddings); // reinitialize singleton
-					progress.report({ message: 'Scanning workspace & chunking documents...' });
-					await buildVectorDB(getVectorStore());
-				});
-				vscode.window.showInformationMessage('NaruhoDocs RAG vector database rebuilt successfully.');
+				vscode.window.showInformationMessage('Reloading window to rebuild NaruhoDocs RAG vector database...');
+				await vscode.commands.executeCommand('workbench.action.reloadWindow');
 			} catch (e: any) {
-				vscode.window.showErrorMessage('Failed to rebuild vector database: ' + (e?.message || String(e)));
+				vscode.window.showErrorMessage('Failed to reload window for vector DB rebuild: ' + (e?.message || String(e)));
 			}
 		})
 	);

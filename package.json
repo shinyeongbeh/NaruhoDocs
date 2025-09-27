@@ -199,7 +199,7 @@
         {
           "id": "naruhodocs.chatView",
           "type": "webview",
-          "name": "NaruhoDocs Chat",
+          "name": "Chat",
           "icon": "media/icon.svg"
         }
       ]
