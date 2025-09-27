@@ -106,7 +106,7 @@ export function activate(context: vscode.ExtensionContext) {
 		})
 	);
 
-	// Rebuild Vector DB command (moved from webview button to view title toolbar)
+	// Rebuild Vector DB command
 	context.subscriptions.push(
 		vscode.commands.registerCommand('naruhodocs.rebuildVectorDB', async () => {
 			const ragEnabled = vscode.workspace.getConfiguration('naruhodocs').get<boolean>('rag.enabled', true);
@@ -685,11 +685,6 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 		})
 	);
 
-	context.subscriptions.push(
-		vscode.commands.registerCommand('naruhodocs.visualizeDocRelations', async () => {
-			await visualizationProvider.visualizeDocRelations();
-		})
-	);
 
 	// Add reset chat command
 	context.subscriptions.push(
@@ -1122,6 +1117,12 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 		try {
 			// Call the STATIC method with context parameter
 			await ThreadManager.clearAllThreadHistoryOnce(context);
+			// Also clear visualization dedup hashes so user can immediately regenerate diagrams
+			try {
+				await context.workspaceState.update('visualization:lastHash:architecture', undefined);
+				await context.workspaceState.update('visualization:lastHash:folder structure', undefined);
+				await context.workspaceState.update('visualization:lastHash:project', undefined);
+			} catch { /* ignore */ }
 			vscode.window.showInformationMessage('Thread history cleared successfully! Extension will reload.');
 
 			// Optionally auto-reload the window
@@ -1154,6 +1155,12 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 			// Tell webview to clear its rendered messages & add system note
 			provider?.postMessage({ type: 'clearMessages' });
 			provider?.addSystemMessage('History cleared for current thread.');
+			// Clear visualization dedup so user can regenerate without content change
+			try {
+				await context.workspaceState.update('visualization:lastHash:architecture', undefined);
+				await context.workspaceState.update('visualization:lastHash:folder structure', undefined);
+				await context.workspaceState.update('visualization:lastHash:project', undefined);
+			} catch { /* ignore */ }
 		} catch (e:any) {
 			vscode.window.showErrorMessage('Failed to clear current thread history: ' + (e?.message || String(e)));
 		}

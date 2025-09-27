@@ -60,11 +60,6 @@
         "category": "NaruhoDocs"
       },
       {
-        "command": "naruhodocs.visualizeDocRelations",
-        "title": "Visualize Document Relations",
-        "category": "NaruhoDocs"
-      },
-      {
         "command": "naruhodocs.showVisualizationMenu",
         "title": "Show Visualization Menu",
         "category": "NaruhoDocs"

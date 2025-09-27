@@ -3,10 +3,8 @@ import * as crypto from 'crypto';
 import { LLMProviderManager } from './llm-providers/manager';
 import { LLMService } from './managers/LLMService';
 import { ProjectAnalyzer } from './analyzers/ProjectAnalyzer';
-import { DocumentAnalyzer } from './analyzers/DocumentAnalyzer';
 import { ArchitectureAnalyzer } from './analyzers/ArchitectureAnalyzer';
-import { FolderStructureAnalyzer } from './analyzers/FolderStructureAnalyzer';
-import { DocumentRelationsAnalyzer } from './analyzers/DocumentRelationsAnalyzer';
+import { FolderStructureAnalyzer, FolderNode } from './analyzers/FolderStructureAnalyzer';
 import { D3TreeRenderer, TreeNode } from './renderers/D3TreeRenderer';
 import { VisualizationViewProvider } from './VisualizationViewProvider';
 import { OutputLogger } from './utils/OutputLogger';
@@ -19,7 +17,7 @@ export interface VisualizationOption {
 }
 
 export interface VisualizationResult {
-    type: 'mermaid' | 'd3' | 'vis' | 'error';
+    type: 'mermaid' | 'd3' | 'vis' | 'folderList' | 'error';
     content: string;
     title: string;
     error?: string;
@@ -27,7 +25,6 @@ export interface VisualizationResult {
 
 export class VisualizationProvider {
     private readonly projectAnalyzer: ProjectAnalyzer;
-    private readonly documentAnalyzer: DocumentAnalyzer;
     private readonly d3TreeRenderer: D3TreeRenderer;
     private chatProvider?: any; // Reference to ChatViewProvider for sending messages
 
@@ -36,20 +33,16 @@ export class VisualizationProvider {
             id: 'architecture',
             title: 'Project Architecture',
             description: 'Generate architecture diagrams showing component relationships and system structure',
-            icon: '🏗️'
+            // Icon intentionally left blank (removed emoji for command palette cleanliness)
+            icon: ''
         },
         {
             id: 'folderStructure',
             title: 'Folder Structure',
             description: 'Interactive tree view of project structure with documentation coverage analysis',
-            icon: '📁'
+            icon: ''
         },
-        {
-            id: 'docRelations',
-            title: 'Document Relations',
-            description: 'Visualize relationships and cross-references between documentation files',
-            icon: '🔗'
-        }
+        // document relations option removed
     ];
 
     private llmService: LLMService;
@@ -60,7 +53,6 @@ export class VisualizationProvider {
         private readonly llmManager: LLMProviderManager
     ) {
         this.projectAnalyzer = new ProjectAnalyzer();
-        this.documentAnalyzer = new DocumentAnalyzer();
         this.d3TreeRenderer = new D3TreeRenderer();
         this.llmService = LLMService.getOrCreate(this.llmManager);
     }
@@ -81,7 +73,7 @@ export class VisualizationProvider {
     public async showVisualizationMenu(documentUri?: vscode.Uri): Promise<void> {
         try {
             const items = VisualizationProvider.visualizationOptions.map(option => ({
-                label: `${option.icon} ${option.title}`,
+                label: option.title,
                 description: option.description,
                 detail: option.id
             }));
@@ -150,10 +142,8 @@ export class VisualizationProvider {
                 return await this.generateArchitectureVisualization(documentUri);
             case 'folderStructure':
                 progress?.report({ message: 'Scanning folder structure...' });
-                return await this.generateFolderStructureVisualization();
-            case 'docRelations':
-                progress?.report({ message: 'Analyzing document relationships...' });
-                return await this.generateDocumentRelationsVisualization();
+                return await this.generateFolderStructureListVisualization();
+            // document relations case removed
             default:
                 throw new Error(`Unknown visualization type: ${type}`);
         }
@@ -193,18 +183,6 @@ export class VisualizationProvider {
     classDef file fill:#66bb6a
     classDef config fill:#ff9800`;
                 title = 'Project Structure (Fallback)';
-                break;
-                
-            case 'docRelations':
-                content = `graph LR
-    README[📄 README.md] --> GUIDE[📋 User Guide]
-    README --> API[📖 API Docs]
-    API --> CODE[💻 Implementation]
-    GUIDE --> EXAMPLES[📝 Examples]
-    
-    classDef default fill:#e1f5fe
-    classDef readme fill:#fff3e0`;
-                title = 'Document Relations (Fallback)';
                 break;
                 
             default:
@@ -247,24 +225,18 @@ export class VisualizationProvider {
     private addVisualizationToAIHistory(result: VisualizationResult): void {
         try {
             if (!this.chatProvider) { return; }
-
             const vizType = this.getVisualizationType(result.title);
             const trimmedContent = this.tokenHygiene(result.content);
             const compactMessage = this.buildCompactVisualizationMessage(result.title, trimmedContent, vizType);
             const hash = this.hashContent(compactMessage);
             const hashKey = `visualization:lastHash:${vizType}`;
             const lastHash = this.context.workspaceState.get<string>(hashKey, '');
-
             if (lastHash === hash) {
                 vscode.window.setStatusBarMessage(`Visualization unchanged – not duplicated in chat history.`, 4000);
                 OutputLogger.viz(`Skipped duplicate visualization (type=${vizType}) hash=${hash.slice(0,8)}`);
                 return;
             }
-
-            try {
-                void this.context.workspaceState.update(hashKey, hash);
-            } catch { /* ignore */ }
-
+            try { void this.context.workspaceState.update(hashKey, hash); } catch { /* ignore */ }
             if (typeof (this.chatProvider as any).addBotMessage === 'function') {
                 (this.chatProvider as any).addBotMessage(compactMessage, { messageType: 'visualization', flags: ['visualization', vizType] });
             } else {
@@ -277,9 +249,11 @@ export class VisualizationProvider {
         }
     }
 
-    private buildCompactVisualizationMessage(title: string, mermaid: string, vizType: string): string {
-        // Reintroduced concise heading: project name + descriptor retained for clarity.
-        return `<!--naruhodocs:visualization:${vizType}-->\n## ${title}\n\n\`\`\`mermaid\n${mermaid}\n\`\`\``;
+    private buildCompactVisualizationMessage(title: string, content: string, vizType: string): string {
+        // Use text fence for ASCII folder structures to prevent Mermaid parsing errors.
+        const isAscii = vizType === 'folder structure';
+        const lang = isAscii ? 'text' : 'mermaid';
+        return `<!--naruhodocs:visualization:${vizType}-->\n## ${title}\n\n\`\`\`${lang}\n${content}\n\`\`\``;
     }
 
     private hashContent(content: string): string {
@@ -298,18 +272,7 @@ export class VisualizationProvider {
 
     // Removed verbose context builders (createProjectContext, createDetailedAIContext)
 
-    private getVisualizationType(title: string): string {
-        if (title.includes('Architecture')) {
-            return 'architecture';
-        }
-        if (title.includes('Folder Structure')) {
-            return 'folder structure';
-        }
-        if (title.includes('Document Relations')) {
-            return 'document relations';
-        }
-        return 'project';
-    }
+    // (Removed earlier duplicate getVisualizationType implementation – consolidated at bottom of file)
 
     private extractDiagramStructure(mermaidContent: string): string {
         // Extract key information from the mermaid diagram for AI reference
@@ -392,15 +355,6 @@ export class VisualizationProvider {
     
     click Root "Project contains multiple directories and files"
     click Src "Source code and main functionality"`;
-        } else if (originalContent.includes('Document Relationships')) {
-            return `graph LR
-    README[📄 README] --> DOCS[📚 Documentation]
-    DOCS --> API[📖 API Reference]
-    DOCS --> GUIDE[📋 User Guide]
-    API --> CODE[💻 Implementation]
-    
-    style README fill:#fff3e0
-    style DOCS fill:#e8f5e8`;
         } else {
             return `graph TD
     A[Project Analysis] --> B[Simplified View]
@@ -466,7 +420,7 @@ export class VisualizationProvider {
         }
     }
 
-    private async generateFolderStructureVisualization(): Promise<VisualizationResult> {
+    private async generateFolderStructureListVisualization(): Promise<VisualizationResult> {
         try {
             // Get workspace folder
             const workspaceFolders = vscode.workspace.workspaceFolders;
@@ -475,145 +429,34 @@ export class VisualizationProvider {
             }
 
             const projectName = workspaceFolders[0].name;
+            // Previously we skipped analysis for the extension's own project to prevent noisy diagrams.
+            // We now always generate the ASCII folder structure so that users can dog‑food the feature
+            // while developing the extension (and so the copy button appears consistently).
 
-            // Skip analysis if this appears to be the NaruhoDocs extension itself
-            if (projectName.toLowerCase().includes('naruhodocs') || projectName.includes('NaruhoDocs')) {
-                return {
-                    type: 'mermaid',
-                    content: `graph TD
-    A[⚠️ Extension Project Detected] --> B[This appears to be the NaruhoDocs extension project]
-    B --> C[Please open your own project to analyze its folder structure]
-    C --> D[Use File > Open Folder to open your project]
-    
-    style A fill:#ff9800,stroke:#f57c00
-    style D fill:#4caf50,stroke:#388e3c`,
-                    title: 'Please Open Your Project'
-                };
-            }
-
-            // Use the intelligent AI-powered folder structure analyzer
             const folderAnalyzer = new FolderStructureAnalyzer(this.llmManager);
             const aiAnalysis = await folderAnalyzer.analyzeFolderStructure();
-
-            if (aiAnalysis) {
-                // AI analysis succeeded - use the intelligent diagram
-                const result: VisualizationResult = {
-                    type: 'mermaid' as const,
-                    content: this.optimizeMermaidContent(aiAnalysis.mermaidDiagram),
-                    title: `${projectName} Folder Structure (${aiAnalysis.insights.organizationPattern})`
-                };
-                return result;
-            } else {
-                // Fallback to basic file analysis
-                const basicAnalysis = await this.projectAnalyzer.analyzeProject();
-                const content = this.projectAnalyzer.generateMermaidTreeDiagram(basicAnalysis);
-                
-                return {
-                    type: 'mermaid',
-                    content,
-                    title: `Project Folder Structure (${basicAnalysis.totalFiles} files analyzed)`
-                };
+            let root: FolderNode | null = aiAnalysis ? aiAnalysis.structure : null;
+            if (!root) {
+                // Minimal fallback root if analyzer failed
+                root = { name: projectName, path: projectName, type: 'folder', children: [] } as FolderNode;
             }
+
+            const asciiTree = this.buildAsciiFolderTree(root, { showRoot: true });
+            return {
+                type: 'folderList',
+                content: asciiTree,
+                title: `${projectName} Folder Structure`
+            };
         } catch (error) {
             console.error('Error analyzing folder structure:', error);
-            // Fallback to placeholder if analysis fails
-            const content = `graph TD
-    Root[📁 Project Root] --> Src[📁 src]
-    Root --> Config[⚙️ Config Files]
-    Root --> Docs[� Documentation]
-    Src --> Components[� Components]
-    Src --> Utils[� Utilities]
-    Config --> Package[📄 package.json]
-    Config --> TSConfig[📄 tsconfig.json]
-    Docs --> README[📝 README.md]
-    Docs --> Guide[� User Guide]`;
-
             return {
-                type: 'mermaid',
-                content,
+                type: 'folderList',
+                content: '/\n└── <error reading structure>',
                 title: 'Project Folder Structure (Fallback)'
             };
         }
     }
-
-    private async generateDocumentRelationsVisualization(): Promise<VisualizationResult> {
-        try {
-            // Get workspace folder
-            const workspaceFolders = vscode.workspace.workspaceFolders;
-            if (!workspaceFolders || workspaceFolders.length === 0) {
-                throw new Error('No workspace folder found');
-            }
-
-            const projectName = workspaceFolders[0].name;
-
-            // Skip analysis if this appears to be the NaruhoDocs extension itself
-            if (projectName.toLowerCase().includes('naruhodocs') || projectName.includes('NaruhoDocs')) {
-                return {
-                    type: 'mermaid',
-                    content: `graph TD
-    A[⚠️ Extension Project Detected] --> B[This appears to be the NaruhoDocs extension project]
-    B --> C[Please open your own project to analyze its documentation]
-    C --> D[Use File > Open Folder to open your project]
-    
-    style A fill:#ff9800,stroke:#f57c00
-    style D fill:#4caf50,stroke:#388e3c`,
-                    title: 'Please Open Your Project'
-                };
-            }
-
-            // Use the intelligent AI-powered document relations analyzer
-            const docRelationsAnalyzer = new DocumentRelationsAnalyzer(this.llmManager);
-            const aiAnalysis = await docRelationsAnalyzer.analyzeDocumentRelations();
-
-            if (aiAnalysis) {
-                // AI analysis succeeded - use the intelligent diagram
-                const subtitle = aiAnalysis.insights.brokenLinks.length > 0 || aiAnalysis.insights.orphanedDocuments.length > 0 
-                    ? ` (${aiAnalysis.insights.brokenLinks.length} broken links, ${aiAnalysis.insights.orphanedDocuments.length} orphaned docs)`
-                    : ` (${aiAnalysis.documents.length} documents, ${aiAnalysis.links.length} connections)`;
-
-                const result: VisualizationResult = {
-                    type: 'mermaid' as const,
-                    content: this.optimizeMermaidContent(aiAnalysis.mermaidDiagram),
-                    title: `${projectName} Document Relations ${subtitle}`
-                };
-                return result;
-            } else {
-                // Fallback to basic document analysis
-                const basicAnalysis = await this.documentAnalyzer.analyzeDocumentRelationships();
-                const content = this.documentAnalyzer.generateMermaidRelationshipDiagram(basicAnalysis);
-                
-                const brokenLinksCount = basicAnalysis.brokenLinks.length;
-                const orphanedCount = basicAnalysis.orphanedDocuments.length;
-                const subtitle = brokenLinksCount > 0 || orphanedCount > 0 
-                    ? ` (${brokenLinksCount} broken links, ${orphanedCount} orphaned docs)`
-                    : ` (${basicAnalysis.nodes.length} documents, ${basicAnalysis.links.length} connections)`;
-                
-                return {
-                    type: 'mermaid',
-                    content,
-                    title: 'Document Relationships' + subtitle
-                };
-            }
-        } catch (error) {
-            console.error('Error analyzing document relationships:', error);
-            // Fallback diagram
-            const content = `graph LR
-    README[📄 README.md] --> IMPL[📄 IMPLEMENTATION_PLAN.md]
-    README --> VIZ[📄 VISUALIZATION_PLAN.md]
-    IMPL --> CODE[💻 Source Code]
-    VIZ --> IMPL
-    CODE --> TESTS[🧪 Test Files]
-    
-    classDef default fill:#e1f5fe
-    classDef readme fill:#fff3e0`;
-
-            return {
-                type: 'mermaid',
-                content,
-                title: 'Document Relationships (Fallback)'
-            };
-        }
-    }
+    // document relations generation removed
 
     private getPlaceholderDiagram(type: string): string {
         switch (type) {
@@ -631,12 +474,7 @@ export class VisualizationProvider {
     Root --> Config[⚙️ Config Files]
     Src --> Components[📁 Components]
     Src --> Utils[📁 Utilities]`;
-            case 'docRelations':
-                return `graph LR
-    Docs[📚 Documentation] --> API[📖 API Docs]
-    Docs --> Guide[📋 User Guide]
-    API --> Code[💻 Implementation]
-    Guide --> Examples[📝 Examples]`;
+            // document relations placeholder removed
             default:
                 return 'graph TD\n    A[Start] --> B[End]';
         }
@@ -655,9 +493,7 @@ export class VisualizationProvider {
         await this.generateAndSendVisualization('folderStructure');
     }
 
-    public async visualizeDocRelations(): Promise<void> {
-        await this.generateAndSendVisualization('docRelations');
-    }
+    // visualizeDocRelations removed
 
     private convertToTreeStructure(analysis: any): TreeNode {
         // Convert the project analysis into a tree structure for D3 rendering
@@ -701,8 +537,6 @@ export class VisualizationProvider {
 
     private buildTreeFromStructure(structure: any): TreeNode[] {
         const nodes: TreeNode[] = [];
-        
-        // This is a simplified conversion - build from available data
         if (structure.directories) {
             structure.directories.forEach((dir: any) => {
                 nodes.push({
@@ -715,7 +549,6 @@ export class VisualizationProvider {
                 });
             });
         }
-
         if (structure.files) {
             structure.files.forEach((file: any) => {
                 nodes.push({
@@ -728,7 +561,78 @@ export class VisualizationProvider {
                 });
             });
         }
-
         return nodes;
     }
+
+    // Helper to produce a simplified list representation
+    private flattenFolderStructure(root: FolderNode): any[] {
+        const result: any[] = [];
+        const walk = (node: FolderNode, depth: number) => {
+            result.push({ name: node.name, path: node.path, type: node.type, depth });
+            if (node.children) {
+                for (const child of node.children) {
+                    walk(child, depth + 1);
+                }
+            }
+        };
+        walk(root, 0);
+        return result;
+    }
+
+    /**
+     * Build an ASCII tree representation similar to the common `tree` command output.
+     * Example:
+     * /
+     * ├── src/
+     * │   ├── index.ts
+     * │   └── utils/
+     * └── README.md
+     */
+    private buildAsciiFolderTree(root: FolderNode, opts: { showRoot: boolean }): string {
+        const lines: string[] = [];
+
+        const isFolder = (n: FolderNode) => n.type === 'folder';
+        const sortChildren = (children: FolderNode[] = []) => {
+            return [...children].sort((a, b) => {
+                // Folders first, then files, then alpha
+                if (isFolder(a) && !isFolder(b)) { return -1; }
+                if (!isFolder(a) && isFolder(b)) { return 1; }
+                return a.name.localeCompare(b.name);
+            });
+        };
+
+        const walk = (node: FolderNode, prefix: string, isLast: boolean, isRoot = false) => {
+            if (isRoot && opts.showRoot) {
+                lines.push('/');
+            } else if (!isRoot) {
+                const connector = isLast ? '└── ' : '├── ';
+                const displayName = node.type === 'folder' ? `${node.name}/` : node.name;
+                lines.push(prefix + connector + displayName);
+            }
+            if (node.type === 'folder' && node.children && node.children.length > 0) {
+                const ch = sortChildren(node.children as FolderNode[]);
+                ch.forEach((child, idx) => {
+                    const last = idx === ch.length - 1;
+                    const newPrefix = isRoot ? '' : prefix + (isLast ? '    ' : '│   ');
+                    walk(child, newPrefix, last, false);
+                });
+            }
+        };
+
+        walk(root, '', true, true);
+        return lines.join('\n');
+    }
+
+    // Updated to handle both list and structure titles
+    private getVisualizationType(title: string): string {
+        if (title.includes('Architecture')) {
+            return 'architecture';
+        }
+        if (title.includes('Folder Structure') || title.includes('Folder List')) {
+            return 'folder structure';
+        }
+        return 'project';
+    }
+
+    // Override the earlier definition (ensure only one definition exists at runtime)
 }

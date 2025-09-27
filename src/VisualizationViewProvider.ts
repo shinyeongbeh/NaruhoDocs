@@ -163,7 +163,6 @@ export class VisualizationViewProvider implements vscode.WebviewViewProvider {
 							<select id="visualization-type">
 								<option value="architecture">🏗️ Architecture</option>
 								<option value="folderStructure">📁 Folder Structure</option>
-								<option value="docRelations">🔗 Document Relations</option>
 							</select>
 							<button id="generate-btn" class="primary-button">Generate</button>
 							<button id="export-btn" class="secondary-button" disabled>Export</button>

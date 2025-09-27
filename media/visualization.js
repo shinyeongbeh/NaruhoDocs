@@ -4,7 +4,7 @@
 (function () {
     /**
      * @typedef {Object} VisualizationResult
-     * @property {'mermaid'|'d3'|'vis'|'error'} type
+     * @property {'mermaid'|'d3'|'vis'|'folderList'|'error'} type
      * @property {string} content
      * @property {string} title
      * @property {string=} error
@@ -143,10 +143,12 @@
             case 'vis':
                 renderVisVisualization(result.content);
                 break;
+            case 'folderList':
+                renderFolderAscii(result.content);
+                break;
             default:
                 throw new Error(`Unsupported visualization type: ${result.type}`);
         }
-
         // Add title if provided
         if (result.title) {
             const titleElement = document.createElement('h2');
@@ -156,7 +158,6 @@
             titleElement.style.color = 'var(--vscode-foreground)';
             visualizationContainer.insertBefore(titleElement, visualizationContainer.firstChild);
         }
-
         // Add export controls
         addExportControls();
     }
@@ -211,7 +212,28 @@
         }
     }
 
+    /**
+     * Render ASCII folder tree
+     * @param {string} asciiContent
+     */
+    function renderFolderAscii(/** @type {string} */ asciiContent) {
+        const container = document.createElement('div');
+        container.className = 'folder-list-container';
+        const pre = document.createElement('pre');
+        pre.className = 'folder-ascii-tree';
+        pre.textContent = asciiContent;
+        container.appendChild(pre);
+        // Store last ascii content for copy button logic in addExportControls
+        (container.dataset || (/** @type {any} */(container).dataset = {})).asciiTree = asciiContent;
+        if (visualizationContainer) { visualizationContainer.appendChild(container); }
+    }
+
     function addExportControls() {
+        if (!visualizationContainer) { return; }
+        // Remove any existing controls to avoid duplicates on re-render
+        const existing = visualizationContainer.querySelector('.visualization-controls');
+        if (existing) { existing.remove(); }
+
         const controls = document.createElement('div');
         controls.className = 'visualization-controls';
 
@@ -230,13 +252,30 @@
             console.log('Reset view clicked');
         });
 
+        // Copy button for folderList (ASCII) – placed first for visibility
+        if (currentVisualization && currentVisualization.type === 'folderList') {
+            const copyBtn = createControlButton('📋', 'Copy folder structure', async () => {
+                try {
+                    if (!currentVisualization) { throw new Error('No visualization'); }
+                    await navigator.clipboard.writeText(currentVisualization.content);
+                    copyBtn.textContent = '✔';
+                    copyBtn.setAttribute('aria-label', 'Copied');
+                    setTimeout(() => { copyBtn.textContent = '📋'; copyBtn.setAttribute('aria-label', 'Copy folder structure'); }, 1400);
+                } catch (e) {
+                    copyBtn.textContent = '✖';
+                    copyBtn.setAttribute('aria-label', 'Copy failed');
+                    setTimeout(() => { copyBtn.textContent = '📋'; copyBtn.setAttribute('aria-label', 'Copy folder structure'); }, 1400);
+                }
+            });
+            copyBtn.setAttribute('aria-label', 'Copy folder structure');
+            controls.appendChild(copyBtn);
+        }
+
         controls.appendChild(zoomInBtn);
         controls.appendChild(zoomOutBtn);
         controls.appendChild(resetBtn);
 
-        if (visualizationContainer) {
-            visualizationContainer.appendChild(controls);
-        }
+        visualizationContainer.appendChild(controls);
     }
 
     /**
