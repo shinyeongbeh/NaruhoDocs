@@ -408,16 +408,8 @@
         threadListMenu.innerHTML = '';
         let activeTitle = '';
         let foundActive = false;
-        // Move general buttons above chat input box
-        const generalButtons = document.getElementById('general-buttons');
-        const generalButtonsAnchor = document.getElementById('general-buttons-anchor');
-        if (generalButtons && generalButtonsAnchor && generalButtonsAnchor.parentElement) {
-            // Only move if not already in correct place
-            if (generalButtons.parentElement !== generalButtonsAnchor.parentElement || generalButtons.previousElementSibling !== generalButtonsAnchor) {
-                generalButtonsAnchor.parentElement.insertBefore(generalButtons, generalButtonsAnchor.nextSibling);
-            }
-            generalButtons.style.display = (activeThreadId === 'naruhodocs-general-thread') ? 'flex' : 'none';
-        }
+        // We no longer position #general-buttons above the chat input; its buttons are converted
+        // into compact icon buttons that live to the right of the mode toggle (within #chat-mode-buttons).
 
         // Remove mode buttons from menu area
         // Add mode switch buttons above chat input container
@@ -535,6 +527,52 @@
             switchLabel.appendChild(modeText);
             chatModeButtons.appendChild(switchLabel);
             chatModeButtons.style.display = 'flex';
+
+            // --- Integrate Generate / Template / Visualize buttons as compact icons on the right ---
+            try {
+                const isGeneral = !activeThreadId || activeThreadId === 'naruhodocs-general-thread';
+                const legacy = document.getElementById('general-buttons');
+                if (legacy) { legacy.style.display = 'none'; }
+                let actionsWrapper = chatModeButtons.querySelector('.mode-actions-wrapper');
+                if (!actionsWrapper) {
+                    actionsWrapper = document.createElement('div');
+                    actionsWrapper.className = 'mode-actions-wrapper';
+                    chatModeButtons.appendChild(actionsWrapper);
+                }
+                /** @type {Array<{id:string,label:string,svg:string,title:string,create?:boolean}>} */
+                const spec = [
+                    { id: 'generate-doc-btn', label: 'Generate Document', title: 'Generate Documentation', svg: 'M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z', create: true },
+                    { id: 'suggest-template-btn', label: 'Suggest Template', title: 'Suggest Documentation Template', svg: 'M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m3.75 9v6m3-3H9m1.5-12H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z', create: true },
+                    { id: 'visualize-btn', label: 'Visualize', title: 'Visualize Project', svg: 'M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z', create: true }
+                ];
+                spec.forEach(def => {
+                    let btn = document.getElementById(def.id);
+                    if (!btn && def.create) {
+                        btn = document.createElement('button');
+                        btn.id = def.id;
+                        btn.textContent = def.label; // fallback text for accessibility if styles fail
+                        // Attach baseline listeners (duplicates avoided by attribute flag later)
+                        if (def.id === 'visualize-btn') {
+                            btn.addEventListener('click', () => vscode.postMessage({ type: 'showVisualizationMenu' }));
+                        }
+                        if (def.id === 'generate-doc-btn') {
+                            btn.addEventListener('click', () => { try { vscode.postMessage({ type:'scanDocs' }); showDocTypeModal(); } catch {} });
+                        }
+                        if (def.id === 'suggest-template-btn') {
+                            btn.addEventListener('click', () => { try { vscode.postMessage({ type:'scanDocs' }); showTemplateSelectionModal(); } catch {} });
+                        }
+                    }
+                    if (!btn) { return; }
+                    if (!btn.classList.contains('mode-action-btn')) {
+                        btn.classList.add('mode-action-btn');
+                        btn.setAttribute('aria-label', def.label);
+                        btn.title = def.title;
+                        btn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="${def.svg}"/></svg>`;
+                    }
+                    btn.style.display = isGeneral ? 'inline-flex' : 'none';
+                    if (btn.parentElement !== actionsWrapper) { actionsWrapper.appendChild(btn); }
+                });
+            } catch (e) { console.warn('[NaruhoDocs] Failed to integrate icon buttons (wrapper phase):', e); }
         } else {
             chatModeButtons.innerHTML = '';
             chatModeButtons.style.display = 'none';
