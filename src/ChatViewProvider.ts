@@ -168,12 +168,57 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 							try { preLen = activeSession.getHistory().length; } catch { /* ignore */ }
 							OutputLogger.history(`preChat length=${preLen} session=${activeThreadId}`);
 							const systemMsg = this.threadManager.getSystemMessage(activeThreadId);
+							// Capture deep-ish snapshot of prior history in case provider/model recreation wipes it.
+							let priorHistory: Array<{ type: string; text: string }> = [];
+							try {
+								priorHistory = (activeSession.getHistory() || []).map((m: any) => {
+									let role: string | undefined = m.type || (typeof m._getType === 'function' ? m._getType() : undefined);
+									if (!role || role === 'unknown') {
+										const ctor = m.constructor?.name?.toLowerCase?.() || '';
+										if (ctor.includes('human')) { role = 'human'; }
+										else if (ctor.includes('ai')) { role = 'ai'; }
+									}
+									if (role === 'user') { role = 'human'; }
+									if (role === 'assistant' || role === 'bot') { role = 'ai'; }
+									const text = (m as any).text || (typeof m.content === 'string' ? m.content : JSON.stringify(m.content));
+									return { type: role || 'unknown', text };
+								});
+							} catch { /* ignore */ }
 							const botResponse = await this.llmService.trackedChat({ sessionId: activeThreadId, systemMessage: systemMsg || SystemMessages.GENERAL_PURPOSE, prompt: userMessage, task:'chat' });
 							// Always re-sync the ThreadManager session reference with the canonical LLMService session.
 							// Root cause: after provider/model changes LLMService may recreate its session while ThreadManager
 							// still points at an old (now inert) instance. This produced zero-length histories and caused
 							// _sendFullHistory to clear UI messages. We now pull the canonical session every send.
 							const canonicalSession = await this.llmService.getSession(activeThreadId, systemMsg || SystemMessages.GENERAL_PURPOSE, { taskType:'chat' });
+							// Merge old history if it vanished due to session recreation (common with local model switch)
+							try {
+								const newHist = canonicalSession.getHistory();
+								if (priorHistory.length > 0 && newHist.length <= 2 /* only current exchange present */) {
+									// Extract current exchange so we don't lose it
+									const currentSerialized = newHist.map((m: any) => {
+										let role: string | undefined = m.type || (typeof m._getType === 'function' ? m._getType() : undefined);
+										if (!role || role === 'unknown') {
+											const ctor = m.constructor?.name?.toLowerCase?.() || '';
+											if (ctor.includes('human')) { role = 'human'; }
+											else if (ctor.includes('ai')) { role = 'ai'; }
+										}
+										if (role === 'user') { role = 'human'; }
+										if (role === 'assistant' || role === 'bot') { role = 'ai'; }
+										const text = (m as any).text || (typeof m.content === 'string' ? m.content : JSON.stringify(m.content));
+										return { type: role || 'unknown', text };
+									});
+									// Avoid duplicating last prior pair if it matches first of currentSerialized
+									const merged = [...priorHistory];
+									for (const cur of currentSerialized) {
+										const last = merged[merged.length - 1];
+										if (!last || last.type !== cur.type || last.text !== cur.text) {
+											merged.push(cur);
+										}
+									}
+									(canonicalSession as any).setHistory(merged as any);
+									OutputLogger.history(`mergedPriorHistory session=${activeThreadId} prior=${priorHistory.length} newCombined=${merged.length}`);
+								}
+							} catch { /* ignore merge errors */ }
 							this.threadManager.setSession(activeThreadId, canonicalSession);
 							// Post instrumentation
 							let postLen = 0;
