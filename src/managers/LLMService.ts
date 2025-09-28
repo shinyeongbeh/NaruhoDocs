@@ -217,13 +217,23 @@ export class LLMService {
             const config = vscode.workspace.getConfiguration('naruhodocs');
             const providerType = config.get<string>('llm.provider', 'ootb');
             if (providerType === 'local') {
-                const currentLocalModel = (config.get<string>('llm.localModel') || config.get<string>('naruhodocs.llm.localModel'));
+                // Derive current effective local model using same precedence as resolution above to avoid false mismatches
+                let currentLocalModel: string | undefined;
+                if (this.modelConfigManager?.isActive()) {
+                    try {
+                        const resolvedCurrent = this.modelConfigManager.resolveModel('local', taskType, policy.modelHint, 'gemma3:1b');
+                        currentLocalModel = resolvedCurrent.model;
+                    } catch { /* ignore */ }
+                }
+                if (!currentLocalModel) {
+                    currentLocalModel = (config.get<string>('llm.localModel') || config.get<string>('naruhodocs.llm.localModel')) || undefined;
+                }
                 const stored = this.sessionModelHints.get(key);
-                if (currentLocalModel && stored && currentLocalModel !== stored && !options?.modelOverride) {
-                    // Recreate to apply new local model
-                    this.clearSession(key);
+                // Only recreate if both stored and newly derived model are defined and differ
+                if (stored && currentLocalModel && stored !== currentLocalModel && !options?.modelOverride) {
+                    this.clearSession(key); // model change requires new session for clarity
                 } else {
-                    return existing; // Safe to reuse
+                    return existing; // Reuse existing session (preserve history)
                 }
             } else {
                 return existing; // Non-local provider reuse is fine
