@@ -109,23 +109,21 @@
         "naruhodocs.llm.provider": {
           "type": "string",
           "enum": [
-            "ootb",
-            "byok",
+            "cloud",
             "local"
           ],
           "enumDescriptions": [
-            "Out-of-the-box: Use built-in Gemini with daily limits",
-            "Bring Your Own Key: Use your own API key for unlimited access",
-            "Local LLM: Use local models via Ollama or similar"
+            "Cloud (API Key): Use your own API key for full access",
+            "Local (Runtime): Use local models via Ollama / LM Studio"
           ],
-          "default": "ootb",
-          "description": "LLM provider option to use"
+          "default": "cloud",
+          "description": "Primary LLM provider. Cloud (API Key) prompts for a key if missing; falls back to Local if skipped. (Legacy values: 'byok', 'ootb' auto-migrate to 'cloud')."
         },
         "naruhodocs.llm.apiKey": {
           "type": "string",
           "default": "",
-          "description": "API key for BYOK mode (stored securely)",
-          "when": "config.naruhodocs.llm.provider == 'byok'"
+          "description": "API key for Cloud provider mode (stored securely).",
+          "when": "config.naruhodocs.llm.provider == 'cloud'"
         },
         "naruhodocs.embedding.provider": {
           "type": "string",

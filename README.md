@@ -59,7 +59,7 @@ Once installed, you can use the following commands from the command palette (`Ct
 
 You can configure the extension by going to **File > Preferences > Settings** and searching for **NaruhoDocs**.
 
-*   `naruhodocs.llm.provider`: LLM provider option to use (`ootb`, `byok`, `local`).
+*   `naruhodocs.llm.provider`: LLM provider option to use (`byok`, `local`). Default now `byok` (Cloud / API Key). Legacy `ootb` is migrated automatically.
 *   `naruhodocs.llm.apiKey`: API key for BYOK mode.
 *   `naruhodocs.llm.localBackend`: Local LLM backend to use (`ollama`, `lmstudio`, `llamacpp`, `textgen`, `custom`).
 *   `naruhodocs.llm.localModel`: Local model name for local LLM.
@@ -68,7 +68,7 @@ You can configure the extension by going to **File > Preferences > Settings** an
 *   `naruhodocs.visualization.enableInteractive`: Enable interactive visualization features.
 *   `naruhodocs.visualization.maxFileAnalysis`: Maximum number of files to analyze for large projects.
 *   `naruhodocs.logging.verbose`: When `true`, writes structured LLM request/response log lines (with provider, task, timing, token estimates) to the dedicated `NaruhoDocs LLM` Output panel. Default: `false`.
-*   `naruhodocs.llm.defaultModel`: Global default model for OOTB/BYOK providers when no per-task override is set.
+*   `naruhodocs.llm.defaultModel`: Global default model for Cloud (BYOK) provider when no per-task override is set.
 *   Per-task model overrides (blank = fallback to `defaultModel` then provider fallback):
     * `naruhodocs.llm.models.chat`
     * `naruhodocs.llm.models.summarize`
@@ -108,7 +108,7 @@ Existing sessions retain the model they were created with (session logs stay his
 
 ### Environment Variables
 
-To use the "Out-of-the-box" (OOTB) feature with Google's Gemini, you need to set up your API key in an environment file.
+The former "Out-of-the-box" (OOTB) provider has been removed. On first activation the extension will prompt for an API key (Cloud / BYOK). If you skip entry it will automatically fall back to Local runtime models.
 
 1.  Create a file named `.env` in the root directory of the project.
 2.  Add your Google API key to the `.env` file as follows:

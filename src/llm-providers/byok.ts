@@ -3,7 +3,9 @@ import { LLMProvider, LLMProviderOptions, LLMProviderError, UsageInfo } from './
 import { createChat, ChatSession } from '../langchain-backend/llm';
 
 export class BYOKProvider implements LLMProvider {
-    readonly name = 'Bring Your Own Key';
+    // NOTE: Internal provider id has migrated to 'cloud'. This class/file retains the historical name for
+    // minimal diff surface; future refactor may rename to CloudProvider with appropriate git move.
+    readonly name = 'Cloud (API Key)';
     private apiKey?: string;
 
     get isAvailable(): boolean {
@@ -13,7 +15,7 @@ export class BYOKProvider implements LLMProvider {
     async initialize(options: LLMProviderOptions): Promise<void> {
         if (!options.apiKey) {
             throw new LLMProviderError(
-                'API key is required for BYOK mode',
+                'API key is required for Cloud provider mode',
                 this.name,
                 'AUTH_FAILED'
             );
@@ -50,7 +52,7 @@ export class BYOKProvider implements LLMProvider {
             });
         } catch (error: any) {
             throw new LLMProviderError(
-                `Failed to create BYOK chat session: ${error?.message || 'Unknown error'}`,
+                `Failed to create Cloud chat session: ${error?.message || 'Unknown error'}`,
                 this.name,
                 'MODEL_ERROR'
             );

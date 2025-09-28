@@ -45,6 +45,15 @@ export class ModelConfigManager {
             const text = Buffer.from(buf).toString('utf8');
             const parsed = JSON.parse(text);
             if (parsed && parsed.version === 2 && parsed.providers) {
+                // Remove legacy 'ootb' provider if still present
+                if (parsed.providers.ootb) {
+                    delete parsed.providers.ootb;
+                }
+                // Migrate legacy 'byok' key to 'cloud'
+                if (parsed.providers.byok && !parsed.providers.cloud) {
+                    parsed.providers.cloud = parsed.providers.byok;
+                    delete parsed.providers.byok;
+                }
                 this.config = parsed as ModelsConfigSchemaV2;
                 this.active = true;
             } else if (parsed && parsed.version === 1 && parsed.providers) {
@@ -54,7 +63,15 @@ export class ModelConfigManager {
                     providers: {}
                 };
                 for (const [prov, entry] of Object.entries(parsed.providers as Record<string, ProviderTaskModelsV1>)) {
+                    if (prov === 'byok') {
+                        migrated.providers.cloud = { ...entry } as any;
+                        continue;
+                    }
                     migrated.providers[prov] = { ...entry };
+                }
+                // Remove deprecated 'ootb' provider if present during migration
+                if (migrated.providers.ootb) {
+                    delete migrated.providers.ootb;
                 }
                 // Attempt to enrich local provider with legacy settings if present
                 try {
@@ -115,9 +132,8 @@ export class ModelConfigManager {
         const defaultConfig: ModelsConfigSchemaV2 = {
             version: 2,
             providers: {
-                ootb: { defaultModel: 'gemini-2.0-flash', tasks: { summarize: 'gemini-2.0-flash', read_files: 'gemini-2.0-flash' }, note: 'Edit models to customize per task' },
-                byok: { defaultModel: 'gemini-2.0-flash' },
-                local: { defaultModel: 'gemma3:1b', backend: 'ollama', baseUrl: 'http://localhost:11434', tasks: {} }
+                cloud: { defaultModel: 'gemini-2.0-flash', note: 'Cloud (API Key) provider. Edit per-task overrides below.' },
+                local: { defaultModel: 'gemma3:1b', backend: 'ollama', baseUrl: 'http://localhost:11434', tasks: {}, note: 'Local runtime provider. Ensure model pulled in Ollama/LM Studio.' }
             }
         };
         await vscode.workspace.fs.writeFile(file, Buffer.from(JSON.stringify(defaultConfig, null, 2), 'utf8'));

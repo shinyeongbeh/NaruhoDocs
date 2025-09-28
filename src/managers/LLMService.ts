@@ -164,9 +164,9 @@ export class LLMService {
         // 5. Provider-specific fallback: if provider=local use naruhodocs.llm.localModel (or default), else gemini-2.0-flash
         let modelHint = options?.modelOverride;
         let modelResolutionTrace: string[] = [];
-        let providerType = 'ootb';
+    let providerType = 'cloud';
         try {
-            providerType = vscode.workspace.getConfiguration('naruhodocs').get<string>('llm.provider', 'ootb');
+            providerType = vscode.workspace.getConfiguration('naruhodocs').get<string>('llm.provider', 'cloud');
         } catch { /* ignore */ }
 
         if (modelHint) {
@@ -215,7 +215,7 @@ export class LLMService {
         // If existing session and not forceNew, check if local provider model changed compared to stored hint
         if (existing && !options?.forceNew) {
             const config = vscode.workspace.getConfiguration('naruhodocs');
-            const providerType = config.get<string>('llm.provider', 'ootb');
+            const providerType = config.get<string>('llm.provider', 'cloud');
             if (providerType === 'local') {
                 // Derive current effective local model using same precedence as resolution above to avoid false mismatches
                 let currentLocalModel: string | undefined;

@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
 import { LLMProvider, LLMProviderError } from './base';
-import { OOTBProvider } from './ootb';
 import { BYOKProvider } from './byok';
 import { LocalProvider } from './local';
 import { ChatSession } from '../langchain-backend/llm';
@@ -12,8 +11,8 @@ export class LLMProviderManager {
     private modelConfigManager?: ModelConfigManager; // optional injection – lets us honor models.json at provider init time
 
     constructor() {
-        this.providers.set('ootb', new OOTBProvider());
-        this.providers.set('byok', new BYOKProvider());
+    // Removed deprecated 'ootb' provider. Providers: 'cloud' (formerly 'byok') and 'local'.
+    this.providers.set('cloud', new BYOKProvider());
         this.providers.set('local', new LocalProvider());
     }
 
@@ -27,7 +26,18 @@ export class LLMProviderManager {
         await new Promise(resolve => setTimeout(resolve, 100));
         
         const config = vscode.workspace.getConfiguration('naruhodocs');
-        const providerType = config.get<string>('llm.provider', 'ootb');
+        let providerType = config.get<string>('llm.provider', 'cloud');
+        // Migration: map legacy identifiers to current ones
+        if (providerType === 'ootb') {
+            const apiKey = config.get<string>('llm.apiKey') || config.get<string>('geminiApiKey') || '';
+            providerType = apiKey ? 'cloud' : 'local';
+            try { await config.update('llm.provider', providerType, vscode.ConfigurationTarget.Global); } catch { /* ignore */ }
+            console.log('[NaruhoDocs] Migrated legacy provider "ootb" ->', providerType);
+    } else if (providerType === 'byok') { // legacy id still encountered via old settings.json; migrate to cloud
+            providerType = 'cloud';
+            try { await config.update('llm.provider', providerType, vscode.ConfigurationTarget.Global); } catch { /* ignore */ }
+            console.log('[NaruhoDocs] Migrated legacy provider "byok" -> cloud');
+        }
         console.log('[NaruhoDocs] LLMProviderManager: Initializing provider type:', providerType);
         
         const provider = this.providers.get(providerType);
@@ -86,8 +96,8 @@ export class LLMProviderManager {
             if (providerType === 'local' && !options.baseUrl) {
                 throw new Error('Local LLM provider requires baseUrl to be configured (after resolution)');
             }
-            if (providerType === 'byok' && !options.apiKey) {
-                throw new Error('BYOK provider requires API key to be configured');
+            if (providerType === 'cloud' && !options.apiKey) {
+                throw new Error('Cloud provider requires API key to be configured');
             }
 
             await provider.initialize(options);
@@ -146,22 +156,13 @@ export class LLMProviderManager {
     private handleProviderError(error: LLMProviderError, providerType: string): void {
         switch (error.code) {
             case 'AUTH_FAILED':
-                if (providerType === 'byok') {
+                if (providerType === 'cloud') {
                     vscode.window.showErrorMessage(
-                        'Invalid API key. Please check your settings.',
+                        'Invalid Cloud API key. Please check your settings.',
                         'Open Settings'
                     ).then(selection => {
                         if (selection === 'Open Settings') {
                             vscode.commands.executeCommand('workbench.action.openSettings', 'naruhodocs.llm');
-                        }
-                    });
-                } else if (providerType === 'ootb') {
-                    vscode.window.showErrorMessage(
-                        'Built-in API key not available. Please use BYOK mode.',
-                        'Configure BYOK'
-                    ).then(selection => {
-                        if (selection === 'Configure BYOK') {
-                            vscode.commands.executeCommand('naruhodocs.configureLLM');
                         }
                     });
                 }
@@ -169,9 +170,9 @@ export class LLMProviderManager {
             case 'RATE_LIMITED':
                 vscode.window.showWarningMessage(
                     error.message,
-                    'Upgrade to BYOK'
+                    'Configure Cloud Provider'
                 ).then(selection => {
-                    if (selection === 'Upgrade to BYOK') {
+                    if (selection === 'Configure Cloud Provider') {
                         vscode.commands.executeCommand('naruhodocs.configureLLM');
                     }
                 });

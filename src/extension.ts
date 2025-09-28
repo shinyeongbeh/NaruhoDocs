@@ -147,7 +147,7 @@ export function activate(context: vscode.ExtensionContext) {
 	function updateProviderModelStatus(sessionId: string = 'naruhodocs-general-thread') {
 		try {
 			const provider = llmManager.getCurrentProvider();
-			const providerType = vscode.workspace.getConfiguration('naruhodocs').get<string>('llm.provider', 'ootb');
+			const providerType = vscode.workspace.getConfiguration('naruhodocs').get<string>('llm.provider', 'cloud');
 			const svcAny = llmService as any;
 			let model: string | undefined = svcAny.sessionModelHints?.get(sessionId) || svcAny.sessionModelHints?.get('general');
 			let trace: string[] = [];
@@ -169,7 +169,8 @@ export function activate(context: vscode.ExtensionContext) {
 			} else {
 				trace = ['session-hint'];
 			}
-			const icon = providerType === 'local' ? 'server-environment' : (providerType === 'byok' ? 'key' : 'robot');
+			// Icon mapping: local=server, cloud=key, unknown=robot (legacy 'byok' also maps to key for backward compatibility)
+			const icon = providerType === 'local' ? 'server-environment' : (providerType === 'cloud' || providerType === 'byok' ? 'key' : 'robot');
 			providerModelStatus.text = `$(${icon}) NaruhoDocs: ${model}`;
 			providerModelStatus.tooltip = `Provider: ${provider?.name || providerType}\nModel: ${model}\nTrace: ${trace.join(' > ')}`;
 			providerModelStatus.show();
@@ -191,12 +192,27 @@ export function activate(context: vscode.ExtensionContext) {
 	try { (llmManager as any).setModelConfigManager?.(modelConfigManager); } catch { /* optional */ }
 
 	// Provider profile memory removed (deprecated). Models now fully governed by .naruhodocs/models.json and runtime hints.
-	let currentProviderType = vscode.workspace.getConfiguration('naruhodocs').get<string>('llm.provider', 'ootb');
+	let currentProviderType = vscode.workspace.getConfiguration('naruhodocs').get<string>('llm.provider', 'cloud');
+
+	// Migration: if user still has legacy 'ootb' value, remap now (prior to initialization)
+	(async () => { // legacy migration path
+		try {
+			const cfg = vscode.workspace.getConfiguration('naruhodocs');
+			const raw = cfg.get<string>('llm.provider');
+			if (raw === 'ootb') {
+				const apiKey = cfg.get<string>('llm.apiKey') || cfg.get<string>('geminiApiKey') || '';
+				const mapped = apiKey ? 'cloud' : 'local';
+				await cfg.update('llm.provider', mapped, vscode.ConfigurationTarget.Global);
+				currentProviderType = mapped;
+				vscode.window.showInformationMessage(`NaruhoDocs migrated legacy provider 'ootb' to '${mapped}'.`);
+			}
+		} catch { /* ignore */ }
+	})();
 
 	// Initialize Visualization Provider
 	const visualizationProvider = new VisualizationProvider(context, llmManager);
 
-	// Register the visualization sidebar view (if not already)
+	// Register the visualization sidebar view (if not already) // legacy migration path
 	const visualizationViewProvider = new VisualizationViewProvider(context.extensionUri, visualizationProvider);
 	context.subscriptions.push(
 		vscode.window.registerWebviewViewProvider(VisualizationViewProvider.viewType, visualizationViewProvider)
@@ -207,7 +223,7 @@ export function activate(context: vscode.ExtensionContext) {
 	// Initialize the LLM provider and then create initial threads only after provider is ready
 	(async () => {
 		// Load model config file early
-		await modelConfigManager.load();
+		await modelConfigManager.load(); // legacy migration path
 		llmService.logEvent(modelConfigManager.isActive() ? 'model_config_loaded' : 'model_config_missing');
 		// Watch for config file changes once workspace ready
 		const ws = vscode.workspace.workspaceFolders?.[0];
@@ -228,8 +244,29 @@ export function activate(context: vscode.ExtensionContext) {
 	try {
 		console.log('[NaruhoDocs] Extension activation: Initializing LLM manager from config');
 		const config = vscode.workspace.getConfiguration('naruhodocs');
-		const providerType = config.get<string>('llm.provider', 'ootb');
+		const providerType = config.get<string>('llm.provider', 'cloud');
 		console.log('[NaruhoDocs] Extension activation: LLM config provider type:', providerType);
+
+		// First-run API key prompt (only if provider=cloud and no key stored)
+		if (providerType === 'cloud') {
+			const key = config.get<string>('llm.apiKey') || config.get<string>('geminiApiKey') || '';
+			if (!key) {
+				const entered = await vscode.window.showInputBox({
+					prompt: 'Enter API Key for Cloud provider (Gemini). Press ESC to switch to Local provider',
+					ignoreFocusOut: true,
+					password: true
+				});
+				if (entered && entered.trim()) {
+					await config.update('llm.apiKey', entered.trim(), vscode.ConfigurationTarget.Global);
+					vscode.window.showInformationMessage('API key saved for Cloud provider.');
+				} else {
+					// Switch to local automatically
+					await config.update('llm.provider', 'local', vscode.ConfigurationTarget.Global);
+					currentProviderType = 'local';
+					vscode.window.showWarningMessage('No API key provided. Switched to Local provider.');
+				}
+			}
+		}
 		
 		// Add retry logic for packaged extensions where initialization might fail on first try
 		let retryCount = 0;
@@ -309,7 +346,7 @@ export function activate(context: vscode.ExtensionContext) {
 				configChangeTimeout = setTimeout(async () => {
 					try {
 						const config = vscode.workspace.getConfiguration('naruhodocs');
-						const newProviderType = config.get<string>('llm.provider', 'ootb');
+						const newProviderType = config.get<string>('llm.provider', 'cloud');
 						const providerChanged = newProviderType !== currentProviderType;
 						if (providerChanged || event.affectsConfiguration('naruhodocs.llm.apiKey')) {
 							await llmManager.initializeFromConfig();
@@ -530,7 +567,7 @@ export function activate(context: vscode.ExtensionContext) {
 			try {
 				await modelConfigManager.scaffoldIfMissing();
 				await modelConfigManager.load();
-				const provider = await vscode.window.showQuickPick(['ootb', 'byok', 'local'], { placeHolder: 'Select provider' });
+				const provider = await vscode.window.showQuickPick(['cloud', 'local'], { placeHolder: 'Select provider (Cloud or Local)' });
 				if (!provider) { return; }
 				const task = await vscode.window.showQuickPick([
 					'chat', 'summarize', 'read_files', 'analyze', 'translate', 'generate_doc', 'visualization_context'
@@ -624,16 +661,15 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 
 	// Command to change provider (status bar click target)
 	context.subscriptions.push(
-		vscode.commands.registerCommand('naruhodocs.changeProvider', async () => {
+		vscode.commands.registerCommand('naruhodocs.changeProvider', async () => { // legacy migration path
 			const runPicker = async (): Promise<void> => {
 				try {
 					const config = vscode.workspace.getConfiguration('naruhodocs');
-					const current = config.get<string>('llm.provider', 'ootb');
+					const current = config.get<string>('llm.provider', 'cloud');
 					const items: Array<{ label: string; value: string; description?: string }> = [
-						{ label: 'Out-of-the-box (Gemini)', value: 'ootb', description: 'Built-in, limited usage' },
-						{ label: 'Bring Your Own Key', value: 'byok', description: 'Use your own API key' },
-						{ label: 'Local (Ollama / compatible)', value: 'local', description: 'Local runtime models' },
-						{ label: '— Open model configuration (models.json)…', value: '__open_models__' }
+						{ label: 'Cloud (API Key)', value: 'cloud', description: 'Use your own API key' },
+						{ label: 'Local (Runtime)', value: 'local', description: 'Local runtime (Ollama / LM Studio)' },
+						{ label: '— Open model configuration (models.json)…', value: '__open_models__' } // legacy migration path
 					];
 					const pick = await vscode.window.showQuickPick(
 						items.map(i => ({ label: i.label, description: i.description })),
@@ -642,7 +678,7 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 					if (!pick) { return; }
 					const chosen = items.find(i => i.label === pick.label);
 					if (!chosen) { return; }
-					if (chosen.value === '__open_models__') {
+					if (chosen.value === '__open_models__') { // legacy migration path
 						try {
 							await modelConfigManager.scaffoldIfMissing();
 							const ws = vscode.workspace.workspaceFolders?.[0];
@@ -662,10 +698,10 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 						return;
 					}
 					await config.update('llm.provider', chosen.value, vscode.ConfigurationTarget.Global);
-					if (chosen.value === 'byok') {
+					if (chosen.value === 'cloud') {
 						let key = config.get<string>('llm.apiKey') || '';
 						if (!key) {
-							key = await vscode.window.showInputBox({ prompt: 'Enter API key for BYOK provider', password: true }) || '';
+							key = await vscode.window.showInputBox({ prompt: 'Enter API key for Cloud provider', password: true }) || '';
 							if (key) {
 								await config.update('llm.apiKey', key, vscode.ConfigurationTarget.Global);
 							}
