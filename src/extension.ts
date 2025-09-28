@@ -573,6 +573,20 @@ export function activate(context: vscode.ExtensionContext) {
 		})
 	);
 
+	// Command: toggle reasoning visibility
+	context.subscriptions.push(
+		vscode.commands.registerCommand('naruhodocs.toggleShowReasoning', async () => {
+			try {
+				const config = vscode.workspace.getConfiguration('naruhodocs');
+				const current = config.get<boolean>('llm.showReasoning', true);
+				await config.update('llm.showReasoning', !current, vscode.ConfigurationTarget.Global);
+				vscode.window.showInformationMessage(`NaruhoDocs: Show reasoning is now ${!current ? 'enabled' : 'disabled'}. New responses will reflect this.`);
+			} catch (e:any) {
+				vscode.window.showErrorMessage('Failed to toggle show reasoning: ' + (e.message || String(e)));
+			}
+		})
+	);
+
 	context.subscriptions.push(
 		vscode.commands.registerCommand('naruhodocs.reinitializeLLMProvider', async () => {
 			try {

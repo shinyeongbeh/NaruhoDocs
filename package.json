@@ -21,6 +21,11 @@
         "title": "Change Embedding Model Provider (for document search - RAG)",
         "category": "NaruhoDocs"
       },
+        {
+          "command": "naruhodocs.toggleShowReasoning",
+          "title": "Toggle Show Reasoning (LLM)",
+          "category": "NaruhoDocs"
+        },
       {
         "command": "naruhodocs.start",
         "title": "Start NaruhoDocs"
@@ -182,6 +187,11 @@
           "type": "boolean",
           "default": true,
           "description": "Enable or disable Doc Drift detection based on Git commits. If disabled, the extension will not analyze documentation drift when commits are made."
+        },
+        "naruhodocs.llm.showReasoning": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a collapsible reasoning (<think>) section in AI responses when available. Disable to hide reasoning entirely."
         }
       }
     },
