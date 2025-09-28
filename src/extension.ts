@@ -157,8 +157,14 @@ export function activate(context: vscode.ExtensionContext) {
 					model = resolved.model;
 					trace = ['file-active', ...resolved.trace];
 				} else {
-					model = providerType === 'local' ? 'gemma3:1b' : 'gemini-2.0-flash';
-					trace = ['default-fallback'];
+					if (providerType === 'local') {
+						const cfg = vscode.workspace.getConfiguration('naruhodocs');
+						model = cfg.get<string>('llm.localModel') || 'gemma3:1b';
+						trace = ['settings-or-fallback'];
+					} else {
+						model = 'gemini-2.0-flash';
+						trace = ['default-flash'];
+					}
 				}
 			} else {
 				trace = ['session-hint'];
@@ -181,6 +187,8 @@ export function activate(context: vscode.ExtensionContext) {
 	// Model config manager (per-repo JSON) - instantiate now, load inside activation async block
 	const modelConfigManager = new ModelConfigManager(context);
 	llmService.setModelConfigManager(modelConfigManager);
+	// Also supply to provider manager so local init can respect models.json
+	try { (llmManager as any).setModelConfigManager?.(modelConfigManager); } catch { /* optional */ }
 
 	// Provider profile memory removed (deprecated). Models now fully governed by .naruhodocs/models.json and runtime hints.
 	let currentProviderType = vscode.workspace.getConfiguration('naruhodocs').get<string>('llm.provider', 'ootb');

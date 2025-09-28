@@ -4,15 +4,22 @@ import { OOTBProvider } from './ootb';
 import { BYOKProvider } from './byok';
 import { LocalProvider } from './local';
 import { ChatSession } from '../langchain-backend/llm';
+import { ModelConfigManager } from '../managers/ModelConfigManager';
 
 export class LLMProviderManager {
     private currentProvider?: LLMProvider;
     private readonly providers: Map<string, LLMProvider> = new Map();
+    private modelConfigManager?: ModelConfigManager; // optional injection – lets us honor models.json at provider init time
 
     constructor() {
         this.providers.set('ootb', new OOTBProvider());
         this.providers.set('byok', new BYOKProvider());
         this.providers.set('local', new LocalProvider());
+    }
+
+    /** Inject active ModelConfigManager so we can source local backend/model from models.json */
+    public setModelConfigManager(mgr: ModelConfigManager) {
+        this.modelConfigManager = mgr;
     }
 
     async initializeFromConfig(): Promise<void> {
@@ -33,14 +40,41 @@ export class LLMProviderManager {
         try {
             const options: any = {
                 apiKey: config.get<string>('llm.apiKey'),
-                model: config.get<string>('llm.localModel'),
-                baseUrl: config.get<string>('llm.localUrl'),
                 temperature: 0
             };
 
-            // Add backend type for local provider
             if (providerType === 'local') {
-                options.backend = config.get<string>('llm.localBackend', 'ollama');
+                // precedence: models.json (if active) -> settings -> hardcoded fallback
+                let usedSource: string[] = [];
+                if (this.modelConfigManager?.isActive()) {
+                    const entry = this.modelConfigManager.getProviderEntry('local');
+                    if (entry) {
+                        if (entry.backend) { options.backend = entry.backend; usedSource.push('file-backend'); }
+                        if (entry.baseUrl) { options.baseUrl = entry.baseUrl; usedSource.push('file-baseUrl'); }
+                        if (entry.defaultModel) { options.model = entry.defaultModel; usedSource.push('file-defaultModel'); }
+                    }
+                    // If no explicit defaultModel in entry, resolve via task-based resolver for chat
+                    if (!options.model) {
+                        const resolved = this.modelConfigManager.resolveModel('local', 'chat', undefined, 'gemma3:1b');
+                        options.model = resolved.model; usedSource.push('file-resolve:' + resolved.trace.join('+'));
+                    }
+                }
+                if (!options.backend) {
+                    options.backend = config.get<string>('llm.localBackend', 'ollama'); usedSource.push('setting-backend');
+                }
+                if (!options.baseUrl) {
+                    options.baseUrl = config.get<string>('llm.localUrl'); if (options.baseUrl) { usedSource.push('setting-baseUrl'); }
+                }
+                if (!options.model) {
+                    const modelSetting = config.get<string>('llm.localModel');
+                    if (modelSetting) { options.model = modelSetting; usedSource.push('setting-model'); }
+                }
+                if (!options.model) { options.model = 'gemma3:1b'; usedSource.push('hardcoded-fallback'); }
+                if (!options.baseUrl) { options.baseUrl = 'http://localhost:11434'; usedSource.push('hardcoded-baseUrl'); }
+                console.log('[NaruhoDocs] Local provider init model resolution path:', usedSource.join(' > '));
+            } else {
+                // Non-local providers keep existing settings path
+                options.model = config.get<string>('llm.localModel'); // still supply optional for compatibility
             }
 
             console.log('[NaruhoDocs] LLMProviderManager: Initializing provider with options:', { 
@@ -50,7 +84,7 @@ export class LLMProviderManager {
 
             // Validate configuration before attempting initialization
             if (providerType === 'local' && !options.baseUrl) {
-                throw new Error('Local LLM provider requires baseUrl to be configured');
+                throw new Error('Local LLM provider requires baseUrl to be configured (after resolution)');
             }
             if (providerType === 'byok' && !options.apiKey) {
                 throw new Error('BYOK provider requires API key to be configured');
