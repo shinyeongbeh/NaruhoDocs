@@ -925,3 +925,41 @@ html {
 .toast-info {
     background: #2196f3;
 }
+
+/* Collapsible AI reasoning (hidden <think> content) */
+details.ai-reasoning {
+	margin-top: 0.75rem;
+	border: 1px solid var(--vscode-panel-border);
+	border-radius: 6px;
+	padding: 0.4rem 0.75rem 0.65rem 0.75rem;
+	background: var(--vscode-editor-background);
+}
+details.ai-reasoning > summary {
+	cursor: pointer;
+	font-weight: 500;
+	list-style: none;
+	outline: none;
+}
+details.ai-reasoning[open] > summary { margin-bottom: 0.5rem; }
+details.ai-reasoning summary::-webkit-details-marker { display: none; }
+details.ai-reasoning > summary::before {
+	content: '\25B6'; /* triangle */
+	display: inline-block;
+	transform: rotate(0deg);
+	transition: transform .15s ease;
+	margin-right: 6px;
+	font-size: 0.85em;
+}
+details.ai-reasoning[open] > summary::before { transform: rotate(90deg); }
+details.ai-reasoning pre {
+	max-height: 260px;
+	overflow: auto;
+	background: var(--vscode-editor-background);
+	border: 1px solid var(--vscode-panel-border);
+	padding: 0.65rem;
+	border-radius: 4px;
+	font-size: 0.78rem;
+	line-height: 1.25rem;
+	scrollbar-width: thin;
+}
+details.ai-reasoning code { white-space: pre-wrap; word-break: break-word; }

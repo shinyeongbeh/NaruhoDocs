@@ -185,13 +185,30 @@ Keep responses focused and technical, using the retrieved context as your primar
         aiText = JSON.stringify(lastMessage.content);
       }
 
-      // Save AI response to history
+      // Extract all <think> blocks (Gemini style reasoning) before storing final answer
+      const thinkBlocks: string[] = [];
+      aiText = aiText.replace(/<think>([\s\S]*?)<\/think>/gi, (_m, inner) => {
+        const cleaned = String(inner).trim();
+        if (cleaned) { thinkBlocks.push(cleaned); }
+        return ''; // remove from visible answer
+      }).trim();
+
+      // Build collapsible reasoning section if any think blocks were present
+      if (thinkBlocks.length) {
+        const joined = thinkBlocks.join('\n---\n');
+        // Escape HTML entities to avoid accidental rendering inside code fence
+        const escaped = joined
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+        const reasoningSection = `\n\n<details class="ai-reasoning"><summary>Show reasoning</summary>\n\n\n\n\`\`\`text\n${escaped}\n\`\`\`\n</details>`;
+        aiText = aiText + reasoningSection;
+      }
+
+      // Save AI response (with optional collapsible reasoning) to history
       const aiMessage = new AIMessage(aiText);
       history.push(aiMessage);
-
       prune();
-
-      aiText = aiText.replace(/^\s*<think>([\s\S]*?)<\/think>\s*/i, '');
       return aiText;
     },
     reset() {
