@@ -194,7 +194,8 @@ Keep responses focused and technical, using the retrieved context as your primar
       }).trim();
 
       // Build collapsible reasoning section if any think blocks were present
-      if (thinkBlocks.length) {
+      const showReasoning = vscode.workspace.getConfiguration('naruhodocs').get<boolean>('llm.showReasoning', true);
+      if (thinkBlocks.length && showReasoning) {
         const joined = thinkBlocks.join('\n---\n');
         // Escape HTML entities to avoid accidental rendering inside code fence
         const escaped = joined
