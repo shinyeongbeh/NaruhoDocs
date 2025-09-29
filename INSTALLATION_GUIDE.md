@@ -2,53 +2,46 @@
 
 #### **Step 1: Prerequisites**
 - **Install Visual Studio Code** (required for VSIX installation):  
-  [Download VS Code](https://code.visualstudio.com/) for Windows, macOS, or Linux.
+  [Download VSCode](https://code.visualstudio.com/) for Windows, macOS, or Linux.
 
 ---
 
-#### **Step 2: Download the VSIX File**
-- Download `naruhodocs-0.0.2.vsix` file from our [GitHub release page](https://github.com/shinyeongbeh/NaruhoDocs/releases). 
 
----
 
-#### **Step 3: Install the Extension**
+#### **Step 2: Install from the VS Code Extension Marketplace**
 1. **Open Visual Studio Code**.
 2. **Open the Extensions View**:
-   - Click the **Extensions icon** (square with a globe) in the Activity Bar.
-   - Or press `Ctrl+Shift+X` (Windows/Linux) / `Cmd+Shift+X` (macOS).
-3. **Install from VSIX**:
-   - Click the **"..."** menu (three dots) in the top-right corner of the Extensions view.
-   - Select **"Install from VSIX..."**.
-   - Navigate to the location of your `.vsix` file and select it.
-4. **Wait for installation**:
-   - VS Code will install the extension and reload if necessary.
+  - Click the **Extensions icon** (square with a globe) in the Activity Bar.
+  - Or press `Ctrl+Shift+X` (Windows/Linux) / `Cmd+Shift+X` (macOS).
+3. **Go directly to the NaruhoDocs Marketplace page**:
+  - [NaruhoDocs on VSCode Marketplace](https://marketplace.visualstudio.com/items?itemName=naruhodocs.naruhodocs)
+  - Or search for `NaruhoDocs` in the Extensions view.
+4. **Click "Install"**:
+  - Click the **Install** button on the Marketplace page or next to the NaruhoDocs extension in VS Code.
+5. **Wait for installation**:
+  - VS Code will install the extension and reload if necessary.
 
 ---
 
-#### **Step 4: Verify Installation**
+#### **Step 3: Verify Installation**
 - Return to the **Extensions view**.
-- Look for your app’s name in the list. If it’s not there, check the **"Installed"** tab.
+- Look for "NaruhoDocs" in the list. If it’s not there, check the **"Installed"** tab.
 
 ---
 
-#### **Step 5: Enable the Extension (if needed)**
+#### **Step 4: Enable the Extension (if needed)**
 - If your app requires specific permissions or settings:
   - Go to **File > Preferences > Extensions**.
-  - Click the **"Enable"** button for your app.
+  - Click the **"Enable"** button for NaruhoDocs.
   - Configure any required settings in the extension’s context menu.
 
 ---
 
 #### **Troubleshooting Tips**
-- **Error: "Cannot install extension"**:
-  - Ensure the `.vsix` file is not corrupted.
 - **Security Block**:
   - If installation is blocked, go to **File > Preferences > Extensions** and click **"Allow"** next to your app.
-- **Missing Dependencies**:
-  - Some extensions require additional tools (e.g., Node.js, Python). Refer to your app’s documentation for requirements.
 
 ---
 
 #### **Post-Installation**
-- Launch your app via VS Code (if it’s a toolchain or plugin).
 - Check for configuration options in the extension’s settings. You might want to configure your LLM options there. 
