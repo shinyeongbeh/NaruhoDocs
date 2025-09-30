@@ -29,8 +29,12 @@ export class LMStudioEmbeddings extends Embeddings {
         body: JSON.stringify(body)
       });
       if (!response.ok) {
-        vscode.window.showErrorMessage(`LM Studio embedding request failed: ${response.status} ${response.statusText}`);
-        throw new Error(`LM Studio embedding request failed: ${response.status} ${response.statusText}`);
+        if (response.status === 404) {
+          throw new Error(`Please make sure that the LM Studio server is running and the model '${this.MODEL}' is installed. 
+            If you are running the server at localhost, you might want to check whether you start your server in LM Studio\'s Developer tab (https://lmstudio.ai/docs/app/api).`);
+        } else {
+          throw new Error(`LM Studio embedding request failed: ${response.status} ${response.statusText}`);
+        }
       }
       const data = await response.json();
       if (!data.data[0].embedding) {

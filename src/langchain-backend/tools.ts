@@ -14,7 +14,7 @@ export class RAGretrievalTool extends Tool {
         try {
             // Ensure vector store is initialized
             if (!this.vectorStore) {
-                throw new Error('Vector store not initialized');
+                throw new Error('Vector store not initialized. Please use other tools (retrieve_workspace_filenames, retrieve_file_content) first for searching files / codes.');
             }
 
             const docs = await this.vectorStore.similaritySearch(query);

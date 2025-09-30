@@ -130,13 +130,11 @@
           "type": "string",
           "enum": [
             "local",
-            "cloudHuggingface",
-            "builtInHFApi"
+            "cloudHuggingface"
           ],
           "enumDescriptions": [
             "Local (Ollama/LM Studio): Use local embedding models via Ollama / LM Studio",
-            "Cloud (Hugging Face Inference Provider): Use HuggingFace cloud embeddings",
-            "Built-in Hugging Face by NaruhoDocs: Use Hugging Face cloud embeddings without the need of you getting API key."
+            "Cloud (Hugging Face Inference Provider): Use HuggingFace cloud embeddings"
           ],
           "default": "local",
           "description": "Embedding model provider to use for document search (RAG). If you do not want a RAG functionality, you can disable RAG in the settings."

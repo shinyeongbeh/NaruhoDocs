@@ -198,10 +198,10 @@
 	transition: color 0.2s;
 }
 .mode-text.beginner {
-	color: #6ab1e8ff;
+	color: var(--vscode-editor-foreground);
 }
 .mode-text.developer {
-	color: #c0c0c0bd;
+	color: #c0c0c09d;
 }
 /* Modal for documentation type selection */
 #doc-type-modal {

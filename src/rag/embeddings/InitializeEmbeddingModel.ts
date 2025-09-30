@@ -4,8 +4,6 @@ import { OllamaEmbeddings } from "./ollama";
 import { HuggingFaceEmbeddings } from "./huggingfaceCloud";
 import { Embeddings } from "@langchain/core/embeddings";
 import { LMStudioEmbeddings } from "./lmStudio";
-import * as dotenv from 'dotenv';
-import * as path from 'path';
 
 // initialize embedding model based on config
 export async function initializeEmbeddingModel(embeddingConfig: EmbeddingProviderConfig | undefined): Promise<Embeddings> {
@@ -19,24 +17,35 @@ export async function initializeEmbeddingModel(embeddingConfig: EmbeddingProvide
         embeddings = new LMStudioEmbeddings(embeddingConfig?.model ?? 'all-MiniLM-L6-v2', embeddingConfig?.baseUrl ?? 'http://localhost:1234');
         break;
       default:
-        throw new Error(`Unsupported local embedding engine: ${embeddingConfig?.llmEngine}`);
+        const action = await vscode.window.showErrorMessage(
+          `Unsupported local embedding engine: ${embeddingConfig?.llmEngine}. Supported engines are 'ollama' and 'lmstudio'. Please check your configuration in embeddings.json.`,
+          'Open embeddings.json'
+        );
+        if(action === 'Open embeddings.json') {
+          await vscode.commands.executeCommand('vscode.open', vscode.Uri.joinPath(vscode.workspace.workspaceFolders?.[0].uri || vscode.Uri.file(''), '.naruhodocs', 'embeddings.json'));
+        }
+        throw new Error(`Unsupported local embedding engine: ${embeddingConfig?.llmEngine}. Supported engines are 'ollama' and 'lmstudio'. Please check your configuration in embeddings.json.`);
     }
   } else if (embeddingConfig?.type === 'huggingface') {
     const hfApiKey = vscode.workspace.getConfiguration('naruhodocs').get<string>('huggingface.apiKey', '');
     if (hfApiKey === '') {
-      vscode.window.showErrorMessage('HuggingFace API key for RAG database embedding is not set. Please configure it in settings.');
+      const action = await vscode.window.showErrorMessage(
+        'HuggingFace API key for RAG database embedding is not set. Please configure it in settings.',
+        'Open NaruhoDocs Settings'
+      );
+      if (action === 'Open NaruhoDocs Settings') {
+        await vscode.commands.executeCommand('workbench.action.openSettings', 'naruhodocs');
+      }
+      throw new Error('HuggingFace API key for RAG database embedding is not set. Please configure it in settings.');
     }
     embeddings = new HuggingFaceEmbeddings(hfApiKey, embeddingConfig?.model ?? 'sentence-transformers/all-MiniLM-L6-v2');
-  } else if (embeddingConfig?.type === 'builtInHFApi') {
-    dotenv.config({ path: path.resolve(__dirname, '/.env') });
-    const hfApiKey = process.env.HF_API_KEY;
-    if (!hfApiKey || hfApiKey.trim() === '') {
-      vscode.window.showErrorMessage('Built-in Hugging Face API key for RAG database embedding is not set. Please set HF_API_KEY environment variable or get your own Hugging Face API key and use "Cloud (Hugging Face Inference Provider)" option instead.');
-      throw new Error('Built-in Hugging Face API key for RAG database embedding is not set. Please set HF_API_KEY environment variable or get your own Hugging Face API key and use "Cloud (Hugging Face Inference Provider)" option instead.');
-    }
-    embeddings = new HuggingFaceEmbeddings(hfApiKey, 'sentence-transformers/all-MiniLM-L6-v2');
   } else {
-    vscode.window.showErrorMessage('Unsupported or missing embedding configuration. Please check your settings or embeddings.json file.');   
+    const action = await vscode.window.showErrorMessage('Unsupported or missing embedding configuration. Please check your settings or embeddings.json file.'
+      , 'Open embeddings.json'
+    );
+    if(action === 'Open embeddings.json') {
+      await vscode.commands.executeCommand('vscode.open', vscode.Uri.joinPath(vscode.workspace.workspaceFolders?.[0].uri || vscode.Uri.file(''), '.naruhodocs', 'embeddings.json'));
+    }
     throw new Error('Unsupported or missing embedding configuration. Please check your settings or embeddings.json file.');
   }
   return embeddings;

@@ -5,7 +5,7 @@ import * as dotenv from 'dotenv';
 import * as path from 'path';
 import { SystemMessages } from './SystemMessages';
 import { LocalMemoryVectorStore } from './rag/vectorstore/memory';
-import { checkGrammar, GrammarIssue} from './external-tools/LanguageTool-integration';
+import { checkGrammar, GrammarIssue } from './external-tools/LanguageTool-integration';
 import { lintMarkdownDocument } from './external-tools/markdownLinter';
 import { LLMProviderManager } from './llm-providers/manager';
 import { ModelConfigManager } from './managers/ModelConfigManager.js';
@@ -35,19 +35,29 @@ export function activate(context: vscode.ExtensionContext) {
 	// Initialize embedding model config and build vector database
 	(async () => {
 		if (RAGstatus) {
-			await embeddingConfigManager.scaffoldIfMissing();
-			await embeddingConfigManager.load();
+			try {
+				await embeddingConfigManager.scaffoldIfMissing();
+				await embeddingConfigManager.load();
 
-			// Select embedding provider
-			const providerName = vscode.workspace.getConfiguration('naruhodocs').get<string>('embedding.provider', 'local');
-			const embeddingConfig = embeddingConfigManager.resolveProvider(providerName);
+				// Select embedding provider
+				const providerName = vscode.workspace.getConfiguration('naruhodocs').get<string>('embedding.provider', 'local');
+				const embeddingConfig = embeddingConfigManager.resolveProvider(providerName);
 
-			// Initialize embedding model
-			const embeddings = await initializeEmbeddingModel(embeddingConfig);
-			// Initialize vector store with embeddings
-			initializeVectorStore(embeddings);
-			// Build vector database from workspace files
-			buildVectorDB(getVectorStore());
+				// Initialize embedding model
+				const embeddings = await initializeEmbeddingModel(embeddingConfig);
+				// Initialize vector store with embeddings
+				initializeVectorStore(embeddings);
+				// Build vector database from workspace files
+				buildVectorDB(getVectorStore());
+			} catch (e) {
+				const action = await vscode.window.showErrorMessage(
+					'Failed to initialize RAG vector database. You can disable RAG in settings (naruhodocs.rag.enabled) if you do not wish to use it. \nError: ' + (e instanceof Error ? e.message : String(e)),
+					'Open NaruhoDocs Settings'
+				);
+				if (action === 'Open NaruhoDocs Settings') {
+					await vscode.commands.executeCommand('workbench.action.openSettings', 'naruhodocs');
+				}
+			}				
 		}
 	})();
 
@@ -59,7 +69,6 @@ export function activate(context: vscode.ExtensionContext) {
 			const items: Array<{ label: string; value: string; description?: string }> = [
 				{ label: 'Local (Ollama/LM Studio)', value: 'local', description: 'Use local embedding models via Ollama / LM Studio' },
 				{ label: 'Cloud (Hugging Face Inference Provider)', value: 'cloudHuggingface', description: 'Use Hugging Face cloud embeddings' },
-				{ label: 'Built-in Hugging Face by NaruhoDocs', value: 'builtInHFApi', description: 'Use Hugging Face cloud embeddings - No API key needed.' },
 				{ label: '— Open model configuration (embeddings.json)…', value: '__open_models__' }
 			];
 			const pick = await vscode.window.showQuickPick(
@@ -241,52 +250,52 @@ export function activate(context: vscode.ExtensionContext) {
 			watcher.onDidCreate(reload, undefined, context.subscriptions);
 			watcher.onDidDelete(async () => { await modelConfigManager.load(); llmService.setModelConfigManager(modelConfigManager); llmService.clearAllSessions(); llmService.logEvent('model_config_deleted'); updateProviderModelStatus(activeThreadId); });
 		}
-	try {
-		console.log('[NaruhoDocs] Extension activation: Initializing LLM manager from config');
-		const config = vscode.workspace.getConfiguration('naruhodocs');
-		const providerType = config.get<string>('llm.provider', 'cloud');
-		console.log('[NaruhoDocs] Extension activation: LLM config provider type:', providerType);
+		try {
+			console.log('[NaruhoDocs] Extension activation: Initializing LLM manager from config');
+			const config = vscode.workspace.getConfiguration('naruhodocs');
+			const providerType = config.get<string>('llm.provider', 'cloud');
+			console.log('[NaruhoDocs] Extension activation: LLM config provider type:', providerType);
 
-		// First-run API key prompt (only if provider=cloud and no key stored)
-		if (providerType === 'cloud') {
-			const key = config.get<string>('llm.apiKey') || config.get<string>('geminiApiKey') || '';
-			if (!key) {
-				const entered = await vscode.window.showInputBox({
-					prompt: 'Enter API Key for Cloud provider (Gemini). Press ESC to switch to Local provider',
-					ignoreFocusOut: true,
-					password: true
-				});
-				if (entered && entered.trim()) {
-					await config.update('llm.apiKey', entered.trim(), vscode.ConfigurationTarget.Global);
-					vscode.window.showInformationMessage('API key saved for Cloud provider.');
-				} else {
-					// Switch to local automatically
-					await config.update('llm.provider', 'local', vscode.ConfigurationTarget.Global);
-					currentProviderType = 'local';
-					vscode.window.showWarningMessage('No API key provided. Switched to Local provider.');
+			// First-run API key prompt (only if provider=cloud and no key stored)
+			if (providerType === 'cloud') {
+				const key = config.get<string>('llm.apiKey') || config.get<string>('geminiApiKey') || '';
+				if (!key) {
+					const entered = await vscode.window.showInputBox({
+						prompt: 'Enter API Key for Cloud provider (Gemini). Press ESC to switch to Local provider',
+						ignoreFocusOut: true,
+						password: true
+					});
+					if (entered && entered.trim()) {
+						await config.update('llm.apiKey', entered.trim(), vscode.ConfigurationTarget.Global);
+						vscode.window.showInformationMessage('API key saved for Cloud provider.');
+					} else {
+						// Switch to local automatically
+						await config.update('llm.provider', 'local', vscode.ConfigurationTarget.Global);
+						currentProviderType = 'local';
+						vscode.window.showWarningMessage('No API key provided. Switched to Local provider.');
+					}
 				}
 			}
-		}
-		
-		// Add retry logic for packaged extensions where initialization might fail on first try
-		let retryCount = 0;
-		const maxRetries = 3;
-		while (retryCount < maxRetries) {
-			try {
-				await llmManager.initializeFromConfig();
-				console.log('[NaruhoDocs] Extension activation: LLM manager initialized successfully');
-				llmService.logEvent('provider_init', { provider: llmManager.getCurrentProvider()?.name });
-				break;
-			} catch (initError) {
-				retryCount++;
-				console.warn(`[NaruhoDocs] LLM initialization attempt ${retryCount} failed:`, initError);
-				if (retryCount >= maxRetries) {
-					throw initError;
+
+			// Add retry logic for packaged extensions where initialization might fail on first try
+			let retryCount = 0;
+			const maxRetries = 3;
+			while (retryCount < maxRetries) {
+				try {
+					await llmManager.initializeFromConfig();
+					console.log('[NaruhoDocs] Extension activation: LLM manager initialized successfully');
+					llmService.logEvent('provider_init', { provider: llmManager.getCurrentProvider()?.name });
+					break;
+				} catch (initError) {
+					retryCount++;
+					console.warn(`[NaruhoDocs] LLM initialization attempt ${retryCount} failed:`, initError);
+					if (retryCount >= maxRetries) {
+						throw initError;
+					}
+					// Wait before retry (exponential backoff)
+					await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
 				}
-				// Wait before retry (exponential backoff)
-				await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
-			}
-		} 		// Initialize the general-purpose thread AFTER provider is confirmed (only if not already restored)
+			} 		// Initialize the general-purpose thread AFTER provider is confirmed (only if not already restored)
 			const generalThreadId = 'naruhodocs-general-thread';
 			// If restorePersistedThreads ran earlier and hydrated general thread, skip recreation
 			const existingGeneral = (provider as any)?.threadManager?.getSession?.(generalThreadId);
@@ -510,22 +519,6 @@ export function activate(context: vscode.ExtensionContext) {
 				targetLanguage: picked,
 				systemMessage: 'You are a professional technical translator. Preserve code blocks and formatting.'
 			});
-			// Show LLM stats command
-			context.subscriptions.push(
-				vscode.commands.registerCommand('naruhodocs.showLLMStats', async () => {
-					const stats = llmService.getStats();
-					const lines = [
-						`Day: ${stats.day}`,
-						`Requests: ${stats.requests}`,
-						`Estimated Tokens (in/out): ${stats.estimatedInputTokens}/${stats.estimatedOutputTokens}`,
-						'Per Task:'
-					];
-					for (const k of Object.keys(stats.perTask)) {
-						lines.push(`  - ${k}: ${stats.perTask[k as keyof typeof stats.perTask]}`);
-					}
-					vscode.window.showInformationMessage(lines.join('\n'), { modal: false });
-				})
-			);
 			// Open translation in a side-by-side editor
 			const translationDoc = await vscode.workspace.openTextDocument({
 				content: `# Translation (${picked}) of ${path.basename(doc.fileName)}\n\n${resp.content}`,
@@ -652,7 +645,7 @@ export function activate(context: vscode.ExtensionContext) {
 				const current = config.get<boolean>('llm.showReasoning', true);
 				await config.update('llm.showReasoning', !current, vscode.ConfigurationTarget.Global);
 				vscode.window.showInformationMessage(`NaruhoDocs: Show reasoning is now ${!current ? 'enabled' : 'disabled'}. New responses will reflect this.`);
-			} catch (e:any) {
+			} catch (e: any) {
 				vscode.window.showErrorMessage('Failed to toggle show reasoning: ' + (e.message || String(e)));
 			}
 		})
@@ -781,112 +774,112 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 	context.subscriptions.push(grammarDiagnostics);
 
 	const runGrammarCheck = async (document: vscode.TextDocument) => {
-        const fileName = document.fileName.toLowerCase();
-        if (!(fileName.endsWith('.md') || fileName.endsWith('.txt'))) {
-            return; // Silently ignore non-doc files
-        }
+		const fileName = document.fileName.toLowerCase();
+		if (!(fileName.endsWith('.md') || fileName.endsWith('.txt'))) {
+			return; // Silently ignore non-doc files
+		}
 
-        try {
-            const text = document.getText();
-            const issues = await checkGrammar(text, 'en-US');
-            
-            if (issues.length === 0) {
-                grammarDiagnostics.delete(document.uri);
-                return;
-            }
+		try {
+			const text = document.getText();
+			const issues = await checkGrammar(text, 'en-US');
 
-            const diagnostics: vscode.Diagnostic[] = issues.map(issue => {
-                const start = document.positionAt(issue.offset);
-                const end = document.positionAt(issue.offset + issue.length);
-                const range = new vscode.Range(start, end);
-                const message = `${issue.message}${issue.replacements.length ? ` (Suggestion: ${issue.replacements.join(', ')})` : ''}`;
-                const diagnostic = new vscode.Diagnostic(range, message, vscode.DiagnosticSeverity.Warning);
-                diagnostic.source = 'naruhodocs-grammar'; // Identify the source
-                // Store original issue data for the CodeActionProvider
-                (diagnostic as any)._naruhodocs = { issue };
-                return diagnostic;
-            });
+			if (issues.length === 0) {
+				grammarDiagnostics.delete(document.uri);
+				return;
+			}
 
-            grammarDiagnostics.set(document.uri, diagnostics);
+			const diagnostics: vscode.Diagnostic[] = issues.map(issue => {
+				const start = document.positionAt(issue.offset);
+				const end = document.positionAt(issue.offset + issue.length);
+				const range = new vscode.Range(start, end);
+				const message = `${issue.message}${issue.replacements.length ? ` (Suggestion: ${issue.replacements.join(', ')})` : ''}`;
+				const diagnostic = new vscode.Diagnostic(range, message, vscode.DiagnosticSeverity.Warning);
+				diagnostic.source = 'naruhodocs-grammar'; // Identify the source
+				// Store original issue data for the CodeActionProvider
+				(diagnostic as any)._naruhodocs = { issue };
+				return diagnostic;
+			});
 
-        } catch (e: any) {
-            vscode.window.showErrorMessage('Grammar check failed: ' + e.message);
-        }
-    };
+			grammarDiagnostics.set(document.uri, diagnostics);
+
+		} catch (e: any) {
+			vscode.window.showErrorMessage('Grammar check failed: ' + e.message);
+		}
+	};
 
 	context.subscriptions.push(
-        vscode.commands.registerCommand('naruhodocs.checkGrammar', async () => {
-            const editor = vscode.window.activeTextEditor;
-            if (editor) {
-                await runGrammarCheck(editor.document);
-                vscode.window.showInformationMessage('Grammar check complete.');
-            } else {
-                vscode.window.showInformationMessage('No active editor to check.');
-            }
-        })
-    );
+		vscode.commands.registerCommand('naruhodocs.checkGrammar', async () => {
+			const editor = vscode.window.activeTextEditor;
+			if (editor) {
+				await runGrammarCheck(editor.document);
+				vscode.window.showInformationMessage('Grammar check complete.');
+			} else {
+				vscode.window.showInformationMessage('No active editor to check.');
+			}
+		})
+	);
 
-    context.subscriptions.push(
-        vscode.commands.registerCommand('naruhodocs.ignoreGrammarIssue', async (docUri: vscode.Uri, diagnostic: vscode.Diagnostic) => {
-            const currentDiagnostics = grammarDiagnostics.get(docUri) || [];
-            const newDiagnostics = currentDiagnostics.filter(d => d !== diagnostic);
-            grammarDiagnostics.set(docUri, newDiagnostics);
-        })
-    );
+	context.subscriptions.push(
+		vscode.commands.registerCommand('naruhodocs.ignoreGrammarIssue', async (docUri: vscode.Uri, diagnostic: vscode.Diagnostic) => {
+			const currentDiagnostics = grammarDiagnostics.get(docUri) || [];
+			const newDiagnostics = currentDiagnostics.filter(d => d !== diagnostic);
+			grammarDiagnostics.set(docUri, newDiagnostics);
+		})
+	);
 
-    // New command to ignore all grammar issues of the same type (ruleId)
-    context.subscriptions.push(
-        vscode.commands.registerCommand('naruhodocs.ignoreAllGrammarIssuesOfType', async (docUri: vscode.Uri, ruleId: string) => {
-            const currentDiagnostics = grammarDiagnostics.get(docUri) || [];
-            if (!ruleId) { return; }
+	// New command to ignore all grammar issues of the same type (ruleId)
+	context.subscriptions.push(
+		vscode.commands.registerCommand('naruhodocs.ignoreAllGrammarIssuesOfType', async (docUri: vscode.Uri, ruleId: string) => {
+			const currentDiagnostics = grammarDiagnostics.get(docUri) || [];
+			if (!ruleId) { return; }
 
-            const newDiagnostics = currentDiagnostics.filter(d => {
-                const issueRuleId = (d as any)._naruhodocs?.issue?.ruleId;
-                return issueRuleId !== ruleId;
-            });
+			const newDiagnostics = currentDiagnostics.filter(d => {
+				const issueRuleId = (d as any)._naruhodocs?.issue?.ruleId;
+				return issueRuleId !== ruleId;
+			});
 
-            grammarDiagnostics.set(docUri, newDiagnostics);
-        })
-    );
+			grammarDiagnostics.set(docUri, newDiagnostics);
+		})
+	);
 
-    context.subscriptions.push(
-        vscode.languages.registerCodeActionsProvider(['markdown', 'plaintext'], {
-            provideCodeActions(document: vscode.TextDocument, range: vscode.Range | vscode.Selection, context: vscode.CodeActionContext, token: vscode.CancellationToken): vscode.ProviderResult<(vscode.Command | vscode.CodeAction)[]> {
-                const actions: vscode.CodeAction[] = [];
-                const relevantDiagnostics = context.diagnostics.filter(
-                    diag => diag.source === 'naruhodocs-grammar' && diag.range.intersection(range)
-                );
+	context.subscriptions.push(
+		vscode.languages.registerCodeActionsProvider(['markdown', 'plaintext'], {
+			provideCodeActions(document: vscode.TextDocument, range: vscode.Range | vscode.Selection, context: vscode.CodeActionContext, token: vscode.CancellationToken): vscode.ProviderResult<(vscode.Command | vscode.CodeAction)[]> {
+				const actions: vscode.CodeAction[] = [];
+				const relevantDiagnostics = context.diagnostics.filter(
+					diag => diag.source === 'naruhodocs-grammar' && diag.range.intersection(range)
+				);
 
-                for (const diagnostic of relevantDiagnostics) {
-                    const issue = (diagnostic as any)._naruhodocs?.issue as GrammarIssue | undefined;
+				for (const diagnostic of relevantDiagnostics) {
+					const issue = (diagnostic as any)._naruhodocs?.issue as GrammarIssue | undefined;
 
-                    const ignoreAction = new vscode.CodeAction('Ignore this issue', vscode.CodeActionKind.QuickFix);
-                    ignoreAction.command = {
-                        command: 'naruhodocs.ignoreGrammarIssue',
-                        title: 'Ignore Grammar Issue',
-                        arguments: [document.uri, diagnostic]
-                    };
-                    ignoreAction.diagnostics = [diagnostic];
-                    actions.push(ignoreAction);
+					const ignoreAction = new vscode.CodeAction('Ignore this issue', vscode.CodeActionKind.QuickFix);
+					ignoreAction.command = {
+						command: 'naruhodocs.ignoreGrammarIssue',
+						title: 'Ignore Grammar Issue',
+						arguments: [document.uri, diagnostic]
+					};
+					ignoreAction.diagnostics = [diagnostic];
+					actions.push(ignoreAction);
 
-                    // Action to ignore all issues of the same type
-                    if (issue?.ruleId) {
-                        const ignoreAllAction = new vscode.CodeAction(`Ignore all issues of type '${issue.ruleId}'`, vscode.CodeActionKind.QuickFix);
-                        ignoreAllAction.command = {
-                            command: 'naruhodocs.ignoreAllGrammarIssuesOfType',
-                            title: `Ignore All '${issue.ruleId}' Issues`,
-                            arguments: [document.uri, issue.ruleId]
-                        };
-                        ignoreAllAction.diagnostics = [diagnostic];
-                        actions.push(ignoreAllAction);
-                    }
-                }
-                return actions;
-            }
-        })
-    );
+					// Action to ignore all issues of the same type
+					if (issue?.ruleId) {
+						const ignoreAllAction = new vscode.CodeAction(`Ignore all issues of type '${issue.ruleId}'`, vscode.CodeActionKind.QuickFix);
+						ignoreAllAction.command = {
+							command: 'naruhodocs.ignoreAllGrammarIssuesOfType',
+							title: `Ignore All '${issue.ruleId}' Issues`,
+							arguments: [document.uri, issue.ruleId]
+						};
+						ignoreAllAction.diagnostics = [diagnostic];
+						actions.push(ignoreAllAction);
+					}
+				}
+				return actions;
+			}
+		})
+	);
 
-    // Optionally clear diagnostics when document is closed
+	// Optionally clear diagnostics when document is closed
 	context.subscriptions.push(
 		vscode.workspace.onDidCloseTextDocument(doc => {
 			grammarDiagnostics.delete(doc.uri);
@@ -894,18 +887,18 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 	);
 
 	context.subscriptions.push(
-        vscode.workspace.onDidSaveTextDocument(async (document) => {
-            const config = vscode.workspace.getConfiguration('naruhodocs');
-            const checkOnSave = config.get<boolean>('grammar.checkOnSave', false);
-            if (checkOnSave) {
-                await runGrammarCheck(document);
-            }
-        })
-    );
+		vscode.workspace.onDidSaveTextDocument(async (document) => {
+			const config = vscode.workspace.getConfiguration('naruhodocs');
+			const checkOnSave = config.get<boolean>('grammar.checkOnSave', false);
+			if (checkOnSave) {
+				await runGrammarCheck(document);
+			}
+		})
+	);
 
 	// Markdownlint diagnostics
 	const markdownDiagnostics = vscode.languages.createDiagnosticCollection('naruhodocs-markdown');
-    context.subscriptions.push(markdownDiagnostics);
+	context.subscriptions.push(markdownDiagnostics);
 
 	const lintAndReport = async (document: vscode.TextDocument) => {
 		const errors = await lintMarkdownDocument(document);
@@ -919,7 +912,7 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 			const startColumn = (error.errorRange ? error.errorRange[0] : 1) - 1;
 			const endColumn = error.errorRange ? startColumn + error.errorRange[1] : 100;
 			const range = new vscode.Range(line, startColumn, line, endColumn);
-			
+
 			const ruleName = error.ruleNames[0];
 			const message = `${error.ruleDescription} (${ruleName})`;
 			const diagnostic = new vscode.Diagnostic(range, message, vscode.DiagnosticSeverity.Warning);
@@ -949,41 +942,41 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 	);
 
 	context.subscriptions.push(
-        vscode.commands.registerCommand('naruhodocs.ignoreMarkdownIssue', async (docUri: vscode.Uri, diagnostic: vscode.Diagnostic) => {
-            const currentDiagnostics = markdownDiagnostics.get(docUri) || [];
-            const newDiagnostics = currentDiagnostics.filter(d => d !== diagnostic);
-            markdownDiagnostics.set(docUri, newDiagnostics);
-        })
-    );
+		vscode.commands.registerCommand('naruhodocs.ignoreMarkdownIssue', async (docUri: vscode.Uri, diagnostic: vscode.Diagnostic) => {
+			const currentDiagnostics = markdownDiagnostics.get(docUri) || [];
+			const newDiagnostics = currentDiagnostics.filter(d => d !== diagnostic);
+			markdownDiagnostics.set(docUri, newDiagnostics);
+		})
+	);
 
-    // Command to ignore all markdown issues of the same type (ruleName)
-    context.subscriptions.push(
-        vscode.commands.registerCommand('naruhodocs.ignoreAllMarkdownRules', async (docUri: vscode.Uri, ruleName: string) => {
-            const currentDiagnostics = markdownDiagnostics.get(docUri) || [];
-            if (!ruleName) { return; }
+	// Command to ignore all markdown issues of the same type (ruleName)
+	context.subscriptions.push(
+		vscode.commands.registerCommand('naruhodocs.ignoreAllMarkdownRules', async (docUri: vscode.Uri, ruleName: string) => {
+			const currentDiagnostics = markdownDiagnostics.get(docUri) || [];
+			if (!ruleName) { return; }
 
-            const newDiagnostics = currentDiagnostics.filter(d => {
-                const issueRuleName = (d as any)._naruhodocs?.ruleName;
-                return issueRuleName !== ruleName;
-            });
+			const newDiagnostics = currentDiagnostics.filter(d => {
+				const issueRuleName = (d as any)._naruhodocs?.ruleName;
+				return issueRuleName !== ruleName;
+			});
 
-            markdownDiagnostics.set(docUri, newDiagnostics);
-        })
-    );
+			markdownDiagnostics.set(docUri, newDiagnostics);
+		})
+	);
 
 	context.subscriptions.push(
-        vscode.commands.registerCommand('naruhodocs.ignoreAllIssues', async () => {
-            const editor = vscode.window.activeTextEditor;
-            if (editor) {
-                const docUri = editor.document.uri;
-                grammarDiagnostics.delete(docUri);
-                markdownDiagnostics.delete(docUri);
-                vscode.window.showInformationMessage('All current grammar and markdown issues have been ignored for this file.');
-            } else {
-                vscode.window.showInformationMessage('No active editor to clear issues from.');
-            }
-        })
-    );
+		vscode.commands.registerCommand('naruhodocs.ignoreAllIssues', async () => {
+			const editor = vscode.window.activeTextEditor;
+			if (editor) {
+				const docUri = editor.document.uri;
+				grammarDiagnostics.delete(docUri);
+				markdownDiagnostics.delete(docUri);
+				vscode.window.showInformationMessage('All current grammar and markdown issues have been ignored for this file.');
+			} else {
+				vscode.window.showInformationMessage('No active editor to clear issues from.');
+			}
+		})
+	);
 
 	// Lint on save for markdown files
 	context.subscriptions.push(
@@ -996,44 +989,44 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 
 	// Register a code action provider for markdownlint quick fixes (placeholder)
 	context.subscriptions.push(
-        vscode.languages.registerCodeActionsProvider('markdown', {
-            provideCodeActions(document: vscode.TextDocument, range: vscode.Range | vscode.Selection, context: vscode.CodeActionContext, token: vscode.CancellationToken): vscode.ProviderResult<(vscode.Command | vscode.CodeAction)[]> {
-                const actions: vscode.CodeAction[] = [];
-                const relevantDiagnostics = context.diagnostics.filter(
-                    diag => diag.source === 'naruhodocs-markdown' && diag.range.intersection(range)
-                );
+		vscode.languages.registerCodeActionsProvider('markdown', {
+			provideCodeActions(document: vscode.TextDocument, range: vscode.Range | vscode.Selection, context: vscode.CodeActionContext, token: vscode.CancellationToken): vscode.ProviderResult<(vscode.Command | vscode.CodeAction)[]> {
+				const actions: vscode.CodeAction[] = [];
+				const relevantDiagnostics = context.diagnostics.filter(
+					diag => diag.source === 'naruhodocs-markdown' && diag.range.intersection(range)
+				);
 
-                for (const diagnostic of relevantDiagnostics) {
-                    const ruleName = (diagnostic as any)._naruhodocs?.ruleName as string | undefined;
+				for (const diagnostic of relevantDiagnostics) {
+					const ruleName = (diagnostic as any)._naruhodocs?.ruleName as string | undefined;
 
-                    // Action to ignore the single issue
-                    const ignoreAction = new vscode.CodeAction('Ignore this issue', vscode.CodeActionKind.QuickFix);
-                    ignoreAction.command = {
-                        command: 'naruhodocs.ignoreMarkdownIssue',
-                        title: 'Ignore Markdown Issue',
-                        arguments: [document.uri, diagnostic]
-                    };
-                    ignoreAction.diagnostics = [diagnostic];
-                    actions.push(ignoreAction);
+					// Action to ignore the single issue
+					const ignoreAction = new vscode.CodeAction('Ignore this issue', vscode.CodeActionKind.QuickFix);
+					ignoreAction.command = {
+						command: 'naruhodocs.ignoreMarkdownIssue',
+						title: 'Ignore Markdown Issue',
+						arguments: [document.uri, diagnostic]
+					};
+					ignoreAction.diagnostics = [diagnostic];
+					actions.push(ignoreAction);
 
-                    // Action to ignore all issues of the same type
-                    if (ruleName) {
-                        const ignoreAllAction = new vscode.CodeAction(`Ignore all issues of type '${ruleName}'`, vscode.CodeActionKind.QuickFix);
-                        ignoreAllAction.command = {
-                            command: 'naruhodocs.ignoreAllMarkdownRules',
-                            title: `Ignore All '${ruleName}' Issues`,
-                            arguments: [document.uri, ruleName]
-                        };
-                        ignoreAllAction.diagnostics = [diagnostic];
-                        actions.push(ignoreAllAction);
-                    }
-                }
-                return actions;
-            }
-        }, {
-            providedCodeActionKinds: [vscode.CodeActionKind.QuickFix]
-        })
-    );
+					// Action to ignore all issues of the same type
+					if (ruleName) {
+						const ignoreAllAction = new vscode.CodeAction(`Ignore all issues of type '${ruleName}'`, vscode.CodeActionKind.QuickFix);
+						ignoreAllAction.command = {
+							command: 'naruhodocs.ignoreAllMarkdownRules',
+							title: `Ignore All '${ruleName}' Issues`,
+							arguments: [document.uri, ruleName]
+						};
+						ignoreAllAction.diagnostics = [diagnostic];
+						actions.push(ignoreAllAction);
+					}
+				}
+				return actions;
+			}
+		}, {
+			providedCodeActionKinds: [vscode.CodeActionKind.QuickFix]
+		})
+	);
 	// Optionally clear markdownlint diagnostics when document is closed
 	context.subscriptions.push(
 		vscode.workspace.onDidCloseTextDocument(doc => {
@@ -1245,7 +1238,7 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 				await context.workspaceState.update('visualization:lastHash:folder structure', undefined);
 				await context.workspaceState.update('visualization:lastHash:project', undefined);
 			} catch { /* ignore */ }
-		} catch (e:any) {
+		} catch (e: any) {
 			vscode.window.showErrorMessage('Failed to clear current thread history: ' + (e?.message || String(e)));
 		}
 	});
