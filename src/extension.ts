@@ -99,12 +99,12 @@ export function activate(context: vscode.ExtensionContext) {
 			// You may want to trigger a reload or rebuild of the vector DB
 		})
 	);
-	// Register scanDocs command to call provider.scanDocs()
-	context.subscriptions.push(
-		vscode.commands.registerCommand('naruhodocs.scanDocs', async () => {
-			await provider.scanDocs();
-		})
-	);
+	// // Register scanDocs command to call provider.scanDocs()
+	// context.subscriptions.push(
+	// 	vscode.commands.registerCommand('naruhodocs.scanDocs', async () => {
+	// 		await provider.scanDocs();
+	// 	})
+	// );
 
 	// Rebuild Vector DB command
 	context.subscriptions.push(
@@ -453,8 +453,25 @@ export function activate(context: vscode.ExtensionContext) {
 							} catch {
 								// /docs doesn't exist, use root folder
 							}
-							
+
 							const targetUri = vscode.Uri.joinPath(targetFolder, `${path.basename(doc.fileName).replace(/\.[^.]+$/, '')}.summary.md`);
+							let fileExists = false;
+							try {
+								await vscode.workspace.fs.stat(targetUri);
+								fileExists = true;
+							} catch {
+								fileExists = false;
+							}
+							if (fileExists) {
+								const overwrite = await vscode.window.showInformationMessage(
+									`File ${targetUri.fsPath} already exists. Overwrite?`,
+									'Overwrite', 'Cancel'
+								);
+								if (overwrite !== 'Overwrite') {
+									vscode.window.showInformationMessage('Template save cancelled.');
+									return;
+								}
+							}
 							await vscode.workspace.fs.writeFile(targetUri, Buffer.from(summaryContent, 'utf8'));
 							vscode.window.showInformationMessage(`Saved summary to ${targetUri.fsPath}`);
 						} catch (e) {
@@ -531,8 +548,25 @@ export function activate(context: vscode.ExtensionContext) {
 						} catch {
 							// /docs doesn't exist, use root folder
 						}
-						
+
 						const targetUri = vscode.Uri.joinPath(targetFolder, `${path.basename(doc.fileName).replace(/\.[^.]+$/, '')}.${picked.toLowerCase()}.md`);
+						let fileExists = false;
+						try {
+							await vscode.workspace.fs.stat(targetUri);
+							fileExists = true;
+						} catch {
+							fileExists = false;
+						}
+						if (fileExists) {
+							const overwrite = await vscode.window.showInformationMessage(
+								`File ${targetUri.fsPath} already exists. Overwrite?`,
+								'Overwrite', 'Cancel'
+							);
+							if (overwrite !== 'Overwrite') {
+								vscode.window.showInformationMessage('Template save cancelled.');
+								return;
+							}
+						}
 						await vscode.workspace.fs.writeFile(targetUri, Buffer.from(resp.content, 'utf8'));
 						vscode.window.showInformationMessage(`Saved translation to ${targetUri.fsPath}`);
 					}

@@ -734,6 +734,9 @@
             modal.appendChild(box);
             document.body.appendChild(modal);
 
+            vscode.postMessage({ type: 'scanDocs' });
+
+
             // Listen for aiSuggestedDocs and replace loading with real choices
             /** @param {any} event */
             function handleAISuggestedDocs(event) {

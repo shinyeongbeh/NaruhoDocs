@@ -3,11 +3,13 @@
 This is the solution for CodeNection 2025 by Team JavaMee.
 - Track: Industry Collaboration
 - Problem Statement: Fix the Docs: Smarter, Faster, Maintainable Documentation for the Real World by iFAST
-
 - Demo Video Link: https://youtu.be/rfUmCF43YKQ
 - Presentation Slides: https://drive.google.com/file/d/1tFBbk_pSKgqsaI_AQzWGRXcjQ_s2oSiv/view?usp=sharing
 
-NaruhoDocs is a AI-powered VSCode extension that could help in documentation writing and reading.
+NaruhoDocs is an AI-powered VSCode extension that could help in documentation writing and reading.
+
+
+### Try our extension now! [Install NaruhoDocs](https://marketplace.visualstudio.com/items?itemName=naruhodocs.naruhodocs)
 
 ## Features
 

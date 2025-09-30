@@ -56,7 +56,7 @@ export async function generateTemplate(
   // Use AI to generate template content
   let templateContent = '';
   try {
-  const sys2 = `You are a markdown template generator. Your ONLY job is to create EMPTY SKELETON templates for documentation.
+    const sys2 = `You are a markdown template generator. Your ONLY job is to create EMPTY SKELETON templates for documentation.
 
 CRITICAL RULES:
 - Generate ONLY a generic template structure for the requested documentation type.
@@ -80,7 +80,7 @@ Generate a ${templateType} template using ONLY this placeholder style. Output on
   } catch (err) {
     templateContent = `This project does not require a [${templateType}] template because no relevant content was found.`;
   }
-  
+
   //Show in new untitled document
   const newDoc = await vscode.workspace.openTextDocument({
     content: templateContent,
@@ -103,12 +103,28 @@ Generate a ${templateType} template using ONLY this placeholder style. Output on
         } catch {
           // /docs doesn't exist, use root folder
         }
-        
+
         const targetUri = vscode.Uri.joinPath(targetFolder, `${templateType.toUpperCase()}_TEMPLATE.md`);
+        let fileExists = false;
+        try {
+          await vscode.workspace.fs.stat(targetUri);
+          fileExists = true;
+        } catch {
+          fileExists = false;
+        }
+        if (fileExists) {
+          const overwrite = await vscode.window.showInformationMessage(
+            `File ${targetUri.fsPath} already exists. Overwrite?`,
+            'Overwrite', 'Cancel'
+          );
+          if (overwrite !== 'Overwrite') {
+            vscode.window.showInformationMessage('Template save cancelled.');
+            return;
+          }
+        }
         await vscode.workspace.fs.writeFile(targetUri, Buffer.from(templateContent, 'utf8'));
         vscode.window.showInformationMessage(`Saved template to ${targetUri.fsPath}`);
       }
     }
   });
 }
-  

@@ -116,13 +116,19 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 						}
 						break;
 					}
+					case 'scanDocs': {
+						console.log('[NaruhoDocs] scanDocs message received from webview');
+						await this.scanDocs();
+						break;
+					}
 					case 'generateDoc': {
 						this.addSystemMessage('Generating documentation...');
 						try { await generateDocument(this.llmService, data); } catch (e:any) { this.addSystemMessage('Generation failed: ' + (e.message||e.toString())); }
 						break;
 					}
-					case 'suggestTemplate': {
-						try { const resp = await generateTemplate(this.llmService, data); this._view?.webview.postMessage({ type:'addMessage', sender:'Bot', message: resp}); } catch(e:any){ this._view?.webview.postMessage({ type:'addMessage', sender:'Bot', message:'Error generating template: ' + (e.message||e.toString())}); }
+					case 'generateTemplate': {
+						this.addSystemMessage('Generating template...');
+						try { const resp = await generateTemplate(this.llmService, data.templateType);  } catch(e:any){ this._view?.webview.postMessage({ type:'addMessage', sender:'Bot', message:'Error generating template: ' + (e.message||e.toString())}); }
 						break;
 					}
 					case 'setThreadBeginnerMode': {
@@ -525,8 +531,26 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
 	// Placeholder for scanDocs command hook (currently implemented elsewhere / future expansion)
 	public async scanDocs(): Promise<void> {
-		// Intentionally minimal; real implementation can push a system message or trigger analyzer later
-		try { this.addSystemMessage('Scanning docs is not yet implemented in ChatViewProvider.'); } catch { /* ignore */ }
+		try {
+			console.log('[NaruhoDocs] scanDocs method called - starting workspace scan');
+			// Get all filenames and contents
+		const filesAndContents = await this.documentSuggestion.getWorkspaceFilesAndContents();
+		console.log('[NaruhoDocs] Found', filesAndContents.length, 'files in workspace');
+		// Get AI suggestions
+		console.log('[NaruhoDocs] scanDocs triggered. Waiting for aiSuggestions');
+		const aiSuggestions = await this.documentSuggestion.getAISuggestions(this.llmService, filesAndContents);
+		console.log('[NaruhoDocs] Received', aiSuggestions.length, 'AI suggestions');
+		// AI suggestions retrieved
+		// Pass all AI suggestions to modal, but filter after AI generates
+		this.postMessage({
+			type: 'aiSuggestedDocs',
+			suggestions: aiSuggestions,
+			existingFiles: filesAndContents.map(f => f.path.split(/[/\\]/).pop()?.toLowerCase())
+		});
+		console.log('[NaruhoDocs] scanDocs completed successfully');
+		} catch(e) {
+			console.error('[NaruhoDocs] scanDocs failed:', e);
+		}
 	}
 
 	private _postThreadList() {

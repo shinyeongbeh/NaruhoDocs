@@ -103,19 +103,6 @@ export async function generateDocument(llmService: LLMService, data: { docType: 
       } catch (err) {
         aiGeneratedDoc = `# ${data.docType}\n\nDescribe your documentation needs here.`;
       }
-      // const fileUri = vscode.Uri.joinPath(wsUri, fileName);
-      // try {
-      //   await vscode.workspace.fs.writeFile(fileUri, Buffer.from(aiGeneratedDoc, 'utf8'));
-      //   // Trigger a fresh scan to update modal choices
-      //   await vscode.commands.executeCommand('naruhodocs.scanDocs');
-      //   // scanDocs triggered after doc creation
-
-      //   return { type: 'addMessage', sender: 'System', message: `Document created: ${fileUri.fsPath}` };
-
-      // } catch (err) {
-      //   const errorMsg = typeof err === 'object' && err !== null && 'message' in err ? (err as any).message : String(err);
-      //   return { type: 'addMessage', sender: 'System', message: `Error creating doc: ${errorMsg}` };
-      // }
 
       //Show in new untitled document
       const newDoc = await vscode.workspace.openTextDocument({
@@ -139,8 +126,25 @@ export async function generateDocument(llmService: LLMService, data: { docType: 
             } catch {
               // /docs doesn't exist, use root folder
             }
-            
+
             const targetUri = vscode.Uri.joinPath(targetFolder, `${fileName.toUpperCase()}.md`);
+            let fileExists = false;
+            try {
+              await vscode.workspace.fs.stat(targetUri);
+              fileExists = true;
+            } catch {
+              fileExists = false;
+            }
+            if (fileExists) {
+              const overwrite = await vscode.window.showInformationMessage(
+                `File ${targetUri.fsPath} already exists. Overwrite?`,
+                'Overwrite', 'Cancel'
+              );
+              if (overwrite !== 'Overwrite') {
+                vscode.window.showInformationMessage('Template save cancelled.');
+                return;
+              }
+            }
             await vscode.workspace.fs.writeFile(targetUri, Buffer.from(aiGeneratedDoc, 'utf8'));
             vscode.window.showInformationMessage(`Saved document to ${targetUri.fsPath}`);
           }
