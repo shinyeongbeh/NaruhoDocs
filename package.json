@@ -110,94 +110,110 @@
         "icon": "$(gear)"
       }
     ],
-    "configuration": {
-      "title": "NaruhoDocs",
-      "properties": {
-        "naruhodocs.llm.provider": {
-          "type": "string",
-          "enum": [
-            "cloud",
-            "local"
-          ],
-          "enumDescriptions": [
-            "Cloud (API Key): Use your own API key for full access",
-            "Local (Runtime): Use local models via Ollama / LM Studio"
-          ],
-          "default": "cloud",
-          "description": "Primary LLM provider. Cloud (API Key) prompts for a key if missing; falls back to Local if skipped. (Legacy values: 'byok', 'ootb' auto-migrate to 'cloud')."
-        },
-        "naruhodocs.llm.apiKey": {
-          "type": "string",
-          "default": "",
-          "description": "API key for Cloud provider mode (stored securely).",
-          "when": "config.naruhodocs.llm.provider == 'cloud'"
-        },
-        "naruhodocs.embedding.provider": {
-          "type": "string",
-          "enum": [
-            "local",
-            "cloudHuggingface"
-          ],
-          "enumDescriptions": [
-            "Local (Ollama/LM Studio): Use local embedding models via Ollama / LM Studio",
-            "Cloud (Hugging Face Inference Provider): Use HuggingFace cloud embeddings"
-          ],
-          "default": "local",
-          "description": "Embedding model provider to use for document search (RAG). If you do not want a RAG functionality, you can disable RAG in the settings."
-        },
-         "naruhodocs.huggingface.apiKey": {
-          "type": "string",
-          "default": "",
-          "description": "HuggingFace Inference API key for cloud embeddings."
-        },
-        "naruhodocs.visualization.defaultLibrary": {
-          "type": "string",
-          "enum": [
-            "mermaid",
-            "d3",
-            "vis"
-          ],
-          "enumDescriptions": [
-            "Mermaid.js - Simple text-to-diagram conversion",
-            "D3.js - Interactive and customizable visualizations",
-            "Vis.js - Network diagrams and timelines"
-          ],
-          "default": "mermaid",
-          "description": "Default visualization library to use"
-        },
-        "naruhodocs.visualization.enableInteractive": {
-          "type": "boolean",
-          "default": true,
-          "description": "Enable interactive visualization features"
-        },
-        "naruhodocs.visualization.maxFileAnalysis": {
-          "type": "number",
-          "default": 1000,
-          "description": "Maximum number of files to analyze for large projects"
-        },
-        "naruhodocs.logging.verbose": {
-          "type": "boolean",
-          "default": false,
-          "description": "Enable verbose LLM request/response logging in dedicated output channel"
-        },
-        "naruhodocs.rag.enabled": {
-          "type": "boolean",
-          "default": true,
-          "description": "Retrieval-Augmented Generation (RAG) provides enhanced searching so the AI can find and use the right information from your workspace.\n Please reload the window after changing this setting."
+    "configuration": [
+      {
+        "title": "NaruhoDocs - LLM & AI",
+        "properties": {
+          "naruhodocs.llm.provider": {
+            "type": "string",
+            "enum": [
+              "cloud",
+              "local"
+            ],
+            "enumDescriptions": [
+              "Cloud (API Key): Use your own API key for full access",
+              "Local (Runtime): Use local models via Ollama / LM Studio"
+            ],
+            "default": "cloud",
+            "description": "Primary LLM provider. Cloud (API Key) prompts for a key if missing; falls back to Local if skipped. (Legacy values: 'byok', 'ootb' auto-migrate to 'cloud')."
+          },
+          "naruhodocs.llm.apiKey": {
+            "type": "string",
+            "default": "",
+            "description": "API key for Cloud provider mode (stored securely).",
+            "when": "config.naruhodocs.llm.provider == 'cloud'"
+          },
+          "naruhodocs.llm.showReasoning": {
+            "type": "boolean",
+            "default": true,
+            "description": "Show a collapsible reasoning (<think>) section in AI responses when available. Disable to hide reasoning entirely."
+          }
         }
-        ,
-        "naruhodocs.git.docDriftDetection": {
-          "type": "boolean",
-          "default": true,
-          "description": "Enable or disable Doc Drift detection based on Git commits. If disabled, the extension will not analyze documentation drift when commits are made."
-        },
-        "naruhodocs.llm.showReasoning": {
-          "type": "boolean",
-          "default": true,
-          "description": "Show a collapsible reasoning (<think>) section in AI responses when available. Disable to hide reasoning entirely."
+      },
+      {
+        "title": "NaruhoDocs - RAG & Embedding Models Configuration",
+        "properties": {
+          "naruhodocs.rag.enabled": {
+            "type": "boolean",
+            "default": true,
+            "description": "Retrieval-Augmented Generation (RAG) provides enhanced searching so the AI can find and use the right information from your workspace.\n Please reload the window after changing this setting."
+          },
+          "naruhodocs.embedding.provider": {
+            "type": "string",
+            "enum": [
+              "local",
+              "cloudHuggingface"
+            ],
+            "enumDescriptions": [
+              "Local (Ollama/LM Studio): Use local embedding models via Ollama / LM Studio",
+              "Cloud (Hugging Face Inference Provider): Use HuggingFace cloud embeddings"
+            ],
+            "default": "local",
+            "description": "Embedding model provider to use for document search (RAG). If you do not want a RAG functionality, you can disable RAG in the settings."
+          },
+          "naruhodocs.huggingface.apiKey": {
+            "type": "string",
+            "default": "",
+            "description": "HuggingFace Inference API key for cloud embeddings."
+          }
+        }
+      },
+      {
+        "title": "NaruhoDocs - Visualization",
+        "properties": {
+          "naruhodocs.visualization.defaultLibrary": {
+            "type": "string",
+            "enum": [
+              "mermaid",
+              "d3",
+              "vis"
+            ],
+            "enumDescriptions": [
+              "Mermaid.js - Simple text-to-diagram conversion",
+              "D3.js - Interactive and customizable visualizations",
+              "Vis.js - Network diagrams and timelines"
+            ],
+            "default": "mermaid",
+            "description": "Default visualization library to use"
+          },
+          "naruhodocs.visualization.enableInteractive": {
+            "type": "boolean",
+            "default": true,
+            "description": "Enable interactive visualization features"
+          },
+          "naruhodocs.visualization.maxFileAnalysis": {
+            "type": "number",
+            "default": 1000,
+            "description": "Maximum number of files to analyze for large projects"
+          }
+        }
+      },
+      {
+        "title": "NaruhoDocs - Advanced",
+        "properties": {
+          "naruhodocs.git.docDriftDetection": {
+            "type": "boolean",
+            "default": true,
+            "description": "Enable or disable Doc Drift detection based on Git commits. If disabled, the extension will not analyze documentation drift when commits are made."
+          },
+          "naruhodocs.logging.verbose": {
+            "type": "boolean",
+            "default": false,
+            "description": "Enable verbose LLM request/response logging in dedicated output channel"
+          }
         }
       }
-    },
+    ],
     "viewsContainers": {
       "activitybar": [
         {
