@@ -1,31 +1,48 @@
 import * as vscode from 'vscode';
 import { RetrieveWorkspaceFilenamesTool, RetrieveFileContentTool } from '../langchain-backend/features';
 import { LLMService } from '../managers/LLMService';
+import { RAGretrievalTool } from '../langchain-backend/tools';
 export async function generateDocument(llmService: LLMService, data: { docType: any; fileName?: any }) {
   // Suggest filename with AI if not provided
   let aiFilename = '';
+  let instruction = '';
   if (!data.fileName || typeof data.fileName !== 'string' || data.fileName.trim() === '') {
+    // If  no filename provided (custom prompt option), use the custom prompt to generate the filename
+    instruction = data.docType;
     aiFilename = await suggestFilename(data.docType, llmService);
+  } else {
+    instruction = data.fileName;
   }
 
-  // Validate the suggested or provided filename
+  // // Validate the suggested or provided filename
   let fileName = '';
-  if (aiFilename && /^(?![. ]).+\.md$/i.test(aiFilename) && !/[\\/:*?"<>|]/.test(aiFilename)) {
+  if (aiFilename) {
+    if(/^(?![. ]).+\.MD$/i.test(aiFilename)) {
+      aiFilename = aiFilename.slice(0, -3); // remove .MD extension
+    }
+    if(/[\\/:*?"<>|]/.test(aiFilename)) {
+      // Filename contains invalid characters, sanitize it
+      aiFilename = aiFilename
+        .replace(/[\\/:*?"<>|]/g, '_')  // Replace invalid chars with underscores
+        .trim()
+        .replace(/\s+/g, '_')          // Replace spaces with underscores
+        .replace(/_+/g, '_')           // Replace multiple underscores with single
+        .toUpperCase();
+    }
     fileName = aiFilename;
   } else if (data.fileName && typeof data.fileName === 'string' && data.fileName.trim() !== '') {
     fileName = data.fileName.trim();
+    if(/^(?![. ]).+\.MD$/i.test(fileName)) {
+      fileName = fileName.slice(0, -3); // remove .MD extension
+    }
   } else {
-    fileName = `${data.docType.replace(/\s+/g, '_').toUpperCase()}.md`;
+    fileName = data.docType.replace(/\s+/g, '_').toUpperCase();
   }
 
   // Read files in workspace to see if the file already exists
   const wsFolders = vscode.workspace.workspaceFolders;
   if (wsFolders && wsFolders.length > 0) {
-    const wsUri = wsFolders[0].uri;
-    const foundFiles = await vscode.workspace.findFiles(`**/${fileName}`);
-    if (foundFiles.length > 0) {
-      return { type: 'addMessage', sender: 'System', message: `This file already exists at: ${foundFiles[0].fsPath}` };
-    } else {
+    
       // Gather workspace filenames
       const filenamesTool = new RetrieveWorkspaceFilenamesTool();
       const fileListStr = await filenamesTool._call();
@@ -34,10 +51,10 @@ export async function generateDocument(llmService: LLMService, data: { docType: 
       const extraFiles = fileList.filter((f: string) => metaFiles.includes(f.split(/[/\\]/).pop()?.toLowerCase() || ''));
 
       // Ask AI which files are relevant for documentation
-      const sys = `You are an AI assistant that helps users create project documentation files based on the project files and contents. \nThe output should be in markdown format. Do not include code fences or explanations, just the documentation. \nFirst, select ALL the relevant files from this list for generating documentation for ${fileName}. You need to select as many files as needed but be concise.\nAlways include project metadata and README/config files if available. Return only a JSON array of file paths, no explanation.`;
+      const sys = `You are an AI assistant that helps users create project documentation files based on the project files and contents. \nThe output should be in markdown format. Do not include code fences or explanations, just the documentation. \nFirst, select ALL the relevant files from this list for generating documentation of prompt '${instruction}'. You need to select as many files as needed but be concise.\nAlways include project metadata and README/config files if available. Return only a JSON array of file paths, no explanation.`;
       let relevantFiles = [];
       try {
-        const prompt = `Here is the list of files in the workspace:\n${fileList.join('\n')}\n\nWhich files are most relevant for generating documentation for ${fileName}? Always include project metadata and README/config files if available. Return only a JSON array of file paths.`;
+        const prompt = `Here is the list of files in the workspace:\n${fileList.join('\n')}\n\nWhich files are most relevant for generating documentation for of prompt '${instruction}'? Always include project metadata and README/config files if available. Return only a JSON array of file paths.`;
         const aiSuggestRelatedFile = await llmService.trackedChat({
           sessionId: 'read_files',
           systemMessage: sys,
@@ -69,7 +86,7 @@ export async function generateDocument(llmService: LLMService, data: { docType: 
       // Generate the documentation using the general thread session
       let aiGeneratedDoc = '';
       try {
-        const sys2 = `\nYou are an impeccable and meticulous technical documentation specialist. 
+        let sys2 = `\nYou are an impeccable and meticulous technical documentation specialist. 
                 Your purpose is to produce clear, accurate, and professional technical documents based on the given content.
                 \n\nPrimary Goal: Generate high-quality technical documentation that is comprehensive, logically structured, and easy for the intended audience to understand.
                 \n\nInstructions:\nYou will be given the file name of the documentation to create, along with the relevant files and their contents from the user's project workspace.
@@ -88,9 +105,12 @@ export async function generateDocument(llmService: LLMService, data: { docType: 
                 Ensure all headings are descriptive and the flow is logical.
                 \nFormatting: The final output must be in markdown format. 
                 Do not include code fences, explanations, or conversational text.`;
-
+        const RAGstatus = vscode.workspace.getConfiguration('naruhodocs').get<boolean>('rag.enabled', );
+        if(RAGstatus) {
+          sys2 += `You have access to tool ('RAGretrieveContext'). Use it to retrieve relevant code snippets to generate accurate and detailed documentation`;
+        }
         const filesAndContentsString = filesAndContents.map(f => `File: ${f.path}\n${f.content}`).join('\n\n');
-        const prompt2 = (`Generate a starter documentation for ${fileName} based on this project. Refer to the relevant workspace files and contents:\n${filesAndContentsString}. If you are unable to generate the file based on information given, do not make up generic content yourself`) || '';;
+        const prompt2 = (`Generate a starter documentation for prompt '${instruction}' based on this project. Refer to the relevant workspace files and contents:\n${filesAndContentsString}. If you are unable to generate the file based on information given, do not make up generic content yourself`) || '';;
         aiGeneratedDoc = (await llmService.request({
           type: 'generate_doc',
           title: fileName,
@@ -99,7 +119,12 @@ export async function generateDocument(llmService: LLMService, data: { docType: 
         })).content;
 
         // AI doc generation response captured
-        aiGeneratedDoc = aiGeneratedDoc.replace(/^```markdown\s*/i, '').replace(/^\*\*\*markdown\s*/i, '').replace(/```$/g, '').trim();
+        aiGeneratedDoc = aiGeneratedDoc
+          .replace(/<details class="ai-reasoning">[\s\S]*?<\/details>/gi, '')
+          .replace(/^```markdown\s*/i, '')
+          .replace(/^\*\*\*markdown\s*/i, '')
+          .replace(/```$/g, '')
+          .trim();
       } catch (err) {
         aiGeneratedDoc = `# ${data.docType}\n\nDescribe your documentation needs here.`;
       }
@@ -150,7 +175,7 @@ export async function generateDocument(llmService: LLMService, data: { docType: 
           }
         }
       });
-    }
+
   } else {
     return { type: 'addMessage', sender: 'System', message: 'No workspace folder open.' };
   }
@@ -161,8 +186,9 @@ async function suggestFilename(docType: string, llmService: LLMService): Promise
   try {
     aiFilename = (await llmService.request({
       type: 'chat',
-      prompt: `Suggest a concise, filesystem-friendly filename (with .md extension) for a ${docType} documentation file. Respond with only the filename, no explanation.`,
+      prompt: `Suggest a concise, filesystem-friendly filename for a ${docType} documentation file. Respond with only the filename, no explanation, no extensions, no ends with .md`,
     })).content;
+    aiFilename = aiFilename.replace(/<details class="ai-reasoning">[\s\S]*?<\/details>/gi, '');
     aiFilename = aiFilename.trim().replace(/\s+/g, '_').toUpperCase();
   } catch (e) {
     aiFilename = '';

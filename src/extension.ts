@@ -438,6 +438,7 @@ export function activate(context: vscode.ExtensionContext) {
 				targetId: documentUri.toString(),
 				systemMessage: 'You produce concise technical summaries with key points and clarity.'
 			});
+			resp.content = resp.content.replace(/<details class="ai-reasoning">[\s\S]*?<\/details>/gi, '');
 			// Show summary in a new ephemeral document
 			const summaryContent = `# Summary of ${path.basename(doc.fileName)}\n\n${resp.content}`;
 			const summaryDoc = await vscode.workspace.openTextDocument({
@@ -463,7 +464,7 @@ export function activate(context: vscode.ExtensionContext) {
 								// /docs doesn't exist, use root folder
 							}
 
-							const targetUri = vscode.Uri.joinPath(targetFolder, `${path.basename(doc.fileName).replace(/\.[^.]+$/, '')}.summary.md`);
+							const targetUri = vscode.Uri.joinPath(targetFolder, `${path.basename(doc.fileName).replace(/\.[^.]+$/, '')}_Summary.md`);
 							let fileExists = false;
 							try {
 								await vscode.workspace.fs.stat(targetUri);
@@ -519,6 +520,8 @@ export function activate(context: vscode.ExtensionContext) {
 				targetLanguage: picked,
 				systemMessage: 'You are a professional technical translator. Preserve code blocks and formatting.'
 			});
+
+			resp.content = resp.content.replace(/<details class="ai-reasoning">[\s\S]*?<\/details>/gi, '');
 			// Open translation in a side-by-side editor
 			const translationDoc = await vscode.workspace.openTextDocument({
 				content: `# Translation (${picked}) of ${path.basename(doc.fileName)}\n\n${resp.content}`,
@@ -542,7 +545,7 @@ export function activate(context: vscode.ExtensionContext) {
 							// /docs doesn't exist, use root folder
 						}
 
-						const targetUri = vscode.Uri.joinPath(targetFolder, `${path.basename(doc.fileName).replace(/\.[^.]+$/, '')}.${picked.toLowerCase()}.md`);
+						const targetUri = vscode.Uri.joinPath(targetFolder, `${path.basename(doc.fileName).replace(/\.[^.]+$/, '')}_${picked.toLowerCase()}.md`);
 						let fileExists = false;
 						try {
 							await vscode.workspace.fs.stat(targetUri);
@@ -1243,6 +1246,12 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 		}
 	});
 	context.subscriptions.push(clearCurrentThreadCommand);
+
+	// Open settings command
+	const openSettingsCommand = vscode.commands.registerCommand('naruhodocs.openSettings', async () => {
+		await vscode.commands.executeCommand('workbench.action.openSettings', 'naruhodocs');
+	});
+	context.subscriptions.push(openSettingsCommand);
 }
 // Removed legacy interactive configuration helpers (showLLMConfigurationQuickPick, configureLocalLLM, showLocalLLMSetupInstructions).
 

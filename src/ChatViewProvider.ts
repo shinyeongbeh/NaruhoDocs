@@ -128,7 +128,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 					}
 					case 'generateTemplate': {
 						this.addSystemMessage('Generating template...');
-						try { const resp = await generateTemplate(this.llmService, data.templateType);  } catch(e:any){ this._view?.webview.postMessage({ type:'addMessage', sender:'Bot', message:'Error generating template: ' + (e.message||e.toString())}); }
+						try { const resp = await generateTemplate(this.llmService, data);  } catch(e:any){ this._view?.webview.postMessage({ type:'addMessage', sender:'Bot', message:'Error generating template: ' + (e.message||e.toString())}); }
 						break;
 					}
 					case 'setThreadBeginnerMode': {

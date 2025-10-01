@@ -102,6 +102,12 @@
         "title": "Rebuild RAG Vector Database",
         "category": "NaruhoDocs",
         "icon": "$(sync)"
+      },
+      {
+        "command": "naruhodocs.openSettings",
+        "title": "Open NaruhoDocs Settings",
+        "category": "NaruhoDocs",
+        "icon": "$(gear)"
       }
     ],
     "configuration": {
@@ -222,6 +228,11 @@
           "command": "naruhodocs.clearCurrentThreadHistory",
           "when": "view == naruhodocs.chatView",
           "group": "navigation@2"
+        },
+        {
+          "command": "naruhodocs.openSettings",
+          "when": "view == naruhodocs.chatView",
+          "group": "navigation@3"
         }
       ]
     }

@@ -762,7 +762,7 @@
                         btn.title = suggestion.description || '';
                         btn.addEventListener('click', () => {
                             console.log('[NaruhoDocs] Generate Template button clicked:', suggestion.displayName);
-                            vscode.postMessage({ type: 'generateTemplate', templateType: suggestion.displayName });
+                            vscode.postMessage({ type: 'generateTemplate', templateType: suggestion.displayName, fileName: suggestion.fileName });
                             modal.remove();
                         });
                         box.appendChild(btn);

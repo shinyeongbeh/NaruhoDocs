@@ -133,7 +133,7 @@ export class ModelConfigManager {
             version: 2,
             providers: {
                 cloud: { defaultModel: 'gemini-2.0-flash', note: 'Cloud (API Key) provider. Edit per-task overrides below.' },
-                local: { defaultModel: 'gemma3:1b', backend: 'ollama', baseUrl: 'http://localhost:11434', tasks: {}, note: 'Local runtime provider. Ensure model pulled in Ollama/LM Studio.' }
+                local: { defaultModel: 'qwen3:0.6b', backend: 'ollama', baseUrl: 'http://localhost:11434', tasks: {}, note: 'Local runtime provider. Ensure model pulled in Ollama/LM Studio.' }
             }
         };
         await vscode.workspace.fs.writeFile(file, Buffer.from(JSON.stringify(defaultConfig, null, 2), 'utf8'));
