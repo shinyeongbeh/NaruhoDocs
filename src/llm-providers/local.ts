@@ -137,7 +137,7 @@ export class LocalProvider implements LLMProvider {
             case 'openai':
                 // LM Studio, and other OpenAI-compatible APIs
                 return new ChatOpenAI({
-                    openAIApiKey: 'not-needed',
+                    apiKey: 'not-needed',
                     configuration: {
                         baseURL: config.baseUrl,
                     },
@@ -148,7 +148,7 @@ export class LocalProvider implements LLMProvider {
             case 'llamacpp':
                 // llama.cpp server (OpenAI-compatible)
                 return new ChatOpenAI({
-                    openAIApiKey: 'not-needed',
+                    apiKey: 'not-needed',
                     configuration: {
                         baseURL: `${config.baseUrl}/v1`,
                     },
@@ -159,7 +159,7 @@ export class LocalProvider implements LLMProvider {
             case 'textgen':
                 // Text Generation WebUI (OpenAI-compatible)
                 return new ChatOpenAI({
-                    openAIApiKey: 'not-needed',
+                    apiKey: 'not-needed',
                     configuration: {
                         baseURL: `${config.baseUrl}/v1`,
                     },
@@ -190,149 +190,93 @@ export class LocalProvider implements LLMProvider {
             }
         }
 
-        return createChat({systemMessage, temperature: options?.temperature, chatModel: this.model, model: this.backendConfig.defaultModel});
+        // Use simplified chat session for local models to avoid agent/tool binding issues
+        return this.createLocalChatSession(systemMessage, options);
     }
 
-    // private createLocalChatSession(systemMessage: string, options?: { temperature?: number }): ChatSession {
-    //     const maxHistory = 40;
-    //     let history: BaseMessage[] = [];
-    //     const model = this.model; // Capture model reference
-    // private createLocalChatSession(systemMessage: string, options?: { temperature?: number }): ChatSession {
-    //     const maxHistory = 40;
-    //     let history: BaseMessage[] = [];
-    //     const model = this.model; // Capture model reference
+    private createLocalChatSession(systemMessage: string, options?: { temperature?: number }): ChatSession {
+        const maxHistory = 40;
+        let history: BaseMessage[] = [];
+        const model = this.model; // Capture model reference
 
-    //     if (systemMessage) {
-    //         history.push(new SystemMessage(systemMessage));
-    //     }
-    //     if (systemMessage) {
-    //         history.push(new SystemMessage(systemMessage));
-    //     }
+        if (systemMessage) {
+            history.push(new SystemMessage(systemMessage));
+        }
 
-    //     // For local models, use a simpler approach without agents initially
-    //     // This avoids the bindTools requirement that some local models might not support
-    //     // For local models, use a simpler approach without agents initially
-    //     // This avoids the bindTools requirement that some local models might not support
+        function prune() {
+            if (history.length > maxHistory) {
+                // Keep system message at the start, prune from the middle
+                const systemMsg = history.find(msg => msg instanceof SystemMessage);
+                const otherMsgs = history.filter(msg => !(msg instanceof SystemMessage));
+                history = systemMsg ? [systemMsg, ...otherMsgs.slice(-maxHistory + 1)] : otherMsgs.slice(-maxHistory);
+            }
+        }
 
-    //     function prune() {
-    //         if (history.length > maxHistory) {
-    //             history = history.slice(history.length - maxHistory);
-    //         }
-    //     }
-    //     function prune() {
-    //         if (history.length > maxHistory) {
-    //             history = history.slice(history.length - maxHistory);
-    //         }
-    //     }
+        return {
+            async chat(userMessage: string): Promise<string> {
+                try {
+                    history.push(new HumanMessage(userMessage));
+                    prune();
 
-    //     return {
-    //         async chat(userMessage: string): Promise<string> {
-    //             try {
-    //                 history.push(new HumanMessage(userMessage));
-    //                 prune();
-    //     return {
-    //         async chat(userMessage: string): Promise<string> {
-    //             try {
-    //                 history.push(new HumanMessage(userMessage));
-    //                 prune();
+                    // Use the model directly without agents
+                    const response = await model.invoke(history);
 
-    //                 // Use the model directly without agents for now
-    //                 const response = await model.invoke(history);
-    //                 // Use the model directly without agents for now
-    //                 const response = await model.invoke(history);
-
-    //                 let aiText = '';
+                    let aiText = '';
                     
-    //                 if (typeof response.content === 'string') {
-    //                     aiText = response.content;
-    //                 } else if (Array.isArray(response.content)) {
-    //                     aiText = response.content.map((c: any) =>
-    //                         typeof c === 'string' ? c : JSON.stringify(c)
-    //                     ).join(' ');
-    //                 } else {
-    //                     aiText = JSON.stringify(response.content);
-    //                 }
+                    if (typeof response.content === 'string') {
+                        aiText = response.content;
+                    } else if (Array.isArray(response.content)) {
+                        aiText = response.content.map((c: any) =>
+                            typeof c === 'string' ? c : JSON.stringify(c)
+                        ).join(' ');
+                    } else {
+                        aiText = JSON.stringify(response.content);
+                    }
 
-    //                 const aiMessage = new AIMessage(aiText);
-    //                 history.push(aiMessage);
-    //                 prune();
+                    const aiMessage = new AIMessage(aiText);
+                    history.push(aiMessage);
+                    prune();
 
-    //                 return aiText;
-    //             } catch (error) {
-    //                 throw new Error(`Local LLM error: ${error}`);
-    //             }
-    //         },
-    //                 return aiText;
-    //             } catch (error) {
-    //                 throw new Error(`Local LLM error: ${error}`);
-    //             }
-    //         },
+                    return aiText;
+                } catch (error) {
+                    throw new Error(`Local LLM error: ${error}`);
+                }
+            },
 
-    //         reset() {
-    //             history = [];
-    //             if (systemMessage) {
-    //                 history.push(new SystemMessage(systemMessage));
-    //             }
-    //         },
-    //         reset() {
-    //             history = [];
-    //             if (systemMessage) {
-    //                 history.push(new SystemMessage(systemMessage));
-    //             }
-    //         },
+            reset() {
+                history = [];
+                if (systemMessage) {
+                    history.push(new SystemMessage(systemMessage));
+                }
+            },
 
-    //         getHistory() {
-    //             return history.filter(msg => !(msg instanceof SystemMessage));
-    //         },
-    //         getHistory() {
-    //             return history.filter(msg => !(msg instanceof SystemMessage));
-    //         },
+            getHistory() {
+                return history.filter(msg => !(msg instanceof SystemMessage));
+            },
 
-    //         setHistory(historyArr: BaseMessage[]) {
-    //             history = [];
-    //             if (systemMessage) {
-    //                 history.push(new SystemMessage(systemMessage));
-    //             }
-    //             for (const msg of historyArr) {
-    //                 const type = (msg as any).type;
-    //                 const text = (msg as any).text;
-    //                 if (type === 'human') { 
-    //                     history.push(new HumanMessage(text)); 
-    //                 }
-    //                 if (type === 'ai') { 
-    //                     history.push(new AIMessage(text)); 
-    //                 }
-    //             }
-    //         },
-    //         setHistory(historyArr: BaseMessage[]) {
-    //             history = [];
-    //             if (systemMessage) {
-    //                 history.push(new SystemMessage(systemMessage));
-    //             }
-    //             for (const msg of historyArr) {
-    //                 const type = (msg as any).type;
-    //                 const text = (msg as any).text;
-    //                 if (type === 'human') { 
-    //                     history.push(new HumanMessage(text)); 
-    //                 }
-    //                 if (type === 'ai') { 
-    //                     history.push(new AIMessage(text)); 
-    //                 }
-    //             }
-    //         },
+            setHistory(historyArr: BaseMessage[]) {
+                history = [];
+                if (systemMessage) {
+                    history.push(new SystemMessage(systemMessage));
+                }
+                for (const msg of historyArr) {
+                    const type = (msg as any).type;
+                    const text = (msg as any).text;
+                    if (type === 'human') { 
+                        history.push(new HumanMessage(text)); 
+                    }
+                    if (type === 'ai') { 
+                        history.push(new AIMessage(text)); 
+                    }
+                }
+            },
 
-    //         setCustomSystemMessage(msg: string) {
-    //             history = history.filter(m => !(m instanceof SystemMessage));
-    //             history.unshift(new SystemMessage(msg));
-    //         }
-    //     };
-    // }
-    //         setCustomSystemMessage(msg: string) {
-    //             history = history.filter(m => !(m instanceof SystemMessage));
-    //             history.unshift(new SystemMessage(msg));
-    //         }
-    //     };
-    // }
+            setCustomSystemMessage(msg: string) {
+                history = history.filter(m => !(m instanceof SystemMessage));
+                history.unshift(new SystemMessage(msg));
+            }
+        };
+    }
 
     async testConnection(): Promise<boolean> {
         if (!this.backendConfig) {
