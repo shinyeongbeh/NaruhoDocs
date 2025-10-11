@@ -197,12 +197,14 @@ Keep responses focused and technical, using the retrieved context as your primar
       const showReasoning = vscode.workspace.getConfiguration('naruhodocs').get<boolean>('llm.showReasoning', true);
       if (thinkBlocks.length && showReasoning) {
         const joined = thinkBlocks.join('\n---\n');
+        // Replace literal \n with actual newlines for proper formatting
+        const normalized = joined.replace(/\\n/g, '\n');
         // Escape HTML entities to avoid accidental rendering inside code fence
-        const escaped = joined
+        const escaped = normalized
           .replace(/&/g, '&amp;')
           .replace(/</g, '&lt;')
           .replace(/>/g, '&gt;');
-        const reasoningSection = `\n\n<details class="ai-reasoning"><summary>Show reasoning</summary>\n\n\n\n\`\`\`text\n${escaped}\n\`\`\`\n</details>`;
+        const reasoningSection = `\n\n<details class="ai-reasoning">\n<summary>Show reasoning</summary>\n\n\`\`\`text\n${escaped}\n\`\`\`\n\n</details>\n\n`;
         aiText = aiText + reasoningSection;
       }
 

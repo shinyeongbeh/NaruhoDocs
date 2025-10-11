@@ -233,6 +233,30 @@ export class LocalProvider implements LLMProvider {
                         aiText = JSON.stringify(response.content);
                     }
 
+                    // Extract all <think> blocks (reasoning) before storing final answer
+                    const thinkBlocks: string[] = [];
+                    aiText = aiText.replace(/<think>([\s\S]*?)<\/think>/gi, (_m, inner) => {
+                        const cleaned = String(inner).trim();
+                        if (cleaned) { thinkBlocks.push(cleaned); }
+                        return ''; // remove from visible answer
+                    }).trim();
+
+                    // Build collapsible reasoning section if any think blocks were present
+                    const vscode = require('vscode');
+                    const showReasoning = vscode.workspace.getConfiguration('naruhodocs').get('llm.showReasoning', true) as boolean;
+                    if (thinkBlocks.length && showReasoning) {
+                        const joined = thinkBlocks.join('\n---\n');
+                        // Replace literal \n with actual newlines for proper formatting
+                        const normalized = joined.replace(/\\n/g, '\n');
+                        // Escape HTML entities to avoid accidental rendering inside code fence
+                        const escaped = normalized
+                            .replace(/&/g, '&amp;')
+                            .replace(/</g, '&lt;')
+                            .replace(/>/g, '&gt;');
+                        const reasoningSection = `\n\n<details class="ai-reasoning">\n<summary>Show reasoning</summary>\n\n\`\`\`text\n${escaped}\n\`\`\`\n\n</details>\n\n`;
+                        aiText = aiText + reasoningSection;
+                    }
+
                     const aiMessage = new AIMessage(aiText);
                     history.push(aiMessage);
                     prune();
