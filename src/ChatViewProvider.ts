@@ -17,6 +17,7 @@ import { generateTemplate } from './general-purpose/GenerateTemplate';
 export class ChatViewProvider implements vscode.WebviewViewProvider {
 	private documentSuggestion = new DocumentSuggestion();
 	private setBeginnerDevMode = new BeginnerDevMode();
+	private exportCounter = 1;
 
 	private existingDocFiles: string[] = [];
 	private didDevCleanupOnce: boolean = false;
@@ -107,7 +108,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 						const workspaceFolders = vscode.workspace.workspaceFolders;
 						if (workspaceFolders && workspaceFolders.length > 0) {
 							const workspaceRoot = workspaceFolders[0].uri;
-							const fileName = `diagram_${Date.now()}.svg`;
+							const fileName = `Project Architecture Diagram_${this.exportCounter++}.svg`;
 							const uri = vscode.Uri.joinPath(workspaceRoot, fileName);
 							try {
 								const svgContent = data.content || '<svg><!-- Diagram content --></svg>';
