@@ -121,7 +121,7 @@
               "local"
             ],
             "enumDescriptions": [
-              "Cloud (API Key): Use your own API key for full access",
+              "Cloud (Gemini API Key): Use your Gemini own API key for full access",
               "Local (Runtime): Use local models via Ollama / LM Studio"
             ],
             "default": "cloud",
@@ -130,7 +130,7 @@
           "naruhodocs.llm.apiKey": {
             "type": "string",
             "default": "",
-            "description": "API key for Cloud provider mode (stored securely).",
+            "description": "Gemini API key for Cloud provider mode (stored securely).",
             "when": "config.naruhodocs.llm.provider == 'cloud'"
           },
           "naruhodocs.llm.showReasoning": {

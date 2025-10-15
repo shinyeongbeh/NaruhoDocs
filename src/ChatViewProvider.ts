@@ -102,6 +102,25 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 		view.webview.onDidReceiveMessage(async (data) => {
 			try {
 				switch (data.type) {
+					case 'exportVisualizationDiagram': {
+						console.log('[ChatViewProvider] exportVisualizationDiagram received:', data);
+						const workspaceFolders = vscode.workspace.workspaceFolders;
+						if (workspaceFolders && workspaceFolders.length > 0) {
+							const workspaceRoot = workspaceFolders[0].uri;
+							const fileName = `diagram_${Date.now()}.svg`;
+							const uri = vscode.Uri.joinPath(workspaceRoot, fileName);
+							try {
+								const svgContent = data.content || '<svg><!-- Diagram content --></svg>';
+								await vscode.workspace.fs.writeFile(uri, Buffer.from(svgContent, 'utf8'));
+								vscode.window.showInformationMessage(`Diagram exported to ${fileName} in ${uri.fsPath}`);
+							} catch (error: any) {
+								vscode.window.showErrorMessage(`Failed to export diagram: ${error.message}`);
+							}
+						} else {
+							vscode.window.showErrorMessage('No workspace folder is open');
+						}
+						break;
+					}
 					case 'chatViewReady': {
 						// Compare signature to avoid double rendering
 						const active = this.threadManager.getActiveThreadId();

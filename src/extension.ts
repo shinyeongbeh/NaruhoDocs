@@ -267,12 +267,12 @@ export function activate(context: vscode.ExtensionContext) {
 					});
 					if (entered && entered.trim()) {
 						await config.update('llm.apiKey', entered.trim(), vscode.ConfigurationTarget.Global);
-						vscode.window.showInformationMessage('API key saved for Cloud provider.');
+						vscode.window.showInformationMessage('Gemini API key saved for Cloud provider.');
 					} else {
 						// Switch to local automatically
 						await config.update('llm.provider', 'local', vscode.ConfigurationTarget.Global);
 						currentProviderType = 'local';
-						vscode.window.showWarningMessage('No API key provided. Switched to Local provider.');
+						vscode.window.showWarningMessage('No Gemini API key provided. Switched to Local provider.');
 					}
 				}
 			}
@@ -697,7 +697,7 @@ ${usageInfo ? `Requests Today: ${usageInfo.requestsToday}${!usageInfo.isUnlimite
 					const config = vscode.workspace.getConfiguration('naruhodocs');
 					const current = config.get<string>('llm.provider', 'cloud');
 					const items: Array<{ label: string; value: string; description?: string }> = [
-						{ label: 'Cloud (API Key)', value: 'cloud', description: 'Use your own API key' },
+						{ label: 'Cloud (Gemini API Key)', value: 'cloud', description: 'Use your own Gemini API key' },
 						{ label: 'Local (Runtime)', value: 'local', description: 'Local runtime (Ollama / LM Studio)' },
 						{ label: '— Open model configuration (models.json)…', value: '__open_models__' } // legacy migration path
 					];

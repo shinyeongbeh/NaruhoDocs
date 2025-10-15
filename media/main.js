@@ -1233,7 +1233,7 @@
 
     // Function to export diagram as SVG or PNG
     /** @param {SVGSVGElement} svgElement @param {string} diagramId */
-    function exportDiagram(svgElement, diagramId) {
+    async function exportDiagram(svgElement, diagramId) {
         try {
             // Clone the SVG to avoid modifying the original
             const clonedSvg = svgElement.cloneNode(true);
@@ -1252,17 +1252,24 @@
             document.body.removeChild(downloadLink);
             URL.revokeObjectURL(downloadLink.href);
 
+            await vscode.postMessage({
+                type: 'exportVisualizationDiagram',
+                content: svgData,
+                title: fileName,
+                format: 'svg'
+            });
+
             // Show success message with location info
-            showToast(`Diagram exported as ${fileName} to your Downloads folder`, 'success');
+            showToast(`Diagram exported as ${fileName}`, 'success');
 
             // Also send message to VS Code to show notification
-            if (typeof vscode !== 'undefined') {
-                vscode.postMessage({
-                    type: 'showNotification',
-                    message: `Diagram exported as ${fileName} to your Downloads folder`,
-                    messageType: 'info'
-                });
-            }
+            // if (typeof vscode !== 'undefined') {
+            //     vscode.postMessage({
+            //         type: 'showNotification',
+            //         message: `Diagram exported as ${fileName} to your Downloads folder`,
+            //         messageType: 'info'
+            //     });
+            // }
         } catch (error) {
             console.error('Export failed:', error);
             showToast('Failed to export diagram', 'error');
