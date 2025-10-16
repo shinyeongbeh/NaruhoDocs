@@ -3,7 +3,7 @@
   "displayName": "NaruhoDocs",
   "description": "A VSCode extension that could help in documentation writing and reading. ",
   "publisher": "naruhodocs",
-  "version": "0.0.2",
+  "version": "0.0.4",
   "engines": {
     "vscode": "^1.104.0"
   },
