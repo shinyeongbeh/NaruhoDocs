@@ -1,142 +1,49 @@
 # NaruhoDocs
+NaruhoDocs is an AI-powered VS Code extension that could help in documentation writing and reading.
 
-This is the solution for CodeNection 2025 by Team JavaMee.
-- Track: Industry Collaboration
-- Problem Statement: Fix the Docs: Smarter, Faster, Maintainable Documentation for the Real World by iFAST
-- Demo Video Link: https://youtu.be/rfUmCF43YKQ
-- Presentation Slides: https://drive.google.com/file/d/1tFBbk_pSKgqsaI_AQzWGRXcjQ_s2oSiv/view?usp=sharing
-
-NaruhoDocs is an AI-powered VSCode extension that could help in documentation writing and reading.
-
-
-### Try our extension now! [Install NaruhoDocs](https://marketplace.visualstudio.com/items?itemName=naruhodocs.naruhodocs)
-
+## Try our extension now! [Install NaruhoDocs](https://marketplace.visualstudio.com/items?itemName=naruhodocs.naruhodocs)
+## Refer to our [User Guide](https://github.com/shinyeongbeh/NaruhoDocs/blob/master/USER_GUIDE.pdf) and [Installation Guide](https://github.com/shinyeongbeh/NaruhoDocs/blob/master/INSTALLATION_GUIDE.md) for detailed guidance. 
+## We need your feedback! Please fill out this [Feedback Form](https://forms.gle/ieMzRuvJyxofRmnz9) to help us improve the extension.
 ## Features
-
-*   **Separate AI conversations for different documents**
-    *   **Document-based chatbot**: AI assistant that understands the content of a specific document and can answer questions directly based on it. 
-    *   **General purpose chatbot**: A versatile chatbot for various queries.
-*   **Beginner / developer mode**: Switch between modes tailored for different user experiences.
-*   **Generate documentation from scratch**: Automatically create documentation for your projects.
-*   **Template suggestion to create documentation**: Get suggestions for documentation templates.
-*   **Summarize document**: Get a quick summary of your document.
-*   **Translate document**: Translate your documents into different languages.
-*   **Editing helper:**
-    *   **Grammar Checking**: Check and correct grammatical errors.
-    *   **Markdown validators**: Ensure your markdown is well-formed.
-*   **AI-generated Visualizations**:
-    *   Architecture visualization
-    *   Folder structure visualization
-    *   Document relations visualization
-*   **LLM Integration**:
-    *   Use out-of-the-box LLM providers.
-    *   Bring your own key (BYOK).
-    *   Use local LLMs.
+### 1. AI Chatbot with RAG (Retrieval-Augmented Generation) capabilities
+- **Document-based chatbot**: AI assistant that understands the content of a specific document and can answer questions directly based on it.
+- **General purpose chatbot**: A versatile chatbot for various queries.
+- **Beginner / developer mode**: Switch between modes tailored for different user experiences.
+### 2. Flexible LLM Engine Configuration
+Seamlessly switch between local and cloud-based models to configure both the chat model and the embedding model (used for RAG feature).
+- **Cloud**
+    - **Chat models:** Users can use Google Gemini model for chat and text generation tasks.
+    - **Embedding models:** Users can use Hugging Face embedding models (like `sentence-transformers/all-MiniLM-L6-v2`) via Hugging Face Inference API.
+- **Local**
+    - Users can use local models via **Ollama** or **LM Studio** for both chat and embedding tasks. Users can use any models supported by these local LLM frameworks, giving them flexibility and control over their AI tools.
+### 3. Documentation Drift Analysis
+- **Document drift detection based on Git commits**: Automatically detects and highlights when your documentation becomes outdated or inconsistent with recent code changes by analyzing Git commit history.
+### 4. Smart Documentation Tools
+- **Generate documentation from scratch**: Automatically create documentation for your projects.
+- **Template suggestion to create documentation**: Get suggestions for documentation templates.
+- **Summarize document**: Get a quick summary of your document.
+- **Translate document**: Translate your documents into different languages.   
+- **AI-generated visualizations**:
+    - Architecture visualization
+    - Folder structure visualization
+### 5. Editing Helper:
+- **Grammar checking**: Check and correct grammatical errors.
+- **Markdown validators**: Ensure your markdown is well-formed.
 
 ## Technologies Used
 
 *   **TypeScript**: Primary language for the extension.
 *   **VS Code API**: For building the extension and integrating with the editor.
-*   **LangChain & Google Gemini**: For Large Language Model (LLM) integration and AI features.
+*   **LangChain & Google Gemini**: For Large Language Model (LLM) integration and RAG implementation.
+*   **Vector Databases**: For storing and retrieving document embeddings efficiently.
+*   **Embedding Models**: Hugging Face Transformers, Ollama, and LM Studio for semantic understanding.
 *   **esbuild**: For bundling the extension.
 *   **Mermaid.js, D3.js, Vis.js**: For creating visualizations.
 *   **HTML/CSS/JavaScript**: For the webview-based UI components.
 
-## Usage
 
-Once installed, you can use the following commands from the command palette (`Ctrl+Shift+P`):
-
-*   `NaruhoDocs: Start NaruhoDocs`: Starts the extension.
-*   `NaruhoDocs: Configure LLM Provider`: Configures the LLM provider.
-*   `NaruhoDocs: Test LLM Connection`: Tests the connection to the LLM provider.
-*   `NaruhoDocs: Select Local Model`: Selects a local model.
-*   `NaruhoDocs: Show Provider Status`: Shows the status of the LLM provider.
-*   `NaruhoDocs: 🏗️ Visualize Architecture`: Visualizes the project architecture.
-*   `NaruhoDocs: 📁 Visualize Folder Structure`: Visualizes the folder structure.
-*   `NaruhoDocs: 🔗 Visualize Document Relations`: Visualizes the document relations.
-*   `NaruhoDocs: 📊 Show Visualization Menu`: Shows the visualization menu.
-*   `NaruhoDocs: 🔄 Reset Chat Conversation`: Resets the chat conversation.
-
-## Configuration
-
-You can configure the extension by going to **File > Preferences > Settings** and searching for **NaruhoDocs**.
-
-*   `naruhodocs.llm.provider`: LLM provider option to use (`byok`, `local`). Default now `byok` (Cloud / API Key). Legacy `ootb` is migrated automatically.
-*   `naruhodocs.llm.apiKey`: API key for BYOK mode.
-*   `naruhodocs.llm.localBackend`: Local LLM backend to use (`ollama`, `lmstudio`, `llamacpp`, `textgen`, `custom`).
-*   `naruhodocs.llm.localModel`: Local model name for local LLM.
-*   `naruhodocs.llm.localUrl`: Local LLM server URL.
-*   `naruhodocs.visualization.defaultLibrary`: Default visualization library to use (`mermaid`, `d3`, `vis`).
-*   `naruhodocs.visualization.enableInteractive`: Enable interactive visualization features.
-*   `naruhodocs.visualization.maxFileAnalysis`: Maximum number of files to analyze for large projects.
-*   `naruhodocs.logging.verbose`: When `true`, writes structured LLM request/response log lines (with provider, task, timing, token estimates) to the dedicated `NaruhoDocs LLM` Output panel. Default: `false`.
-*   `naruhodocs.llm.defaultModel`: Global default model for Cloud (BYOK) provider when no per-task override is set.
-*   Per-task model overrides (blank = fallback to `defaultModel` then provider fallback):
-    * `naruhodocs.llm.models.chat`
-    * `naruhodocs.llm.models.summarize`
-    * `naruhodocs.llm.models.readFiles`
-    * `naruhodocs.llm.models.analyze`
-    * `naruhodocs.llm.models.translate`
-    * `naruhodocs.llm.models.generateDoc`
-    * `naruhodocs.llm.models.visualizationContext`
-
-Model Resolution Order:
-1. Explicit override passed internally (future programmatic usage)
-2. Internal policy hint (hard-coded default for task, if any)
-3. Per-task setting
-4. `naruhodocs.llm.defaultModel`
-5. Provider-specific fallback (`naruhodocs.llm.localModel` for local, `gemini-2.0-flash` otherwise)
-
-Existing sessions retain the model they were created with (session logs stay historically accurate even after you change settings). Reset a chat ("Reset Chat Conversation") to pick up new model overrides.
-
-## Installation
-
-### Prerequisites
-
-*   [Node.js](https://nodejs.org/)
-*   [npm](https://www.npmjs.com/)
-
-### Setup
-
-1.  Clone the repository:
-    ```bash
-    git clone https://github.com/shinyeongbeh/NaruhoDocs.git
-    ```
-2.  Install dependencies:
-    ```bash
-    cd naruhodocs
-    npm install --legacy-peer-deps
-    ```
-
-### Environment Variables
-
-The former "Out-of-the-box" (OOTB) provider has been removed. On first activation the extension will prompt for an API key (Cloud / BYOK). If you skip entry it will automatically fall back to Local runtime models.
-
-1.  Create a file named `.env` in the root directory of the project.
-2.  Add your Google API key to the `.env` file as follows:
-
-    ```
-    GOOGLE_API_KEY="YOUR_API_KEY_HERE"
-    ```
-
-    Replace `"YOUR_API_KEY_HERE"` with your actual Google API key.
-
-### Build
-
-```bash
-npm run compile
-```
-
-### Watch
-
-```bash
-npm run watch
-```
-
-### Run Tests
-
-```bash
-npm run test
-```
-
-
+## About This
+This is the solution for CodeNection 2025 by Team JavaMee.
+- Track: Industry Collaboration
+- Problem Statement: Fix the Docs: Smarter, Faster, Maintainable Documentation for the Real World by iFAST
+- Team Members: Beh Shin Yeong, Chiam Huai Ren, Hoe Zhi Wan
