@@ -2,7 +2,7 @@
 NaruhoDocs is an AI-powered VS Code extension that could help in documentation writing and reading.
 
 ## Try our extension now! [Install NaruhoDocs](https://marketplace.visualstudio.com/items?itemName=naruhodocs.naruhodocs)
-## Refer to our [User Guide]() and [Installation Guide](https://github.com/shinyeongbeh/NaruhoDocs/blob/master/INSTALLATION_GUIDE.md) for detailed guidance. 
+## Refer to our [User Guide](https://github.com/shinyeongbeh/NaruhoDocs/blob/master/USER_GUIDE.pdf) and [Installation Guide](https://github.com/shinyeongbeh/NaruhoDocs/blob/master/INSTALLATION_GUIDE.md) for detailed guidance. 
 ## We need your feedback! Please fill out this [Feedback Form]() to help us improve the extension.
 ## Features
 ### 1. AI Chatbot with RAG (Retrieval-Augmented Generation) capabilities
