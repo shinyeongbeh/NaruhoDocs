@@ -1255,12 +1255,11 @@
             await vscode.postMessage({
                 type: 'exportVisualizationDiagram',
                 content: svgData,
-                title: fileName,
                 format: 'svg'
             });
 
             // Show success message with location info
-            showToast(`Diagram exported as ${fileName}`, 'success');
+            showToast(`Diagram exported.`, 'success');
 
             // Also send message to VS Code to show notification
             // if (typeof vscode !== 'undefined') {
